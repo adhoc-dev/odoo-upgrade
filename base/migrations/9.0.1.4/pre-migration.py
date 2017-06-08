@@ -115,6 +115,3 @@ def migrate(cr, version):
     openupgrade.update_module_names(
         cr, renamed_modules.iteritems()
     )
-    openupgrade.update_module_names(
-        cr, [('partner_credit_limit', 'sale_exception_credit_limit')],
-        merge_modules=True,)

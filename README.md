@@ -6,19 +6,15 @@
 # ADHOC odoo-upgrade
 
 ## TODO:
-ver si cn nuestra modificacion podemos evitar el -u all
 hacemos imagen de docke rpor arriba de la nuestra que agrega este repo y listo, tal ve primero sea necesario levantar con --addons y despues sin, algo asi
 
 
 hacer que partner_vat_unique active dicha funcionalidad
 en nueva mig:
     verificar partner_credit_limit instalado
-    verificar round globally en ambas cias y prefijos y digito cuentas
-    ver prec decimal borrado
-    verificar cuits existetnes en lineas
-    verificar que ahora si se está migrando el afip responsablity (si no arreglar con update account_invoice set afip_responsability_type_id = responsability_id where responsability_id is not null)
-    verificar dirio retenciones
-    verificar fechas en vat ledger
+    verificar: (luego de adhoc modules
+        account_transfer_unreconcile instalado
+
 
 
 ## Observaciones:
@@ -40,7 +36,7 @@ Tratamos de usar modulos de odoo y no de openupgrade porque:
 
 TODO:
 * correr scripts de postmigracion automaticamente
-* evitar update de todo odoo, es decir, de alguna manera hacer que se marque por auto instalar lo que falta sin necesidad del -u all
+* evitar update de todo odoo, es decir, de alguna manera hacer que se marque por auto instalar lo que falta sin necesidad del -u all, en realidad esto ya practicamente anda, simplemnte habria que activar el update all del hook y llamar a los scripts de pre-migracion, ahora bien, para que queremos eso?
 
 ADHOC Odoo odoo-upgrade Modules
 
