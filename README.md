@@ -5,8 +5,42 @@
 
 # ADHOC odoo-upgrade
 
-#. base con apriori customizado y borrado de vistas
-#. product_computed_list_price: el modulo hace un commit en el curso al actualizar precios y termina dando error en el upgrade, en realidad habria que arreglar para que no haga el commit
+## TODO:
+ver si cn nuestra modificacion podemos evitar el -u all
+hacemos imagen de docke rpor arriba de la nuestra que agrega este repo y listo, tal ve primero sea necesario levantar con --addons y despues sin, algo asi
+
+
+hacer que partner_vat_unique active dicha funcionalidad
+en nueva mig:
+    verificar partner_credit_limit instalado
+    verificar round globally en ambas cias y prefijos y digito cuentas
+    ver prec decimal borrado
+    verificar cuits existetnes en lineas
+    verificar que ahora si se está migrando el afip responsablity (si no arreglar con update account_invoice set afip_responsability_type_id = responsability_id where responsability_id is not null)
+    verificar dirio retenciones
+    verificar fechas en vat ledger
+
+
+## Observaciones:
+
+Tratamos de no usar openupgrade porque:
+     * Hace lio con algnas dependencias de los modulos de odoo en v9
+     * nos evitamos tener que instalarlo
+Tratamos de usar modulos de odoo y no de openupgrade porque:
+    * modulos de openupgrade ya tienen scripts de migración y deberíamos sacarlos (o verificar que no se corran por cambio de versión) 
+    * para evitar tener que hacer un nuevo -u all luego de actualizar con openupgrade
+
+## Modificaciones incluidas:
+
+#. base: por ahora usamos modulo base de odoo con ciertas modificaciones:
+    * con apriori customizado y borrado de vistas.
+    * borrmaos content_disposition en import porque el server 
+    * Tambien agregamos en base on hook para que establezca todos los modulos que corresponde a instalar, para esto sacamos algo de codigo de openupgrade, lo hacemos así para no necesitar openupgrade (solo necesitmaos openupgradelib)
+#. partner_identification: lo sumamos porque tiene nuestros scripts de migracion
+
+TODO:
+* correr scripts de postmigracion automaticamente
+* evitar update de todo odoo, es decir, de alguna manera hacer que se marque por auto instalar lo que falta sin necesidad del -u all
 
 ADHOC Odoo odoo-upgrade Modules
 

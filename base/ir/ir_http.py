@@ -23,7 +23,8 @@ import openerp.exceptions
 import openerp.models
 from openerp import http
 from openerp.tools.mimetypes import guess_mimetype
-from openerp.http import request, STATIC_CACHE, content_disposition
+from openerp.http import request, STATIC_CACHE
+# , content_disposition
 from openerp.modules.module import get_resource_path, get_module_path
 from openerp.osv import osv, orm
 

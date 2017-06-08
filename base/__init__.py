@@ -7,6 +7,7 @@ import module
 import res
 import report
 import tests
+import hooks
 
 def post_init(cr, registry):
     """Rewrite ICP's to force groups"""
