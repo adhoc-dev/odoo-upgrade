@@ -7,16 +7,6 @@
 
 ## TODO:
 
-terminar adhoc saas e integrar a infra para tener en adhoc
-
-verificar
-    properties fiscal borradas
-    acceder a facturas
-    acceder a pickings y moves
-    verificar: (luego de adhoc modules
-        account_transfer_unreconcile instalado
-
-
 ## Observaciones:
 
 Tratamos de no usar openupgrade porque:
