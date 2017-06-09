@@ -16,7 +16,9 @@ obsolte_modules = [
     'quality_control_tolerance',
     'quality_control_claim',
     'quality_control_sale_stock',
+    'hr_expense_invoice',
     'quality_control_stock',
+    'project_task_portal_unfollow',
     'website_blog_facebook_comment',
     'mrp_production_estimated_cost',
     'mrp_operations_project',
@@ -48,6 +50,8 @@ obsolte_modules = [
     'web_favicon',
     'website_favicon',
     'website_server_mode',
+    # lo borramos porque ya se instalo el que correspondes
+    'partner_credit_limit',
     'mass_mailing_statistic_extra',
     # Verificar compatibilidad con enterprie
     'web_switch_company_warning',
@@ -257,7 +261,6 @@ obsolte_modules = [
     'sale_pricelist_discount',
     'sales_to_sale_order',
     'sale_team_group',
-    'sale_multic_fix',
     'stock_multic_fix',
     'stock_picking_locations',
     'stock_move_defaults',

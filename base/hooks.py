@@ -3,8 +3,8 @@ from openerp.modules import loading
 from openerp.modules.loading import load_module_graph
 # from openerp.modules.registry import RegistryManager
 # from openerp.modules.module import get_module_path
-from openerp.tools import config
-import openerp
+# from openerp.tools import config
+# import openerp
 import logging
 _logger = logging.getLogger(__name__)
 
@@ -20,12 +20,12 @@ def add_module_dependencies(cr, module_list):
     # TODO borrar o hacer andar, nos da un error, deberiamos hacerlo en otro
     # lugar seguramente
     # update module list only if db_name
-    db_name = config.get('db_name')
-    if db_name:
-        _logger.info('updating modules list')
-        registry = openerp.registry(cr.dbname)
-        modobj = registry['ir.module.module']
-        modobj.update_list(cr, 1)
+    # db_name = config.get('db_name')
+    # if db_name:
+    #     _logger.info('updating modules list')
+    #     registry = openerp.registry(cr.dbname)
+    #     modobj = registry['ir.module.module']
+    #     modobj.update_list(cr, 1)
 
     modules_in = list(module_list)
     # TODO en proximas versiones podemos usar esto para mejorar el orden

@@ -51,15 +51,14 @@ renamed_modules = {
     'l10n_ar_invoice': 'account_document',
     'l10n_ar_partner_title': 'l10n_ar_partner',
     'l10n_ar_chart_generic': 'l10n_ar_chart',
-    'l10n_ar_vat_ledger_city': 'l10n_ar_vat_ledger_citi',
+    'l10n_ar_account_vat_ledger_city': 'l10n_ar_account_vat_ledger_citi',
     'l10n_ar_invoice_sale': 'l10n_ar_sale',
     'account_invoice_journal_filter': 'account_invoice_journal_group',
     'account_contract_lines_sequence': 'sale_contract_lines_sequence',
     'account_contract_prices_update': 'sale_contract_prices_update',
     'account_voucher_withholding': 'account_withholding',
     'account_voucher_withholding_automatic': 'account_withholding_automatic',
-    # TODO ACTIVAR, todavia no lo queremos
-    # 'l10n_ar_aeroo_voucher': 'l10n_ar_aeroo_payment_group',
+    'l10n_ar_aeroo_voucher': 'l10n_ar_aeroo_payment_group',
     'purchase_uom_prices_uoms': 'product_purchase_uom',
     'product_template_search_by_ean13': 'product_template_search_by_barcode',
     'website_sale_l10n_ar_partner': 'l10n_ar_website_sale',
@@ -114,4 +113,21 @@ def migrate(cr, version):
 
     openupgrade.update_module_names(
         cr, renamed_modules.iteritems()
+    )
+    merged_modules = {
+        # hacemos merge para que al desisntalar no se pierda el campo
+        'account_journal_sequence': 'account',
+        'account_transfer': 'account',
+        # no se porque el campo sale_type_id de sale order figuraba como que
+        # era de este modulo... (al menos en nicolau)
+        'inter_company_move': 'sale_order_type',
+        # renombraado a nuestro stock usability
+        'stock_product_move': 'stock_usability',
+        # por las dudas de que figure que el campo employee es de
+        # partner_employee
+        'partner_employee': 'base',
+        'mass_mailing_keep_archives': 'mass_mailing',
+    }
+    openupgrade.update_module_names(
+        cr, merged_modules.iteritems(), merge_modules=True,
     )

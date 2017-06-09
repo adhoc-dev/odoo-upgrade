@@ -6,15 +6,15 @@
 # ADHOC odoo-upgrade
 
 ## TODO:
-hacemos imagen de docke rpor arriba de la nuestra que agrega este repo y listo, tal ve primero sea necesario levantar con --addons y despues sin, algo asi
 
+terminar adhoc saas e integrar a infra para tener en adhoc
 
-hacer que partner_vat_unique active dicha funcionalidad
-en nueva mig:
-    verificar partner_credit_limit instalado
+verificar
+    properties fiscal borradas
+    acceder a facturas
+    acceder a pickings y moves
     verificar: (luego de adhoc modules
         account_transfer_unreconcile instalado
-
 
 
 ## Observaciones:
