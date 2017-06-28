@@ -5,6 +5,9 @@
 
 # ADHOC odoo-upgrade
 
+Ejemplo de uso de script:
+* python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i 15916 -t zm7-0C6oLRntmZLJ3fKvhA==
+
 ## TODO:
 
 ## Observaciones:

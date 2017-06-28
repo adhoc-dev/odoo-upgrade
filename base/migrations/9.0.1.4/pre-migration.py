@@ -54,7 +54,14 @@ renamed_modules = {
     'l10n_ar_account_vat_ledger_city': 'l10n_ar_account_vat_ledger_citi',
     'l10n_ar_invoice_sale': 'l10n_ar_sale',
     'account_invoice_journal_filter': 'account_invoice_journal_group',
+
+    # al final no terminamos borrando a este asi que lo desinstalamos en obsolte modules
+    # al final no restablecimos porque algunos lo suan
     'account_contract_lines_sequence': 'sale_contract_lines_sequence',
+
+    # exclusivamente por el campo double validation
+    'account_voucher_double_validation': 'account_payment_group',
+
     'account_contract_prices_update': 'sale_contract_prices_update',
     'account_voucher_withholding': 'account_withholding',
     'account_voucher_withholding_automatic': 'account_withholding_automatic',
@@ -66,6 +73,7 @@ renamed_modules = {
     'account_analytic_purchase_contract': 'purchase_contract',
     # OCA
     'account_financial_report_webkit': 'account_financial_report_qweb',
+    'mgmtsystem_manuals': 'mgmtsystem_manual',
 }
 
 

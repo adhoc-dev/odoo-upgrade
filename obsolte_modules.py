@@ -7,8 +7,22 @@ obsolte_modules = [
     # dijimos que no tiene mucho sentido asi que lo borramos por ahora
     'account_user_default_journals',
 
+    # no los queremos mas porque usamos saas_client
+    'database_tools',
+    'web_support_client',
+    'web_support_client_issue',
+    'web_support_server',
+    'web_support_server_issue',
+    'website_infrastructure_contract',
+    'infrastructure_contract',
+    'infrastructure_issue',
+
+    # redpreciado, tal vez porque ordeneamos por ordne de producto en nuestro
+    # saas?, al final lo restablecimos porque hay algunos que lo usan
+    # 'account_contract_lines_sequence',
+
     # PENDING MIGRATION
-    'mail_tracking_mass_mailing',
+    # 'mail_tracking_mass_mailing', ya migrado
     'product_standard_margin',
     'mrp_operations_extension',
     'quality_control',
@@ -202,7 +216,8 @@ obsolte_modules = [
     'account_voucher_popup_print',
     'account_voucher_account_fix',
     'account_voucher_constraint',
-    'account_voucher_double_validation',
+    # al final lo renombramos
+    # 'account_voucher_double_validation',
     'account_voucher_multic_fix',
     'crm_partner_history',
     'crm_phonecall_extend',
