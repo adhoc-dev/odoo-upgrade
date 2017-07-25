@@ -6,7 +6,11 @@
 # ADHOC odoo-upgrade
 
 Ejemplo de uso de script:
-* python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i 15916 -t zm7-0C6oLRntmZLJ3fKvhA==
+mitrol
+* python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i 16223 -t 48vHPcFpvlRKmb4nLanFcg==
+
+nicolau
+* python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i 15743 -t waVkPxoacypzFFMhH2Zdrg==
 
 ## TODO:
 
@@ -26,6 +30,7 @@ Tratamos de usar modulos de odoo y no de openupgrade porque:
     * borrmaos content_disposition en import porque el server 
     * Tambien agregamos en base on hook para que establezca todos los modulos que corresponde a instalar, para esto sacamos algo de codigo de openupgrade, lo hacemos así para no necesitar openupgrade (solo necesitmaos openupgradelib)
 #. partner_identification: lo sumamos porque tiene nuestros scripts de migracion
+#. sale_order_type: sin scripts de migracion ya que el que tiene esta preparado para migrar version anterior de v9 y da error si viene bien de v8
 
 TODO:
 * correr scripts de postmigracion automaticamente

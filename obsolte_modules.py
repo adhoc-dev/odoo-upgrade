@@ -130,14 +130,15 @@ obsolte_modules = [
     # nativo en v9
     'website_sale_collapse_categories',
     'inter_company_move',
-    'account_contract_lines_sequence',
+    # 'account_contract_lines_sequence',
     'sale_order_type_sale_journal',
     'product_price_currency_margin',
     'product_computed_list_price_taxes_included',
     'sale_contract_default',
     'account_security_modifications',
     'base_vat',
-    'l10n_ar_bank_cbu',
+    # fue mergeado...
+    # 'l10n_ar_bank_cbu',
     'product_computed_price_rule',
     'project_task_desc_html',
     'account_voucher',

@@ -135,6 +135,7 @@ def migrate(cr, version):
         # partner_employee
         'partner_employee': 'base',
         'mass_mailing_keep_archives': 'mass_mailing',
+        'l10n_ar_bank_cbu': 'l10n_ar_bank',
     }
     openupgrade.update_module_names(
         cr, merged_modules.iteritems(), merge_modules=True,

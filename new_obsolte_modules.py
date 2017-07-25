@@ -3,6 +3,12 @@
 new_obsolete = [
     # modulos nuevos
     'logos_setup_data',
+    'account_payment_order_to_voucher',
+    'account_voucher_cash_basis',
+    'account_voucher_display_writeoff',
+    'account_voucher_supplier_invoice_number',
+    'account_voucher_tax_filter',
+    'hr_expense_analytic_plans',
     'account_cost_center',
     'account_invoice_supplierinfo_update_discount',
     'account_invoice_supplierinfo_update_variant',

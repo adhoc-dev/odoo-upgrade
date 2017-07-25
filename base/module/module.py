@@ -640,6 +640,8 @@ class module(osv.osv):
 
     # update the list of available packages
     def update_list(self, cr, uid, context=None):
+        _logger.warning(
+            'Running patched update module list of adhoc odoo-upgrade')
         res = [0, 0]    # [update, add]
 
         default_version = modules.adapt_version('1.0')
