@@ -26,6 +26,7 @@ obsolte_modules = [
     'product_standard_margin',
     'mrp_operations_extension',
     'quality_control',
+    'account_asset_analytic',
     'quality_control_mrp',
     'quality_control_tolerance',
     'quality_control_claim',

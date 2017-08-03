@@ -5,12 +5,11 @@
 
 # ADHOC odoo-upgrade
 
-Ejemplo de uso de script:
-mitrol
-* python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i 16223 -t 48vHPcFpvlRKmb4nLanFcg==
+TODO:
+Simplificar lo que se hace en pre y tratar de llevar a script
 
-nicolau
-* python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i 15743 -t waVkPxoacypzFFMhH2Zdrg==
+Ejemplo de uso de script:
+python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i xxxxx -t xxxxxxxxxxxxxxxxx -n cliente_mig_id
 
 ## TODO:
 

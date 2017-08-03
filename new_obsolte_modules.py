@@ -1,6 +1,6 @@
 # estos son modulos que no deberian estar mas, borramos si estan desintalados con:
 # env['ir.module.module'].search([('name', 'in', new_obsolete), ('state', 'in', ['uninstalled', 'uninstallable'])]).unlink()
-new_obsolete = [
+new_obsolte_modules = [
     # modulos nuevos
     'logos_setup_data',
     'account_payment_order_to_voucher',
@@ -26,6 +26,8 @@ new_obsolete = [
     'printer_tray',
     'product_variant_multi',
     'product_variant_multi_advanced',
+    'sale_journal_shop',
+    'stock_filter_none_zero_qty',
     'logos_invoice_analysis',
     'odecon_sale_order_report',
     'product_simple_accounting',

@@ -8,6 +8,7 @@ import base64
 import logging
 import os
 import shutil
+import post_migration_scripts
 # import tempfile
 # import urllib2
 # import wget
@@ -32,34 +33,33 @@ class readable_dir(argparse.Action):
 
 parser = argparse.ArgumentParser(
     description='Download database, restore it and run migration scripts.')
-# parser.add_argument(
-#     'clone_path', metavar='--clone_path', type=str, help='Clone Path')
 parser.add_argument(
     "-d", "--database_file", dest="database_file",
     help="Database File (for eg. db.zip)", type=file)
 parser.add_argument(
     '-s', '--source_db_filestore', dest="source_db_filestore",
     action=readable_dir)
-# parser.add_argument(
-#     "-u", "--database_file_url", dest="database_file_url",
-#     help='Database File Url between ""', type=str)
 parser.add_argument(
     "-t", "--token", dest="token",
     help='Migration Request Token', type=str)
 parser.add_argument(
+    "-n", "--db_name", dest="db_name",
+    help='Restored Database name', type=str)
+parser.add_argument(
     "-i", "--migrationId", dest="migrationId",
     help='Migrarion Request Id', type=str)
-# parser.add_argument(
-#     "-c", "--config", dest="config", help="specify alternate config file")
 
-db_name = 'restored_db'
+
+# parser.parse_args()
+db_name = parser.parse_args().db_name or 'restored_db'
 
 
 def main():
     logging.basicConfig(level=logging.INFO)
     # logging.basicConfig(filename='myapp.log', level=logging.INFO)
-    _logger.info("Startint migration script")
+    _logger.info("Starting migration script")
 
+    errors = []
     args = parser.parse_args()
 
     if db_name in openerp.service.db.list_dbs(True):
@@ -80,18 +80,92 @@ def main():
 
         restoring_database(data_b64)
 
+    _logger.info("Upgrading with configuration\n%s" % config.options)
+
     update_database()
+
+    errors += run_script(args)
+
+    # al final esto lo hacemos desde el saas upgrade
+    # # purgamos bd
+    # errors += purge_database(args)
+
+    if errors:
+        _logger.warning('Encontramos los siguientes errores:\n* %s' % (
+            '\n\n* '.join(errors)))
+
+
+# def purge_database(args):
+#     """
+#     Lo hacemos en otro env que el run scripts porque si no tenemos un error
+#     que no se arregla ni con commit
+#     Lo ideal seria llevar todo el with a una funcion de afuera
+#     """
+#     errors = []
+#     suffixs = [
+#         'module', 'model', 'column', 'table', 'menu', 'data', 'property']
+
+#     errors = []
+#     openerp.cli.server.report_configuration()
+#     openerp.service.server.start(preload=[], stop=True)
+#     with openerp.api.Environment.manage():
+#         registry = openerp.modules.registry.RegistryManager.get(db_name)
+#         with registry.cursor() as cr:
+#             uid = openerp.SUPERUSER_ID
+#             ctx = openerp.api.Environment(
+#                 cr, uid, {})['res.users'].context_get()
+#             env = openerp.api.Environment(cr, uid, ctx)
+
+#             # purgamos bd
+#             for suffix in suffixs:
+#                 _logger.info('Purging model %s' % suffix)
+#                 try:
+#                     env['cleanup.purge.wizard.%s' % suffix].create(
+#                         {}).purge_all()
+#                 except Exception, e:
+#                     errors.append('Error al purgar %s:\n%s' % (suffix, e))
+
+#                 # esta tabla tiene nombre totalmente distinto
+#                 _logger.info('Purging create_indexes')
+#                 try:
+#                     env['cleanup.create_indexes.wizard'].create(
+#                         {}).purge_all()
+#                 except Exception, e:
+#                     errors.append('Error al purgar %s:\n%s' % (suffix, e))
+#     return errors
+
+
+def run_script(args):
+    # openerp.tools.config.parse_config(args)
+    errors = []
+    openerp.cli.server.report_configuration()
+    openerp.service.server.start(preload=[], stop=True)
+    with openerp.api.Environment.manage():
+        registry = openerp.modules.registry.RegistryManager.get(db_name)
+        with registry.cursor() as cr:
+            uid = openerp.SUPERUSER_ID
+            ctx = openerp.api.Environment(
+                cr, uid, {})['res.users'].context_get()
+            env = openerp.api.Environment(cr, uid, ctx)
+
+            # corremos post scripts
+            errors += post_migration_scripts.run_scripts(env)
+    return errors
 
 
 def copy_source_filestore(source_db_filestore):
     _logger.info("Copy source filestore from %s" % (source_db_filestore))
-    filestore = openerp.tools.config.filestore('restored_db')
+    filestore = openerp.tools.config.filestore(db_name)
     shutil.copytree(source_db_filestore, filestore)
 
 
 def update_database():
     _logger.info("Startint database update")
-    os.system("odoo.py --workers=0 --stop-after-init -u all -d %s" % db_name)
+    # actualizamos instalando saas client por las sudas
+    os.system(
+        # "odoo.py --workers=0 --stop-after-init -d %s "
+        "odoo.py --workers=0 --stop-after-init -d %s -u all "
+        "-i saas_client --without-demo=True --no-xmlrpc" % db_name)
 
 
 def download_database():
@@ -110,7 +184,8 @@ def download_database():
         "https://upgrade.odoo.com/database/eu1/%s/%s/upgraded/archive" %
         (migrationId, token))
     _logger.info("Downloading file from %s" % url)
-    file_name = 'download.zip'
+    # 'download.zip'
+    file_name = "%s.zip" % db_name
     os.system("wget --continue -O %s %s" % (file_name, url))
 
     # metodo traido de db tools
@@ -126,14 +201,14 @@ def restoring_database(data_b64):
     _logger.info("Overwritting config file")
     # config['update'] = {'all': 1}
 
-    _logger.info("Working with configuration\n%s" % config.options)
-
     addons_path = config['addons_path']
     server_wide_modules = config['server_wide_modules']
     config['addons_path'] = (
         'sources/odoo/enterprise/,sources/odoo/odoo/addons/,'
         'sources/odoo/odoo/openerp/addons/')
     config['server_wide_modules'] = '--load=web_kanban,web'
+
+    _logger.info("Restoring with configuration\n%s" % config.options)
 
     _logger.info("Calling db restore")
     db.exp_restore(db_name, data_b64, copy=False)
