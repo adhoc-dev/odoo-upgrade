@@ -11,6 +11,9 @@ python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i xxxxx -t xxxxxxxxxxxx
 
 ## TODO:
     * subir mods de payment y generar imagen, actualizar en adhoc
+    * rever migración de retenciones automaticas (por ej. cudnik)
+    * al restarurar estarura cantidad e usuariso de contrato
+    * rever borrado de todas las vistas. Tratar de desactivar todas las vistas customizadas y agregar prefijo o sufijo "Desactivada x migración"
     * Agregar chequeo si quedó diario de reembolso. Agregar chequeos possubt migracion
     * ver que hacemos y que pasó con esos modulos product_computed_price_rule, website_sale_note, website_sale_promotion
     * verificar producto de chat en migraciones

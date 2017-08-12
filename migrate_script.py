@@ -52,16 +52,30 @@ parser.add_argument(
 parser.add_argument(
     "-t", "--token", dest="token",
     help='Migration Request Token', type=str)
+# parser.add_argument(
+#     "-n", "--db_name", dest="db_name",
+#     help='Restored Database name', type=str)
 parser.add_argument(
-    "-n", "--db_name", dest="db_name",
-    help='Restored Database name', type=str)
+    "-a", "--account_name", dest="account_name",
+    help='Account name', type=str)
 parser.add_argument(
     "-i", "--migrationId", dest="migrationId",
     help='Migrarion Request Id', type=str)
 
+# restore backups parameters
+parser.add_argument(
+    "-x", "--aws_s3_accessid", dest="aws_s3_accessid", type=str)
+parser.add_argument(
+    "-y", "--aws_s3_accesskey", dest="aws_s3_accesskey", type=str)
+parser.add_argument(
+    "-z", "--aws_s3_bucket", dest="aws_s3_bucket", type=str)
+
 
 # parser.parse_args()
-db_name = parser.parse_args().db_name or 'restored_db'
+# db_name = parser.parse_args().db_name or 'restored_db'
+account_name = parser.parse_args().account_name
+migrationId = parser.parse_args().migrationId
+db_name = migrationId and "%s_%s" % (account_name, migrationId) or account_name
 log_file = 'odoo-upgrade.log'
 
 
@@ -112,6 +126,50 @@ def main():
             'Actualización terminada con los siguientes errores:\n* %s' % (
                 '\n\n* '.join(errors)))
     _logger.info('Actualización terminada sin ningún error.')
+
+    aws_s3_accessid = args.aws_s3_accessid
+    aws_s3_accesskey = args.aws_s3_accesskey
+    aws_s3_bucket = args.aws_s3_bucket
+    if aws_s3_accessid and aws_s3_accesskey and aws_s3_bucket:
+        upload_backup(
+            aws_s3_accessid, aws_s3_accesskey, aws_s3_bucket, account_name)
+
+
+def upload_backup(
+        aws_s3_accessid, aws_s3_accesskey, aws_s3_bucket, account_name):
+    _logger.info('Making backup to %s' % aws_s3_bucket)
+    config['saas_client.aws_s3_accessid'] = aws_s3_accessid
+    config['saas_client.aws_s3_accesskey'] = aws_s3_accesskey
+    config['saas_client.aws_s3_bucket'] = aws_s3_bucket
+    config['saas_client.aws_s3_backup_enable'] = True
+    config['saas_client.account_name'] = account_name
+    openerp.cli.server.report_configuration()
+    openerp.service.server.start(preload=[], stop=True)
+    with openerp.api.Environment.manage():
+        registry = openerp.modules.registry.RegistryManager.get(db_name)
+        with registry.cursor() as cr:
+            uid = openerp.SUPERUSER_ID
+            ctx = openerp.api.Environment(
+                cr, uid, {})['res.users'].context_get()
+            env = openerp.api.Environment(cr, uid, ctx)
+            # lo steamos en el config porque si los borramos en realidad
+            # ya estan en el backup
+            # set_param = env['ir.config_parameter'].set_param
+
+            # set_param('saas_client.aws_s3_backup_enable', True)
+            # set_param('saas_client.aws_s3_accessid', aws_s3_accessid)
+            # set_param('saas_client.aws_s3_accesskey', aws_s3_accesskey)
+            # set_param('saas_client.aws_s3_bucket', aws_s3_bucket)
+            # set_param('saas_client.account_name', account_name)
+
+            env['saas_client.dashboard'].backup_database()
+
+            # env['ir.config_parameter'].search(
+            #     [('key', '=', 'saas_client.aws_s3_accessid')],
+            #     limit=1).unlink()
+            # env['ir.config_parameter'].search(
+            #     [('key', '=', 'saas_client.aws_s3_accesskey')],
+            #     limit=1).unlink()
 
 
 def test_update_ok():
@@ -222,7 +280,6 @@ def download_database():
     # url = args.database_file_url
     args = parser.parse_args()
     token = args.token
-    migrationId = args.migrationId
     # if not url:
     if not migrationId or not token:
         _logger.info(
