@@ -141,12 +141,16 @@ def upload_backup(
     config['saas_client.aws_s3_accessid'] = aws_s3_accessid
     config['saas_client.aws_s3_accesskey'] = aws_s3_accesskey
     config['saas_client.aws_s3_bucket'] = aws_s3_bucket
-    config['saas_client.aws_s3_backup_enable'] = True
+    # no se porque este parametro no me lo lee
+    # config['saas_client.aws_s3_backup_enable'] = True
     config['saas_client.account_name'] = account_name
     openerp.cli.server.report_configuration()
     openerp.service.server.start(preload=[], stop=True)
     with openerp.api.Environment.manage():
         registry = openerp.modules.registry.RegistryManager.get(db_name)
+        # con esto trato de evitar un error que me dio
+        openerp.modules.registry.RegistryManager.signal_registry_change(
+            db_name)
         with registry.cursor() as cr:
             uid = openerp.SUPERUSER_ID
             ctx = openerp.api.Environment(
@@ -154,9 +158,9 @@ def upload_backup(
             env = openerp.api.Environment(cr, uid, ctx)
             # lo steamos en el config porque si los borramos en realidad
             # ya estan en el backup
-            # set_param = env['ir.config_parameter'].set_param
+            set_param = env['ir.config_parameter'].set_param
 
-            # set_param('saas_client.aws_s3_backup_enable', True)
+            set_param('saas_client.aws_s3_backup_enable', True)
             # set_param('saas_client.aws_s3_accessid', aws_s3_accessid)
             # set_param('saas_client.aws_s3_accesskey', aws_s3_accesskey)
             # set_param('saas_client.aws_s3_bucket', aws_s3_bucket)
