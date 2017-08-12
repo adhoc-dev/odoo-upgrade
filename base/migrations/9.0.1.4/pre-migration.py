@@ -59,8 +59,11 @@ renamed_modules = {
     # al final no restablecimos porque algunos lo suan
     'account_contract_lines_sequence': 'sale_contract_lines_sequence',
 
+    # no lo hacemos asi porque si no no se corre el hool de inicializacion
+    # de payment group y no todo el mundo tenia isntalado este modulo
+    # arreglamos lo del double validation en payment_group y listo
     # exclusivamente por el campo double validation
-    'account_voucher_double_validation': 'account_payment_group',
+    # 'account_voucher_double_validation': 'account_payment_group',
 
     'account_contract_prices_update': 'sale_contract_prices_update',
     'account_voucher_withholding': 'account_withholding',
@@ -86,19 +89,42 @@ def migrate(cr, version):
     #     and d.module in ('account_document')
     #     """, ('l10n_ar_%',))
 
-    # borramos todos los external ids que apuntan a vistas no qweb
-    # por si alguno tiene no actualizable y entocnes no se recrea al borrar
-    # vistas en proximo paso
+    # desactivamos filtros customizados
     openupgrade.logged_query(cr, """
-        DELETE FROM ir_model_data d
-        USING ir_ui_view iv WHERE d.res_id = iv.id
-        AND d.model = 'ir.ui.view' and iv.type != 'qweb'
+        UPDATE ir_filters SET active = false,
+            name = CONCAT(name, ' - DESACTIVADA POR MIGRACION') WHERE id in (
+            SELECT if.id FROM ir_filters if
+            LEFT JOIN(
+                SELECT * from ir_model_data imd where imd.model = 'ir.filters')
+                AS imd ON imd.res_id = if.id
+            WHERE imd.res_id is null)
     """)
 
-    # borramos vistas no qweb para resolver multiples inconvenientes
+    # desactivamos vistas customizadas
     openupgrade.logged_query(cr, """
-        DELETE FROM ir_ui_view where type != 'qweb'
+        UPDATE ir_ui_view SET active = false,
+            name = CONCAT(name, ' - DESACTIVADA POR MIGRACION') WHERE id in (
+            SELECT iv.id FROM ir_ui_view iv
+            LEFT JOIN(
+                SELECT * from ir_model_data imd where imd.model = 'ir.ui.view')
+                AS imd ON imd.res_id = iv.id
+            WHERE imd.res_id is null)
     """)
+
+    # VAMOS A PROBAR SIN HACER ESTO, DEJAMOS LAS VISTAS
+    # # borramos todos los external ids que apuntan a vistas no qweb
+    # # por si alguno tiene no actualizable y entocnes no se recrea al borrar
+    # # vistas en proximo paso
+    # openupgrade.logged_query(cr, """
+    #     DELETE FROM ir_model_data d
+    #     USING ir_ui_view iv WHERE d.res_id = iv.id
+    #     AND d.model = 'ir.ui.view' and iv.type != 'qweb'
+    # """)
+
+    # # borramos vistas no qweb para resolver multiples inconvenientes
+    # openupgrade.logged_query(cr, """
+    #     DELETE FROM ir_ui_view where type != 'qweb'
+    # """)
 
     # por error relacionado con esto:
     # https://git.framasoft.org/framasoft/OCB/commit/31ff6c68f4b49d5c12e2487d369a338c51f8997b?view=parallel
@@ -134,9 +160,39 @@ def migrate(cr, version):
         # por las dudas de que figure que el campo employee es de
         # partner_employee
         'partner_employee': 'base',
+        # al final no quedaba instalado, mejor desinstalamos el primero
+        # directamente
+        # 'account_journal_book': 'account_journal_book_report',
         'mass_mailing_keep_archives': 'mass_mailing',
         'l10n_ar_bank_cbu': 'l10n_ar_bank',
+        'sipreco_public_budget': 'public_budget',
+        'sipreco_setup_data_cmd': 'public_budget',
+        'sipreco_setup_data_tmc': 'public_budget',
     }
     openupgrade.update_module_names(
         cr, merged_modules.iteritems(), merge_modules=True,
     )
+    delete_all_views(cr)
+
+
+def delete_all_views(cr):
+    """
+    Borramos todas las vistas para no tener problemas al purgar al final de
+    todo, total las vistas se van a volver a crear si es necesario.
+    TODO: Tal vez en mig a v10 no lo tengamos que hacer por vistas customizadas
+    que pueda llegar a ver
+    """
+    # el order by de alguna manera arreglo el hecho de vistas encadenadas
+    # si no otra, era hacer el cascade pero en ese caso habria que poner un try
+    # porque si no da error cuando trata de borrar la que ya borró el cascade
+    # SELECT 'DROP VIEW ' || table_name || ' CASCADE;'
+    cr.execute("""
+    SELECT 'DROP VIEW ' || table_name || ';'
+      FROM information_schema.views
+     WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+       AND table_name !~ '^pg_'
+    ORDER  BY 1;
+       """)
+    drops = cr.fetchall()
+    for drop in drops:
+        cr.execute(drop[0])

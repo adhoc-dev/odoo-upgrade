@@ -47,8 +47,22 @@ def run_scripts(env):
         'stock_picking_locations', 'account_voucher_multic_fix',
         'stock_multic_fix', 'account_analytic_project', 'contract_multic_fix',
         'partner_products_shortcut', 'account_contract_recurring_total',
-        'sale_contract_default', 'purchase_product_menu']
+        'sale_contract_default', 'purchase_product_menu', 'web_graph_sort',
+        'website_server_mode', 'delivery_no_invoice_shipping', 'portal_fix',
+        'portal_partner_fix', 'report_aeroo_portal_fix',
+        'account_voucher_manual_reconcile', 'portal_welcome_email_template',
+        'purchase_last_price_info', 'adhoc_base_account', 'adhoc_base_product',
+        'adhoc_base_project', 'adhoc_base_purchase', 'adhoc_base_sale',
+        'adhoc_base_setup', 'adhoc_base_stock', 'adhoc_base_website',
+        'website_remove_product_legend', 'web_menu_hide',
+        'website_sale_collapse_categories', 'web_snippet_extra',
+        'product_computed_list_price_taxes_included',
+        'project_issue_views_modifications', 'base_debug4all',
+        'account_tax_settlement_withholding', 'account_voucher_constraint',
+        'web_ir_actions_act_window_none', 'web_shortcuts',
+        'account_voucher_double_validation']
 
+    # esto es para generar mensajes de error, mas abajo se borran
     installed_obsoloete = env['ir.module.module'].search([
         ('name', 'in', obsolte_modules),
         ('name', 'not in', ok_modules)]).filtered(

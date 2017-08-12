@@ -8,6 +8,7 @@ import base64
 import logging
 import os
 import shutil
+import subprocess
 import post_migration_scripts
 # import tempfile
 # import urllib2
@@ -15,6 +16,15 @@ import post_migration_scripts
 
 _logger = logging.getLogger(__name__)
 # ldir = tempfile.mkdtemp()
+
+# import logging
+# logging.basicConfig(filename=LOG_FILENAME,level=logging.DEBUG)
+# logger = logging.getLogger('myapp')
+# hdlr = logging.FileHandler('/var/tmp/myapp.log')
+# formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+# hdlr.setFormatter(formatter)
+# logger.addHandler(hdlr)
+# logger.setLevel(logging.WARNING)
 
 
 class readable_dir(argparse.Action):
@@ -52,6 +62,7 @@ parser.add_argument(
 
 # parser.parse_args()
 db_name = parser.parse_args().db_name or 'restored_db'
+log_file = 'odoo-upgrade.log'
 
 
 def main():
@@ -84,60 +95,97 @@ def main():
 
     update_database()
 
+    if not test_update_ok():
+        return False
+
+    _logger.info('Odoo update terminada')
+
     errors += run_script(args)
 
-    # al final esto lo hacemos desde el saas upgrade
+    # NO ME ANDUVO
+    # # al final esto lo hacemos desde el saas upgrade
     # # purgamos bd
-    # errors += purge_database(args)
+    errors += purge_database(args)
 
     if errors:
-        _logger.warning('Encontramos los siguientes errores:\n* %s' % (
-            '\n\n* '.join(errors)))
+        _logger.error(
+            'Actualización terminada con los siguientes errores:\n* %s' % (
+                '\n\n* '.join(errors)))
+    _logger.info('Actualización terminada sin ningún error.')
 
 
-# def purge_database(args):
-#     """
-#     Lo hacemos en otro env que el run scripts porque si no tenemos un error
-#     que no se arregla ni con commit
-#     Lo ideal seria llevar todo el with a una funcion de afuera
-#     """
-#     errors = []
-#     suffixs = [
-#         'module', 'model', 'column', 'table', 'menu', 'data', 'property']
+def test_update_ok():
+    """
+    Por ahora consideramos que odoo actualizo bien si en el log se llega a la
+    parte de computing left and...
+    TODO otra alternativa es chequear si existe la palabra critical o error
+    aparecen en el log, en ese caso, deberíamos generar un nuevo archivo de
+    log para cada base y borrarlo antes de arrancar, para que no se confunda
+    con errores de otros arranques
+    """
+    # log_lines = subprocess.check_output(['cat', log_file])
+    log_lines = subprocess.check_output(['tail', '-10', log_file])
+    # al final chequeamos si hay cirticial o error solamente
+    # log_lines = subprocess.check_output(['tail', '-10', log_file])
+    # if log_lines.find('CRITICAL', 'ERROR'):
+    if log_lines.find(
+            "Computing parent left and right for table ir_ui_menu") == -1:
+        _logger.error(
+            'Abortando. Parece que hubo algun error en la actualización de '
+            'odoo. Por favor revise las líneas con "CRITICAL" o "ERROR" en '
+            '"%s" e intente nuevamente' % (
+                log_file))
+        return False
+    return True
 
-#     errors = []
-#     openerp.cli.server.report_configuration()
-#     openerp.service.server.start(preload=[], stop=True)
-#     with openerp.api.Environment.manage():
-#         registry = openerp.modules.registry.RegistryManager.get(db_name)
-#         with registry.cursor() as cr:
-#             uid = openerp.SUPERUSER_ID
-#             ctx = openerp.api.Environment(
-#                 cr, uid, {})['res.users'].context_get()
-#             env = openerp.api.Environment(cr, uid, ctx)
 
-#             # purgamos bd
-#             for suffix in suffixs:
-#                 _logger.info('Purging model %s' % suffix)
-#                 try:
-#                     env['cleanup.purge.wizard.%s' % suffix].create(
-#                         {}).purge_all()
-#                 except Exception, e:
-#                     errors.append('Error al purgar %s:\n%s' % (suffix, e))
+def purge_database(args):
+    """
+    Lo hacemos en otro env que el run scripts porque si no tenemos un error
+    que no se arregla ni con commit
+    Lo ideal seria llevar todo el with a una funcion de afuera
+    """
+    errors = []
+    suffixs = [
+        'module', 'model', 'column', 'table', 'menu', 'data', 'property']
 
-#                 # esta tabla tiene nombre totalmente distinto
-#                 _logger.info('Purging create_indexes')
-#                 try:
-#                     env['cleanup.create_indexes.wizard'].create(
-#                         {}).purge_all()
-#                 except Exception, e:
-#                     errors.append('Error al purgar %s:\n%s' % (suffix, e))
-#     return errors
+    errors = []
+    # setamos log file (no me anduvo)
+    # config['logfile'] = log_file
+    openerp.cli.server.report_configuration()
+    openerp.service.server.start(preload=[], stop=True)
+    with openerp.api.Environment.manage():
+        registry = openerp.modules.registry.RegistryManager.get(db_name)
+        with registry.cursor() as cr:
+            uid = openerp.SUPERUSER_ID
+            ctx = openerp.api.Environment(
+                cr, uid, {})['res.users'].context_get()
+            env = openerp.api.Environment(cr, uid, ctx)
+
+            # purgamos bd
+            for suffix in suffixs:
+                _logger.info('Purging model %s' % suffix)
+                try:
+                    env['cleanup.purge.wizard.%s' % suffix].create(
+                        {}).purge_all()
+                except Exception, e:
+                    errors.append('Error al purgar %s:\n%s' % (suffix, e))
+
+                # esta tabla tiene nombre totalmente distinto
+                _logger.info('Purging create_indexes')
+                try:
+                    env['cleanup.create_indexes.wizard'].create(
+                        {}).purge_all()
+                except Exception, e:
+                    errors.append('Error al purgar %s:\n%s' % (suffix, e))
+    return errors
 
 
 def run_script(args):
     # openerp.tools.config.parse_config(args)
     errors = []
+    # setamos log file (no me anduvo)
+    # config['logfile'] = log_file
     openerp.cli.server.report_configuration()
     openerp.service.server.start(preload=[], stop=True)
     with openerp.api.Environment.manage():
@@ -165,7 +213,8 @@ def update_database():
     os.system(
         # "odoo.py --workers=0 --stop-after-init -d %s "
         "odoo.py --workers=0 --stop-after-init -d %s -u all "
-        "-i saas_client --without-demo=True --no-xmlrpc" % db_name)
+        "-i saas_client --without-demo=True --no-xmlrpc --logfile=%s" % (
+            db_name, log_file))
 
 
 def download_database():
@@ -220,4 +269,8 @@ def restoring_database(data_b64):
 
 
 if __name__ == '__main__':
-    main()
+    # el KeyboardInterrupt no anda como espero pero tampoco molesta por ahora
+    try:
+        main()
+    except (KeyboardInterrupt, SystemExit):
+        _logger.warning('Interrumpido por teclado')

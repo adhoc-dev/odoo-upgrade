@@ -1,17 +1,20 @@
-[![Runbot Status](http://runbot.adhoc.com.ar/runbot/badge/flat/12/9.0.svg)](http://runbot.adhoc.com.ar/runbot/repo/github-com-ingadhoc-odoo-upgrade-12)
+[![Runbot Status](http://runbot.adhoc.com.a1r/runbot/badge/flat/12/9.0.svg)](http://runbot.adhoc.com.ar/runbot/repo/github-com-ingadhoc-odoo-upgrade-12)
 [![Build Status](https://travis-ci.org/ingadhoc/odoo-upgrade.svg?branch=9.0)](https://travis-ci.org/ingadhoc/odoo-upgrade)
 [![Coverage Status](https://coveralls.io/repos/ingadhoc/odoo-upgrade/badge.png?branch=9.0)](https://coveralls.io/r/ingadhoc/odoo-upgrade?branch=9.0)
 [![Code Climate](https://codeclimate.com/github/ingadhoc/odoo-upgrade/badges/gpa.svg)](https://codeclimate.com/github/ingadhoc/odoo-upgrade)
 
 # ADHOC odoo-upgrade
 
-TODO:
-Simplificar lo que se hace en pre y tratar de llevar a script
-
 Ejemplo de uso de script:
 python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i xxxxx -t xxxxxxxxxxxxxxxxx -n cliente_mig_id
 
+
 ## TODO:
+    * subir mods de payment y generar imagen, actualizar en adhoc
+    * Agregar chequeo si quedó diario de reembolso. Agregar chequeos possubt migracion
+    * ver que hacemos y que pasó con esos modulos product_computed_price_rule, website_sale_note, website_sale_promotion
+    * verificar producto de chat en migraciones
+
 
 ## Observaciones:
 
@@ -21,6 +24,7 @@ Tratamos de no usar openupgrade porque:
 Tratamos de usar modulos de odoo y no de openupgrade porque:
     * modulos de openupgrade ya tienen scripts de migración y deberíamos sacarlos (o verificar que no se corran por cambio de versión) 
     * para evitar tener que hacer un nuevo -u all luego de actualizar con openupgrade
+
 
 ## Modificaciones incluidas:
 

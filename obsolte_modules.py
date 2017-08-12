@@ -23,6 +23,15 @@ obsolte_modules = [
 
     # PENDING MIGRATION
     # 'mail_tracking_mass_mailing', ya migrado
+    'mail_sent',
+    'account_invoice_operation',
+    'sale_commission',
+    'website_sale_clear_line',
+    'product_category_search',
+    'web_menu_navbar_needaction',
+    'sale_stock_commission',
+    'hr_commission',
+    'sale_invoice_operation',
     'product_standard_margin',
     'mrp_operations_extension',
     'quality_control',
@@ -50,7 +59,8 @@ obsolte_modules = [
     'portal_account_distributor',
     'sale_multiple_invoice',
     'account_move_voucher',
-    'account_tax_settlement',
+    # este ahora si lo incorporamos
+    # 'account_tax_settlement',
     'account_tax_settlement_withholding',
     'hr_sign_in_out_task',
     'website_sale_note',
@@ -108,7 +118,9 @@ obsolte_modules = [
     'account_invoice_groupby_commercial_partner',
     'account_invoice_sale_link',
     'account_move_line_filter_wizard',
-    'account_usability',
+    # si llega a dar error entonces deberiamos instalarlo en pre script
+    # y dejar que luego se instale aca si algunmodulo lo agrega
+    # 'account_usability',
     'partner_search',
     'purchase_usability_extension',
     'sale_line_product_required',
@@ -218,8 +230,8 @@ obsolte_modules = [
     'account_voucher_popup_print',
     'account_voucher_account_fix',
     'account_voucher_constraint',
-    # al final lo renombramos
-    # 'account_voucher_double_validation',
+    # al final lo renombramos (al final no)
+    'account_voucher_double_validation',
     'account_voucher_multic_fix',
     'crm_partner_history',
     'crm_phonecall_extend',
@@ -274,7 +286,7 @@ obsolte_modules = [
     'purchase_add_products_wizard',
     'purchase_ref_editable',
     'report_extended_voucher',
-    'web_pdf_preview',
+    # 'web_pdf_preview',
     'sale_pricelist_discount',
     'sales_to_sale_order',
     'sale_team_group',
