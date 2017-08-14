@@ -138,14 +138,15 @@ def main():
 def upload_backup(
         aws_s3_accessid, aws_s3_accesskey, aws_s3_bucket, account_name):
     _logger.info('Making backup to %s' % aws_s3_bucket)
+    config = openerp.tools.config
     config['saas_client.aws_s3_accessid'] = aws_s3_accessid
     config['saas_client.aws_s3_accesskey'] = aws_s3_accesskey
     config['saas_client.aws_s3_bucket'] = aws_s3_bucket
     # no se porque este parametro no me lo lee
     # config['saas_client.aws_s3_backup_enable'] = True
     config['saas_client.account_name'] = account_name
-    openerp.cli.server.report_configuration()
-    openerp.service.server.start(preload=[], stop=True)
+    # openerp.cli.server.report_configuration()
+    # openerp.service.server.start(preload=[], stop=True)
     with openerp.api.Environment.manage():
         registry = openerp.modules.registry.RegistryManager.get(db_name)
         # con esto trato de evitar un error que me dio
@@ -214,8 +215,8 @@ def purge_database(args):
     errors = []
     # setamos log file (no me anduvo)
     # config['logfile'] = log_file
-    openerp.cli.server.report_configuration()
-    openerp.service.server.start(preload=[], stop=True)
+    # openerp.cli.server.report_configuration()
+    # openerp.service.server.start(preload=[], stop=True)
     with openerp.api.Environment.manage():
         registry = openerp.modules.registry.RegistryManager.get(db_name)
         with registry.cursor() as cr:
@@ -248,8 +249,7 @@ def run_script(args):
     errors = []
     # setamos log file (no me anduvo)
     # config['logfile'] = log_file
-    openerp.cli.server.report_configuration()
-    openerp.service.server.start(preload=[], stop=True)
+    # openerp.service.server.start(preload=[], stop=True)
     with openerp.api.Environment.manage():
         registry = openerp.modules.registry.RegistryManager.get(db_name)
         with registry.cursor() as cr:
