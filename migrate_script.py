@@ -147,11 +147,13 @@ def upload_backup(
     config['saas_client.account_name'] = account_name
     # openerp.cli.server.report_configuration()
     # openerp.service.server.start(preload=[], stop=True)
+    openerp.api.Environment.reset()
     with openerp.api.Environment.manage():
-        registry = openerp.modules.registry.RegistryManager.get(db_name)
+        # registry = openerp.modules.registry.RegistryManager.get(db_name)
+        registry = openerp.modules.registry.RegistryManager.new(db_name)
         # con esto trato de evitar un error que me dio
-        openerp.modules.registry.RegistryManager.signal_registry_change(
-            db_name)
+        # openerp.modules.registry.RegistryManager.signal_registry_change(
+        #     db_name)
         with registry.cursor() as cr:
             uid = openerp.SUPERUSER_ID
             ctx = openerp.api.Environment(
@@ -217,8 +219,10 @@ def purge_database(args):
     # config['logfile'] = log_file
     # openerp.cli.server.report_configuration()
     # openerp.service.server.start(preload=[], stop=True)
+    openerp.api.Environment.reset()
     with openerp.api.Environment.manage():
-        registry = openerp.modules.registry.RegistryManager.get(db_name)
+        # registry = openerp.modules.registry.RegistryManager.get(db_name)
+        registry = openerp.modules.registry.RegistryManager.new(db_name)
         with registry.cursor() as cr:
             uid = openerp.SUPERUSER_ID
             ctx = openerp.api.Environment(
@@ -250,8 +254,10 @@ def run_script(args):
     # setamos log file (no me anduvo)
     # config['logfile'] = log_file
     # openerp.service.server.start(preload=[], stop=True)
+    openerp.api.Environment.reset()
     with openerp.api.Environment.manage():
-        registry = openerp.modules.registry.RegistryManager.get(db_name)
+        # registry = openerp.modules.registry.RegistryManager.get(db_name)
+        registry = openerp.modules.registry.RegistryManager.new(db_name)
         with registry.cursor() as cr:
             uid = openerp.SUPERUSER_ID
             ctx = openerp.api.Environment(
