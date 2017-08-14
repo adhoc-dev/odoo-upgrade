@@ -29,6 +29,7 @@ obsolte_modules = [
     'website_sale_clear_line',
     'product_category_search',
     'web_menu_navbar_needaction',
+    'base_debug4all',
     'sale_stock_commission',
     'hr_commission',
     'sale_invoice_operation',
