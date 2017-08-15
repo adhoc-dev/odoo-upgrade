@@ -5,6 +5,7 @@ from openerp.tools import config
 import openerp
 import argparse
 import base64
+import inspect
 import logging
 import os
 import shutil
@@ -299,7 +300,9 @@ def update_database():
     # agregamos odoo upgrade primero de todo. No lo agregamos en todo el conf
     # porque si no despues, cuando corremos fix y demas, termina auto
     # instalando cosas que no queremos
-    addons_path = 'odoo-upgrade,' + config['addons_path']
+    odoo_upgrade_repo = os.path.dirname(
+        os.path.abspath(inspect.getfile(inspect.currentframe())))
+    addons_path = '%s,' % odoo_upgrade_repo + config['addons_path']
     # actualizamos instalando saas client por las sudas
     os.system(
         # "odoo.py --workers=0 --stop-after-init -d %s "
@@ -342,9 +345,10 @@ def restoring_database(data_b64):
 
     addons_path = config['addons_path']
     server_wide_modules = config['server_wide_modules']
-    config['addons_path'] = (
-        'sources/odoo/enterprise/,sources/odoo/odoo/addons/,'
-        'sources/odoo/odoo/openerp/addons/')
+    # config['addons_path'] = (
+    #     'sources/odoo/enterprise/,sources/odoo/odoo/addons/,'
+    #     'sources/odoo/odoo/openerp/addons/')
+    config['addons_path'] = ''
     config['server_wide_modules'] = '--load=web_kanban,web'
 
     _logger.info("Restoring with configuration\n%s" % config.options)
