@@ -114,11 +114,14 @@ def main():
 
     _logger.info('Odoo update terminada')
 
+    # desinstalamos este a parte porque requiere reiniciar, si no da error
+    uninstall_web_support_client(args)
+
     errors += run_script(args)
 
-    # # al final esto lo hacemos desde el saas upgrade porque nos daba error
-    # # y ademas para tener bd antes de purgar
-    # errors += purge_database(args)
+    # al final esto lo hacemos desde el saas upgrade porque nos daba error
+    # y ademas para tener bd antes de purgar
+    errors += purge_database(args)
 
     if errors:
         _logger.error(
@@ -132,6 +135,21 @@ def main():
     if aws_s3_accessid and aws_s3_accesskey and aws_s3_bucket:
         upload_backup(
             aws_s3_accessid, aws_s3_accesskey, aws_s3_bucket, account_name)
+
+
+def uninstall_web_support_client(args):
+    with openerp.api.Environment.manage():
+        registry = openerp.modules.registry.RegistryManager.new(db_name)
+        with registry.cursor() as cr:
+            uid = openerp.SUPERUSER_ID
+            ctx = openerp.api.Environment(
+                cr, uid, {})['res.users'].context_get()
+            env = openerp.api.Environment(cr, uid, ctx)
+
+            env['ir.module.module'].search(
+                [('name', 'in', ['web_support_client'])]).button_uninstall()
+            env['ir.module.module'].button_immediate_upgrade()
+    return True
 
 
 def upload_backup(
@@ -203,49 +221,49 @@ def test_update_ok():
     return True
 
 
-# def purge_database(args):
-#     """
-#     Lo hacemos en otro env que el run scripts porque si no tenemos un error
-#     que no se arregla ni con commit
-#     Lo ideal seria llevar todo el with a una funcion de afuera
-#     """
+def purge_database(args):
+    """
+    Lo hacemos en otro env que el run scripts porque si no tenemos un error
+    que no se arregla ni con commit
+    Lo ideal seria llevar todo el with a una funcion de afuera
+    """
 
-#     errors = []
-#     suffixs = [
-#         'module', 'model', 'column', 'table', 'menu', 'data', 'property']
+    errors = []
+    suffixs = [
+        'module', 'model', 'column', 'table', 'menu', 'data', 'property']
 
-#     errors = []
-#     # setamos log file (no me anduvo)
-#     # config['logfile'] = log_file
-#     # openerp.cli.server.report_configuration()
-#     # openerp.service.server.start(preload=[], stop=True)
-#     openerp.api.Environment.reset()
-#     with openerp.api.Environment.manage():
-#         # registry = openerp.modules.registry.RegistryManager.get(db_name)
-#         registry = openerp.modules.registry.RegistryManager.new(db_name)
-#         with registry.cursor() as cr:
-#             uid = openerp.SUPERUSER_ID
-#             ctx = openerp.api.Environment(
-#                 cr, uid, {})['res.users'].context_get()
-#             env = openerp.api.Environment(cr, uid, ctx)
+    errors = []
+    # setamos log file (no me anduvo)
+    # config['logfile'] = log_file
+    # openerp.cli.server.report_configuration()
+    # openerp.service.server.start(preload=[], stop=True)
+    openerp.api.Environment.reset()
+    with openerp.api.Environment.manage():
+        # registry = openerp.modules.registry.RegistryManager.get(db_name)
+        registry = openerp.modules.registry.RegistryManager.new(db_name)
+        with registry.cursor() as cr:
+            uid = openerp.SUPERUSER_ID
+            ctx = openerp.api.Environment(
+                cr, uid, {})['res.users'].context_get()
+            env = openerp.api.Environment(cr, uid, ctx)
 
-#             # purgamos bd
-#             for suffix in suffixs:
-#                 _logger.info('Purging model %s' % suffix)
-#                 try:
-#                     env['cleanup.purge.wizard.%s' % suffix].create(
-#                         {}).purge_all()
-#                 except Exception, e:
-#                     errors.append('Error al purgar %s:\n%s' % (suffix, e))
+            # purgamos bd
+            for suffix in suffixs:
+                _logger.info('Purging model %s' % suffix)
+                try:
+                    env['cleanup.purge.wizard.%s' % suffix].create(
+                        {}).purge_all()
+                except Exception, e:
+                    errors.append('Error al purgar %s:\n%s' % (suffix, e))
 
-#                 # esta tabla tiene nombre totalmente distinto
-#                 _logger.info('Purging create_indexes')
-#                 try:
-#                     env['cleanup.create_indexes.wizard'].create(
-#                         {}).purge_all()
-#                 except Exception, e:
-#                     errors.append('Error al purgar %s:\n%s' % (suffix, e))
-#     return errors
+                # esta tabla tiene nombre totalmente distinto
+                _logger.info('Purging create_indexes')
+                try:
+                    env['cleanup.create_indexes.wizard'].create(
+                        {}).purge_all()
+                except Exception, e:
+                    errors.append('Error al purgar %s:\n%s' % (suffix, e))
+    return errors
 
 
 def run_script(args):
@@ -278,12 +296,16 @@ def copy_source_filestore(source_db_filestore):
 
 def update_database():
     _logger.info("Startint database update")
+    # agregamos odoo upgrade primero de todo. No lo agregamos en todo el conf
+    # porque si no despues, cuando corremos fix y demas, termina auto
+    # instalando cosas que no queremos
+    addons_path = 'odoo-upgrade,' + config['addons_path']
     # actualizamos instalando saas client por las sudas
     os.system(
         # "odoo.py --workers=0 --stop-after-init -d %s "
-        "odoo.py --workers=0 --stop-after-init -d %s -u all "
+        "odoo.py --workers=0 --stop-after-init -d %s -u all --addons-path=%s "
         "-i saas_client --without-demo=True --no-xmlrpc --logfile=%s" % (
-            db_name, log_file))
+            db_name, addons_path, log_file))
 
 
 def download_database():
