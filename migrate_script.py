@@ -116,10 +116,9 @@ def main():
 
     errors += run_script(args)
 
-    # NO ME ANDUVO
-    # # al final esto lo hacemos desde el saas upgrade
-    # # purgamos bd
-    errors += purge_database(args)
+    # # al final esto lo hacemos desde el saas upgrade porque nos daba error
+    # # y ademas para tener bd antes de purgar
+    # errors += purge_database(args)
 
     if errors:
         _logger.error(
@@ -138,7 +137,7 @@ def main():
 def upload_backup(
         aws_s3_accessid, aws_s3_accesskey, aws_s3_bucket, account_name):
     _logger.info('Making backup to %s' % aws_s3_bucket)
-    config = openerp.tools.config
+
     config['saas_client.aws_s3_accessid'] = aws_s3_accessid
     config['saas_client.aws_s3_accesskey'] = aws_s3_accesskey
     config['saas_client.aws_s3_bucket'] = aws_s3_bucket
@@ -204,51 +203,53 @@ def test_update_ok():
     return True
 
 
-def purge_database(args):
-    """
-    Lo hacemos en otro env que el run scripts porque si no tenemos un error
-    que no se arregla ni con commit
-    Lo ideal seria llevar todo el with a una funcion de afuera
-    """
-    errors = []
-    suffixs = [
-        'module', 'model', 'column', 'table', 'menu', 'data', 'property']
+# def purge_database(args):
+#     """
+#     Lo hacemos en otro env que el run scripts porque si no tenemos un error
+#     que no se arregla ni con commit
+#     Lo ideal seria llevar todo el with a una funcion de afuera
+#     """
 
-    errors = []
-    # setamos log file (no me anduvo)
-    # config['logfile'] = log_file
-    # openerp.cli.server.report_configuration()
-    # openerp.service.server.start(preload=[], stop=True)
-    openerp.api.Environment.reset()
-    with openerp.api.Environment.manage():
-        # registry = openerp.modules.registry.RegistryManager.get(db_name)
-        registry = openerp.modules.registry.RegistryManager.new(db_name)
-        with registry.cursor() as cr:
-            uid = openerp.SUPERUSER_ID
-            ctx = openerp.api.Environment(
-                cr, uid, {})['res.users'].context_get()
-            env = openerp.api.Environment(cr, uid, ctx)
+#     errors = []
+#     suffixs = [
+#         'module', 'model', 'column', 'table', 'menu', 'data', 'property']
 
-            # purgamos bd
-            for suffix in suffixs:
-                _logger.info('Purging model %s' % suffix)
-                try:
-                    env['cleanup.purge.wizard.%s' % suffix].create(
-                        {}).purge_all()
-                except Exception, e:
-                    errors.append('Error al purgar %s:\n%s' % (suffix, e))
+#     errors = []
+#     # setamos log file (no me anduvo)
+#     # config['logfile'] = log_file
+#     # openerp.cli.server.report_configuration()
+#     # openerp.service.server.start(preload=[], stop=True)
+#     openerp.api.Environment.reset()
+#     with openerp.api.Environment.manage():
+#         # registry = openerp.modules.registry.RegistryManager.get(db_name)
+#         registry = openerp.modules.registry.RegistryManager.new(db_name)
+#         with registry.cursor() as cr:
+#             uid = openerp.SUPERUSER_ID
+#             ctx = openerp.api.Environment(
+#                 cr, uid, {})['res.users'].context_get()
+#             env = openerp.api.Environment(cr, uid, ctx)
 
-                # esta tabla tiene nombre totalmente distinto
-                _logger.info('Purging create_indexes')
-                try:
-                    env['cleanup.create_indexes.wizard'].create(
-                        {}).purge_all()
-                except Exception, e:
-                    errors.append('Error al purgar %s:\n%s' % (suffix, e))
-    return errors
+#             # purgamos bd
+#             for suffix in suffixs:
+#                 _logger.info('Purging model %s' % suffix)
+#                 try:
+#                     env['cleanup.purge.wizard.%s' % suffix].create(
+#                         {}).purge_all()
+#                 except Exception, e:
+#                     errors.append('Error al purgar %s:\n%s' % (suffix, e))
+
+#                 # esta tabla tiene nombre totalmente distinto
+#                 _logger.info('Purging create_indexes')
+#                 try:
+#                     env['cleanup.create_indexes.wizard'].create(
+#                         {}).purge_all()
+#                 except Exception, e:
+#                     errors.append('Error al purgar %s:\n%s' % (suffix, e))
+#     return errors
 
 
 def run_script(args):
+
     # openerp.tools.config.parse_config(args)
     errors = []
     # setamos log file (no me anduvo)
