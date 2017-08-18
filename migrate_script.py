@@ -147,8 +147,10 @@ def uninstall_web_support_client(args):
                 cr, uid, {})['res.users'].context_get()
             env = openerp.api.Environment(cr, uid, ctx)
 
-            env['ir.module.module'].search(
-                [('name', 'in', ['web_support_client'])]).button_uninstall()
+            env['ir.module.module'].search([
+                ('name', 'in', ['web_support_client']),
+                ('state', 'in', ['installed', 'to upgrade'])
+            ]).button_uninstall()
             env['ir.module.module'].button_immediate_upgrade()
     return True
 
