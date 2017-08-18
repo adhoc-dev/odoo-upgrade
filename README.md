@@ -6,14 +6,15 @@
 # ADHOC odoo-upgrade
 
 Ejemplo de uso de script:
-python odoo-upgrade/migrate_script.py  -i xxxxx -t xxxxxxxxxxxxxxxxx -n cliente_mig_id
+python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i xxxxx -t xxxxxxxxxxxxxxxxx -n cliente_mig_id
 
 
 ## TODO:
+    * ver que hacemos y que pasó con esos modulos website_sale_note, website_sale_promotion
     * rever migración de retenciones automaticas (por ej. cudnik)
     * Agregar chequeo si quedó diario de reembolso. Agregar chequeos possubt migracion
-    * ver que hacemos y que pasó con esos modulos product_computed_price_rule, website_sale_note, website_sale_promotion
-    * verificar producto de chat en migraciones
+    * Hacer mig scripts o no (borrar entonces) del website promotion
+    * scripts o lque falte de distribution?
 
 
 ## Observaciones:

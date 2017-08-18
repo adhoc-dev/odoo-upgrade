@@ -594,7 +594,7 @@ new_obsolte_modules = [
     'pxgo_bank_statement_running_balance',
     'resource_usability',
     'sale_order_weight',
-    'sale_other_product_description',
+    # 'sale_other_product_description',
     'sql_request_abstract',
     'sale_partner_shipping_filter_with_customer',
     'salveregina_picking_report',

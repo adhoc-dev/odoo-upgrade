@@ -98,8 +98,12 @@ def run_scripts(env):
 
     # desinstalamos y borramos modulos depreciados
     _logger.info('Uninstalling obsolte modules')
-    env['ir.module.module'].search(
-        [('name', 'in', obsolte_modules)]).button_uninstall()
+    # agregamos control de estados porque odoo no lo controla y los manda a
+    # desinstalar por mas que hayan estado asi y entonces ya los considera
+    # instalados, un desastre jeje
+    env['ir.module.module'].search([
+        ('name', 'in', obsolte_modules),
+        ('state', 'in', ['installed', 'to upgrade'])]).button_uninstall()
     env['ir.module.module'].button_immediate_upgrade()
 
     _logger.info('Unlinking obsolte modules')

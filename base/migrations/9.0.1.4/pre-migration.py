@@ -58,6 +58,7 @@ renamed_modules = {
     # al final no terminamos borrando a este asi que lo desinstalamos en obsolte modules
     # al final no restablecimos porque algunos lo suan
     'account_contract_lines_sequence': 'sale_contract_lines_sequence',
+    'sale_other_product_description': 'product_other_sale_description',
 
     # no lo hacemos asi porque si no no se corre el hool de inicializacion
     # de payment group y no todo el mundo tenia isntalado este modulo
