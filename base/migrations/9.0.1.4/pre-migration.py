@@ -149,9 +149,21 @@ def migrate(cr, version):
     openupgrade.update_module_names(
         cr, renamed_modules.iteritems()
     )
+
+    # hacemos que campo sequence sea de account ya que el merge nos traía un
+    # error con la vista
+    field = 'field_account_journal_sequence'
+    xmlid_renames = [(
+        'account_journal_sequence.%s' % field,
+        'account.%s' % field),
+    ]
+    openupgrade.rename_xmlids(cr, xmlid_renames)
+
     merged_modules = {
+        # al final no lo hacemos asi porque nos da un error con la vista o
+        # algo asi
         # hacemos merge para que al desisntalar no se pierda el campo
-        'account_journal_sequence': 'account',
+        # 'account_journal_sequence': 'account',
         'account_transfer': 'account',
         # no se porque el campo sale_type_id de sale order figuraba como que
         # era de este modulo... (al menos en nicolau)
