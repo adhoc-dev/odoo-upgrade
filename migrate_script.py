@@ -307,7 +307,7 @@ def update_database():
     addons_path = '%s,' % odoo_upgrade_repo + config['addons_path']
     # actualizamos instalando saas client por las sudas
     os.system(
-        # "odoo.py --workers=0 --stop-after-init -d %s "
+        # "odoo.py --workers=0 --stop-after-init -d %s --addons-path=%s "
         "odoo.py --workers=0 --stop-after-init -d %s -u all --addons-path=%s "
         "-i saas_client --without-demo=True --no-xmlrpc --logfile=%s" % (
             db_name, addons_path, log_file))
