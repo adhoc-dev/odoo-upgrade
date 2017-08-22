@@ -10,11 +10,10 @@ python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i xxxxx -t xxxxxxxxxxxx
 
 
 ## TODO:
-    * ver que hacemos y que pasó con esos modulos website_sale_note, website_sale_promotion
+    * ver que hacemos con mig de analytic distribution?
+    * hacer modulo de commissions
     * rever migración de retenciones automaticas (por ej. cudnik)
-    * Agregar chequeo si quedó diario de reembolso. Agregar chequeos possubt migracion
-    * Hacer mig scripts o no (borrar entonces) del website promotion
-    * scripts o lque falte de distribution?
+    * arreglos mig de cmr: 
 
 
 ## Observaciones:

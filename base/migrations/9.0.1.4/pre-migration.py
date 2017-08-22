@@ -187,6 +187,16 @@ def migrate(cr, version):
     )
     delete_all_views(cr)
 
+    # si habia periodos cerrados se migra con lock date y da error al re
+    # calcular, hacemos bypass a dicha funcion ya que el cambio de lock date
+    # no nos funcionó
+    def _check_lock_date(self):
+        return True
+    # desactivamos check contable
+    from openerp.addons.account.models.account_move import AccountMove
+    # original_check_lock_date = AccountMove._check_lock_date
+    AccountMove._check_lock_date = _check_lock_date
+
 
 def delete_all_views(cr):
     """
