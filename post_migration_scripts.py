@@ -1,8 +1,22 @@
 # -*- coding: utf-8 -*-
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 import logging
+import os
+import sys
+import inspect
+# no importamos base directamente porque si no trata de importar otras cosas y
+# da error. Todo este lio para poder usar los obsolote y new obsolote en la
+# mig y acá
+base_path = os.path.dirname(
+    os.path.abspath(inspect.getfile(inspect.currentframe())))
+sys.path.append('%s/%s' % (base_path, 'base'))
+
+
 from obsolte_modules import obsolte_modules
 from new_obsolte_modules import new_obsolte_modules
+
+# from obsolte_modules import obsolte_modules
+# from new_obsolte_modules import new_obsolte_modules
 _logger = logging.getLogger(__name__)
 
 
@@ -62,7 +76,11 @@ def run_scripts(env):
         'project_issue_views_modifications', 'base_debug4all',
         'account_tax_settlement_withholding', 'account_voucher_constraint',
         'web_ir_actions_act_window_none', 'web_shortcuts',
-        'account_voucher_double_validation']
+        'account_voucher_double_validation', 'hr_timesheet_project',
+        'product_uom_prices_currency', 'sale_stock_product_sale_uom',
+        'stock_transfer_lot_filter', 'account_journal_sequence',
+        'account_allow_code_change', 'website_sale_clear_line',
+        'product_uom_prices']
 
     # esto es para generar mensajes de error, mas abajo se borran
     installed_obsoloete = env['ir.module.module'].search([

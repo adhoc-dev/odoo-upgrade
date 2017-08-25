@@ -90,6 +90,21 @@ def migrate(cr, version):
     #     and d.module in ('account_document')
     #     """, ('l10n_ar_%',))
 
+    # esto era para borrar todas las vistas customizadas de vistas modulos
+    # que potencialmente se borran pero todabía no es necesario y no lo
+    # terminamos de testear
+    # from openerp.addons.base.obsolte_modules import obsolte_modules
+    # from openerp.addons.base.new_obsolte_modules import new_obsolte_modules
+    # # desactivamos vistas customizadas
+    # openupgrade.logged_query(cr, """
+    #     DELETE from ir_ui_view where id in (
+    #         SELECT iv.id FROM ir_ui_view iv
+    #         LEFT JOIN(
+    #             SELECT * from ir_model_data imd where imd.model = 'ir.ui.view')
+    #             AS imd ON imd.res_id = iv.id
+    #         WHERE imd.res_id is null and imd.module in %s)
+    # """, (tuple(obsolte_modules + new_obsolte_modules),))
+
     # desactivamos filtros customizados
     openupgrade.logged_query(cr, """
         UPDATE ir_filters SET active = false,
