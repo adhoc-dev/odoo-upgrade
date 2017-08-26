@@ -59,6 +59,7 @@ renamed_modules = {
     # al final no restablecimos porque algunos lo suan
     'account_contract_lines_sequence': 'sale_contract_lines_sequence',
     'sale_other_product_description': 'product_other_sale_description',
+    'website_product_brand': 'website_sale_product_brand',
 
     # no lo hacemos asi porque si no no se corre el hool de inicializacion
     # de payment group y no todo el mundo tenia isntalado este modulo

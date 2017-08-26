@@ -1,12 +1,24 @@
 
 obsolte_modules = [
+    'multi_image_product',
+    'website_product_brand',
+    'home_shop_adds',
+    'website_recaptcha',
+    'theme_rayen_doc',
+    'dynamic_mega_menu',
+    'theme_rayen',
+
     # nuevos modulos que desinstalamos ya que el fix lo mandamos sin uninstall
     # por las dudas
-    'account_fiscal_year'
-    'account_extra_reports'
-    'account_financial_report_qweb'
-    'bi_view_editor'
-    'account_extra_reports'
+    'account_fiscal_year',
+    'account_extra_reports',
+    'account_financial_report_qweb',
+    'bi_view_editor',
+    'account_extra_reports',
+    # algunos nuevos que agregamos
+    'web_group_expand',
+    'account_export_csv',
+    'web_dashboard_open_action',
     # web_widget_color
     # PENDING MIGRATION pero que queremos depreciar
     # a este en realidad dijimos de tratar de no migrar

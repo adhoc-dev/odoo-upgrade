@@ -119,8 +119,9 @@ def run_scripts(env):
     # agregamos control de estados porque odoo no lo controla y los manda a
     # desinstalar por mas que hayan estado asi y entonces ya los considera
     # instalados, un desastre jeje
+    # IMPORTANTE, al final desinstalamos los new_obsolote tmb
     env['ir.module.module'].search([
-        ('name', 'in', obsolte_modules),
+        ('name', 'in', obsolte_modules + new_obsolte_modules),
         ('state', 'in', ['installed', 'to upgrade'])]).button_uninstall()
     env['ir.module.module'].button_immediate_upgrade()
 

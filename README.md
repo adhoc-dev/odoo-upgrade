@@ -10,14 +10,11 @@ python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i xxxxx -t xxxxxxxxxxxx
 
 
 ## TODO:
-    Test
-        metodo de pago cheques de terceros
-        nueva mig de mitrol, sale_usability instalado y desinstalados los que no van.. (ver que otros tenemos que agregar al obsolete modules)
-    * ver otros issues
-    * ver que hacemos con mig de analytic distribution?
+    * arreglar de cedent lo de full reconcile.
+    * migrar cmr en local y ver que tal 16445/brcwrTn1-vYeZ-82FFbVYw cmr
     * hacer modulo de commissions
-    * rever migración de retenciones automaticas (por ej. cudnik)
-    * arreglos mig de cmr: 
+    * ver que hacemos con mig de analytic distribution?
+    * arreglos mig de cmr: https://docs.google.com/spreadsheets/d/1eyzDfr57dW3U8eOV9a4xL6NKHGP0YZBEndyTtIG5vRU/edit
 
 
 ## Observaciones:
