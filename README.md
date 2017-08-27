@@ -10,12 +10,19 @@ python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i xxxxx -t xxxxxxxxxxxx
 
 
 ## TODO:
-    * arreglar de cedent lo de full reconcile.
-    * migrar cmr en local y ver que tal 16445/brcwrTn1-vYeZ-82FFbVYw cmr
+    * cedent:
+        * Logo
+        * Fotos (conservamos módulo demultiples fotos?=)
+        Post script, set show logo
+        cambiar inicio Home shop y ordenear para arriba 
     * hacer modulo de commissions
     * ver que hacemos con mig de analytic distribution?
-    * arreglos mig de cmr: https://docs.google.com/spreadsheets/d/1eyzDfr57dW3U8eOV9a4xL6NKHGP0YZBEndyTtIG5vRU/edit
+        account_voucher_double_validation.field_account_journal_document_sequence_type
+        account_voucher_double_validation.field_account_journal_point_of_sale_number
+        account_voucher_double_validation.field_account_journal_point_of_sale_type
+        l10n_ar_chart_generic_withholding
 
+sudo docker run --rm -ti -w /opt/odoo/ -v /home/jjscarafia/odoo/90/sources/ingadhoc/:/opt/odoo/custom-addons -e SERVER_MODE=migraciones --name odoo-migraciones-local --net=host -e PGUSER=80 -e PGPASSWORD=80 -e PGHOST=localhost adhoc/odoo-ar-e:9.0 /bin/bash
 
 ## Observaciones:
 

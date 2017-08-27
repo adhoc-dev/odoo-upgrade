@@ -23,6 +23,13 @@ _logger = logging.getLogger(__name__)
 def run_scripts(env):
     _logger.info('Running post migration scripts')
 
+    # re cargamos idioma español ar (antes que desinstalar para evitar
+    # errores de cache)
+    _logger.info('Cargando idioma español')
+    wizard = env['base.language.install'].create(
+        {'lang': 'es_AR', 'overwrite': True})
+    wizard.with_context({'active_ids': [wizard.id]}).lang_install()
+
     errors = []
 
     # TODO ESTO LO HACEMOS DESDE SAAS UPGRADE
@@ -152,11 +159,5 @@ def run_scripts(env):
             ('product_template_action', 'product_normal_action_sell',
                 'action_partner_form')
             and module in ('base', 'product'))""")
-
-    # re cargamos idioma español ar
-    _logger.info('Cargando idioma español')
-    wizard = env['base.language.install'].create(
-        {'lang': 'es_AR', 'overwrite': True})
-    wizard.with_context({'active_ids': [wizard.id]}).lang_install()
 
     return errors
