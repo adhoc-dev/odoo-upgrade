@@ -14,7 +14,6 @@ obsolte_modules = [
     'account_extra_reports',
     'account_financial_report_qweb',
     'bi_view_editor',
-    'account_extra_reports',
     # algunos nuevos que agregamos
     'web_group_expand',
     'account_export_csv',

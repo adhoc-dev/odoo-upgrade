@@ -158,7 +158,7 @@ new_obsolte_modules = [
     'base_module_doc_rst',
     'base_other_report_engines',
     'base_partner_always_multi_contacts',
-    'base_usability',
+    # 'base_usability',
     'base_user_reset_access',
     'calendar_default_value',
     'connector',

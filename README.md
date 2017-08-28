@@ -24,6 +24,8 @@ python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i xxxxx -t xxxxxxxxxxxx
 
 sudo docker run --rm -ti -w /opt/odoo/ -v /home/jjscarafia/odoo/90/sources/ingadhoc/:/opt/odoo/custom-addons -e SERVER_MODE=migraciones --name odoo-migraciones-local --net=host -e PGUSER=80 -e PGPASSWORD=80 -e PGHOST=localhost adhoc/odoo-ar-e:9.0 /bin/bash
 
+python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i xxx -t "xxxxxxx" -a xxxx
+
 ## Observaciones:
 
 Tratamos de no usar openupgrade porque:
