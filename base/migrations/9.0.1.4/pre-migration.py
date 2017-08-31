@@ -168,12 +168,20 @@ def migrate(cr, version):
 
     # hacemos que campo sequence sea de account ya que el merge nos traía un
     # error con la vista
-    field = 'field_account_journal_sequence'
-    xmlid_renames = [(
-        'account_journal_sequence.%s' % field,
-        'account.%s' % field),
+    field1 = 'field_account_journal_sequence'
+
+    xmlid_renames = [
+        ('account_journal_sequence.%s' % field1, 'account.%s' % field1),
     ]
     openupgrade.rename_xmlids(cr, xmlid_renames)
+
+    # tambien hacemos que el campo de descuentos pase a ser de sale_contract
+    # lo hacemos asi porque no estamos seguros si odoo nos cambio el nombre
+    # del campo ya..
+    openupgrade.logged_query(cr, """
+        UPDATE ir_model_data set module = 'sale_contract'
+        WHERE module = 'contract_discount' and model='ir.model.fields'
+    """)
 
     merged_modules = {
         # al final no lo hacemos asi porque nos da un error con la vista o
