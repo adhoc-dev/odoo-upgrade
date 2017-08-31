@@ -296,7 +296,7 @@ def run_script(args):
 def copy_source_filestore(source_db_filestore):
     _logger.info("Copy source filestore from %s" % (source_db_filestore))
     filestore = openerp.tools.config.filestore(db_name)
-    copy_tree(source_db_filestore, toDirectory)
+    copy_tree(source_db_filestore, filestore)
     # shutil.copytree(source_db_filestore, filestore)
 
 
