@@ -8,7 +8,8 @@ import base64
 import inspect
 import logging
 import os
-import shutil
+# import shutil
+from distutils.dir_util import copy_tree
 import subprocess
 import post_migration_scripts
 # import tempfile
@@ -97,14 +98,15 @@ def main():
         else:
             data_b64 = base64.encodestring(database_file.read())
 
-        # como copy tree solo permite
+        restoring_database(data_b64)
+
+        # al final primero restauramos y luego copiamos porque si no odoo
+        # lo meto adentro de una carpeta /filestore
         source_db_filestore = args.source_db_filestore
         if source_db_filestore:
             copy_source_filestore(source_db_filestore)
         else:
             _logger.warning("Restore called without source_db_filestore")
-
-        restoring_database(data_b64)
 
     _logger.info("Upgrading with configuration\n%s" % config.options)
 
@@ -294,7 +296,8 @@ def run_script(args):
 def copy_source_filestore(source_db_filestore):
     _logger.info("Copy source filestore from %s" % (source_db_filestore))
     filestore = openerp.tools.config.filestore(db_name)
-    shutil.copytree(source_db_filestore, filestore)
+    copy_tree(source_db_filestore, toDirectory)
+    # shutil.copytree(source_db_filestore, filestore)
 
 
 def update_database():
