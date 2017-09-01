@@ -3,6 +3,7 @@
 new_obsolte_modules = [
     # modulos nuevos
     'logos_setup_data',
+    'account_move_analytic',
     'account_payment_order_to_voucher',
     'account_voucher_cash_basis',
     'account_voucher_display_writeoff',

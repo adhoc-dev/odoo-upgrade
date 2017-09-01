@@ -74,7 +74,8 @@ renamed_modules = {
     'purchase_uom_prices_uoms': 'product_purchase_uom',
     'product_template_search_by_ean13': 'product_template_search_by_barcode',
     'website_sale_l10n_ar_partner': 'l10n_ar_website_sale',
-    'account_move_analytic': 'account_move_line_analytic_filters',
+    # al final depreciamos "account_move_line_analytic_filters"
+    # 'account_move_analytic': 'account_move_line_analytic_filters',
     'account_analytic_purchase_contract': 'purchase_contract',
     # OCA
     'account_financial_report_webkit': 'account_financial_report_qweb',
