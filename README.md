@@ -20,7 +20,7 @@ ingenea:
         cambiar inicio Home shop y ordenear para arriba 
 
 ## Para probar en remoto
-    * sudo docker run --rm -ti -w /opt/odoo/ -e SERVER_MODE=migraciones --link db-migraciones-pentamedia:db -v /opt/odoo/pentamedia/test/data_dir:/opt/odoo/old_data -u root --name odoo-migraciones-pentamedia adhoc/odoo-ar-e:9.0 /bin/bash
+    * sudo docker run --rm -ti -w /opt/odoo/ -e SERVER_MODE=migraciones --link db-migraciones-cedent:db -v /opt/odoo/cedent/test/data_dir:/opt/odoo/old_data -u root --name odoo-migraciones-cedent adhoc/odoo-ar-e:9.0 /bin/bash
 
 ## Para probar en local
     * sudo docker run --rm -ti -w /opt/odoo/ -v /home/jjscarafia/.local/share/Odoo:/opt/odoo/old_data -v /home/jjscarafia/odoo/90/sources/ingadhoc/:/opt/odoo/custom-addons -e SERVER_MODE=migraciones --name odoo-migraciones-local --net=host -e PGUSER=80 -e PGPASSWORD=80 -e PGHOST=localhost adhoc/odoo-ar-e:9.0 /bin/bash

@@ -1,12 +1,12 @@
 
 obsolte_modules = [
-    'multi_image_product',
+    # 'multi_image_product',
     'website_product_brand',
-    'home_shop_adds',
-    'website_recaptcha',
+    # 'home_shop_adds',
+    # 'website_recaptcha',
     'theme_rayen_doc',
-    'dynamic_mega_menu',
-    'theme_rayen',
+    # 'dynamic_mega_menu',
+    # 'theme_rayen',
 
     # nuevos modulos que desinstalamos ya que el fix lo mandamos sin uninstall
     # por las dudas
