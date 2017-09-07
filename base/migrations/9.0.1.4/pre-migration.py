@@ -90,32 +90,41 @@ def borrar_vistas_no_actualizadas_website(cr):
     agregar mas si es necesario, necesitamos esto por posibles errores
     con temas y otros mods que extienden a estas vistas
     """
-    openupgrade.logged_query(cr, """
-        SELECT iv.id FROM ir_ui_view iv
-            LEFT JOIN(
-                SELECT * from ir_model_data imd where imd.model = 'ir.ui.view')
-                AS imd ON imd.res_id = iv.id
-            WHERE imd.module = 'website_sale' and imd.name in
-                ('products', 'confirmation')
-        """)
-    views_read = cr.fetchall()
-    total_views_read_ids = views_read_ids = [x[0] for x in views_read]
-    while views_read:
-        openupgrade.logged_query(cr, """
-            SELECT id FROM ir_ui_view WHERE inherit_id in %s
-            """, (tuple(views_read_ids),))
-        views_read = cr.fetchall()
-        views_read_ids = [x[0] for x in views_read]
-        total_views_read_ids += views_read_ids
 
-    if total_views_read_ids:
-        openupgrade.logged_query(cr, """
-            DELETE from ir_ui_view where id in %s
-            """, (tuple(total_views_read_ids),))
-        openupgrade.logged_query(cr, """
-            DELETE from ir_model_data
-            where res_id in %s and model = 'ir.ui.view'
-            """, (tuple(total_views_read_ids),))
+    # al final simplemente obligamos a recargar estas vistas (nativamente son
+    # actualizables salvo que se hayan customizado, forzamos que se pisen)
+    openupgrade.logged_query(cr, """
+        UPDATE ir_model_data SET noupdate = false
+        WHERE model = 'ir.ui.view' and module = 'website_sale'
+            and name in ('products', 'confirmation')
+    """)
+
+    # openupgrade.logged_query(cr, """
+    #     SELECT iv.id FROM ir_ui_view iv
+    #         LEFT JOIN(
+    #             SELECT * from ir_model_data imd where imd.model = 'ir.ui.view')
+    #             AS imd ON imd.res_id = iv.id
+    #         WHERE imd.module = 'website_sale' and imd.name in
+    #             ('products', 'confirmation')
+    #     """)
+    # views_read = cr.fetchall()
+    # total_views_read_ids = views_read_ids = [x[0] for x in views_read]
+    # while views_read:
+    #     openupgrade.logged_query(cr, """
+    #         SELECT id FROM ir_ui_view WHERE inherit_id in %s
+    #         """, (tuple(views_read_ids),))
+    #     views_read = cr.fetchall()
+    #     views_read_ids = [x[0] for x in views_read]
+    #     total_views_read_ids += views_read_ids
+
+    # if total_views_read_ids:
+    #     openupgrade.logged_query(cr, """
+    #         DELETE from ir_ui_view where id in %s
+    #         """, (tuple(total_views_read_ids),))
+    #     openupgrade.logged_query(cr, """
+    #         DELETE from ir_model_data
+    #         where res_id in %s and model = 'ir.ui.view'
+    #         """, (tuple(total_views_read_ids),))
 
 
 @openupgrade.migrate()
