@@ -96,8 +96,9 @@ def borrar_vistas_no_actualizadas_website(cr):
     openupgrade.logged_query(cr, """
         UPDATE ir_model_data SET noupdate = false
         WHERE model = 'ir.ui.view' and module = 'website_sale'
-            and name in ('products', 'confirmation')
     """)
+    # al final restablecemos todas las vistas de website_sale
+    # and name in ('products', 'confirmation')
 
     # openupgrade.logged_query(cr, """
     #     SELECT iv.id FROM ir_ui_view iv
