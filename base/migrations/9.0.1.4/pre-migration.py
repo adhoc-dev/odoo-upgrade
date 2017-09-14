@@ -237,9 +237,13 @@ def migrate(cr, version):
         # hacemos merge para que al desisntalar no se pierda el campo
         # 'account_journal_sequence': 'account',
         'account_transfer': 'account',
+        # al final sacamos esto porque parece que fue solo de nicolau
+        # y nos trajo problemas con otros que le instalaba y luego
+        # borraba este modulo
         # no se porque el campo sale_type_id de sale order figuraba como que
         # era de este modulo... (al menos en nicolau)
-        'inter_company_move': 'sale_order_type',
+        # 'inter_company_move': 'sale_order_type',
+
         # renombraado a nuestro stock usability
         'stock_product_move': 'stock_usability',
         # por las dudas de que figure que el campo employee es de
