@@ -244,19 +244,27 @@ def migrate(cr, version):
         # era de este modulo... (al menos en nicolau)
         # 'inter_company_move': 'sale_order_type',
 
-        # renombraado a nuestro stock usability
-        'stock_product_move': 'stock_usability',
         # por las dudas de que figure que el campo employee es de
         # partner_employee
         'partner_employee': 'base',
         # al final no quedaba instalado, mejor desinstalamos el primero
         # directamente
         # 'account_journal_book': 'account_journal_book_report',
-        'mass_mailing_keep_archives': 'mass_mailing',
+
         'l10n_ar_bank_cbu': 'l10n_ar_bank',
-        'sipreco_public_budget': 'public_budget',
-        'sipreco_setup_data_cmd': 'public_budget',
-        'sipreco_setup_data_tmc': 'public_budget',
+
+        # NUEVO al 24/10, el merge modules fuerza la instalacion, no tiene
+        # en cuenta si estaba instalado o no, por eso sacamos estos que no son
+        # críticos, en realidad queremos revisar bien el error y hacerlo andar
+        # bien o agregar chequeo de si están instalados o no
+
+        # 'mass_mailing_keep_archives': 'mass_mailing',
+        # 'sipreco_public_budget': 'public_budget',
+        # 'sipreco_setup_data_cmd': 'public_budget',
+        # 'sipreco_setup_data_tmc': 'public_budget',
+
+        # renombraado a nuestro stock usability
+        # 'stock_product_move': 'stock_usability',
     }
     openupgrade.update_module_names(
         cr, merged_modules.iteritems(), merge_modules=True,
