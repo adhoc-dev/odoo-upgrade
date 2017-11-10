@@ -2,6 +2,7 @@
 # env['ir.module.module'].search([('name', 'in', new_obsolete), ('state', 'in', ['uninstalled', 'uninstallable'])]).unlink()
 new_obsolte_modules = [
     # modulos nuevos
+    'project_task_contract',
     'logos_setup_data',
     'account_move_analytic',
     'account_payment_order_to_voucher',
