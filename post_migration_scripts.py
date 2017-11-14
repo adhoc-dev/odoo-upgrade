@@ -133,8 +133,9 @@ def run_scripts(env):
     env['ir.module.module'].button_immediate_upgrade()
 
     _logger.info('Unlinking obsolte modules')
-    env['ir.module.module'].search(
-        [('name', 'in', obsolte_modules)]).unlink()
+    env['ir.module.module'].search([
+        ('name', 'in', obsolte_modules),
+        ('state', 'in', ['uninstalled', 'uninstallable'])]).unlink()
 
     # nuevo para limpiar mas modulos
     _logger.info('Unlinking new obsolte modules')
