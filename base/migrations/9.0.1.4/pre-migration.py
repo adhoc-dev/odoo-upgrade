@@ -237,6 +237,7 @@ def migrate(cr, version):
         # hacemos merge para que al desisntalar no se pierda el campo
         # 'account_journal_sequence': 'account',
         'account_transfer': 'account',
+
         # al final sacamos esto porque parece que fue solo de nicolau
         # y nos trajo problemas con otros que le instalaba y luego
         # borraba este modulo
@@ -245,30 +246,30 @@ def migrate(cr, version):
         # 'inter_company_move': 'sale_order_type',
 
         # por las dudas de que figure que el campo employee es de
-        # partner_employee
         'partner_employee': 'base',
+
         # al final no quedaba instalado, mejor desinstalamos el primero
         # directamente
         # 'account_journal_book': 'account_journal_book_report',
 
         'l10n_ar_bank_cbu': 'l10n_ar_bank',
 
-        # NUEVO al 24/10, el merge modules fuerza la instalacion, no tiene
-        # en cuenta si estaba instalado o no, por eso sacamos estos que no son
-        # críticos, en realidad queremos revisar bien el error y hacerlo andar
-        # bien o agregar chequeo de si están instalados o no
+        'mass_mailing_keep_archives': 'mass_mailing',
+        'sipreco_public_budget': 'public_budget',
+        'sipreco_setup_data_cmd': 'public_budget',
+        'sipreco_setup_data_tmc': 'public_budget',
 
-        # 'mass_mailing_keep_archives': 'mass_mailing',
-        # 'sipreco_public_budget': 'public_budget',
-        # 'sipreco_setup_data_cmd': 'public_budget',
-        # 'sipreco_setup_data_tmc': 'public_budget',
-
-        # renombraado a nuestro stock usability
+        # renombraado a nuestro stock usability, no lo hacemos porque
+        # ya existía un stock usability y lo estamos sacando, no es critico
         # 'stock_product_move': 'stock_usability',
     }
-    openupgrade.update_module_names(
-        cr, merged_modules.iteritems(), merge_modules=True,
-    )
+    # solo hacemos merge si el modulo estaba instalado, esto porque si no odoo
+    # lo instala pero no queriamos que lo haga
+    for (old_name, new_name) in merged_modules.iteritems():
+        if openupgrade.is_module_installed(old_name):
+            openupgrade.update_module_names(
+                cr, [(old_name, new_name)], merge_modules=True,
+            )
     delete_all_views(cr)
 
     # si habia periodos cerrados se migra con lock date y da error al re
