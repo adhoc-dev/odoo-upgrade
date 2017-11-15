@@ -266,7 +266,7 @@ def migrate(cr, version):
     # solo hacemos merge si el modulo estaba instalado, esto porque si no odoo
     # lo instala pero no queriamos que lo haga
     for (old_name, new_name) in merged_modules.iteritems():
-        if openupgrade.is_module_installed(old_name):
+        if openupgrade.is_module_installed(cr, old_name):
             openupgrade.update_module_names(
                 cr, [(old_name, new_name)], merge_modules=True,
             )
