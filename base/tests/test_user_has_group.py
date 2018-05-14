@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import odoo.tests
 
 class TestHasGroup(odoo.tests.TransactionCase):

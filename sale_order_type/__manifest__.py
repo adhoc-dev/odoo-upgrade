@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright 2015 Carlos Sánchez Cifuentes <csanchez@grupovermon.com>
 # Copyright 2015-2016 Oihane Crucelaegui <oihane@avanzosc.com>
 # Copyright 2015-2016 Pedro M. Baeza <pedro.baeza@tecnativa.com>

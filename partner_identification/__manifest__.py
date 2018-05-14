@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # © 2004-2010 Tiny SPRL http://tiny.be
 # © 2010-2012 ChriCar Beteiligungs- und Beratungs- GmbH

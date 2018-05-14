@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # This assumes an existing but uninitialized database.
 import unittest
 

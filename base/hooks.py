@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from odoo.modules import loading
 from odoo.modules.loading import load_module_graph
 # from odoo.modules.registry import RegistryManager

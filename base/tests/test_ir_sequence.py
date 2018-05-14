@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Run with one of these commands:
 #    > OPENERP_ADDONS_PATH='../../addons/trunk' OPENERP_PORT=8069 \
 #      OPENERP_DATABASE=yy PYTHONPATH=. python tests/test_ir_sequence.py
