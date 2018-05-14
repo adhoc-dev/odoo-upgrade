@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<openerp>
+<odoo>
     <data>
 
         <!-- menu_create from model form -->
@@ -557,4 +557,4 @@
         <menuitem action="ir_access_act" id="menu_ir_access_act" parent="base.menu_security"/>
 
     </data>
-</openerp>
+</odoo>

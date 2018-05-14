@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<openerp>
+<odoo>
     <data noupdate="0">
 
     <record model="ir.rule" id="sale_order_type_comp_rule">
@@ -13,5 +13,5 @@
     </record>
 
     </data>
-</openerp>
+</odoo>
 

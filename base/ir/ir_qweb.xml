@@ -1,4 +1,4 @@
-<openerp>
+<odoo>
 <data>
 <template id="contact">
     <address t-ignore="true" class="mb0" itemscope="itemscope" itemtype="http://schema.org/Organization">
@@ -37,4 +37,4 @@
     </address>
 </template>
  </data>
-</openerp>
+</odoo>

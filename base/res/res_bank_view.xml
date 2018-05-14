@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<openerp>
+<odoo>
     <data>
 
         <menuitem id="menu_config_bank_accounts" name="Bank Accounts" parent="base.menu_config_address_book" sequence="6" groups="base.group_no_one"/>
@@ -116,5 +116,5 @@
         <menuitem action="action_res_partner_bank_account_form" id="menu_action_res_partner_bank_form" parent="base.menu_config_bank_accounts" groups="base.group_no_one" sequence="2"/>
 
     </data>
-</openerp>
+</odoo>
 

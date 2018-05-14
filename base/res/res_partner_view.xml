@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<openerp>
+<odoo>
     <data>
 
         <!-- Top menu item -->
@@ -569,4 +569,4 @@
         <menuitem action="action_partner_category_form" id="menu_partner_category_form" name="Contact Tags" sequence="1" parent="menu_config_address_book" groups="base.group_no_one"/>
 
     </data>
-</openerp>
+</odoo>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<openerp>
+<odoo>
     <data>
 
         <!-- ir.actions -->
@@ -584,4 +584,4 @@ if config.get('type') not in ('ir.actions.act_window_close',):
         </record>
 
     </data>
-</openerp>
+</odoo>
