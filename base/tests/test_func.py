@@ -2,8 +2,8 @@
 import functools
 import unittest
 
-from openerp.tools.func import compose
-from openerp.tools import frozendict
+from odoo.tools.func import compose
+from odoo.tools import frozendict
 
 class TestCompose(unittest.TestCase):
     def test_basic(self):

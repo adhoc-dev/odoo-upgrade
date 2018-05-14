@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 import functools
 
-from openerp import exceptions
-from openerp.tests import common
+from odoo import exceptions
+from odoo.tests import common
 
 def noid(d):
     """ Removes values that are not relevant for the test comparisons """
@@ -276,7 +276,7 @@ class TestGlobalDefaults(FiltersCase):
             dict(name='b', user_id=False, is_default=True, domain='[]', context=context_value, sort='[]'),
         ])
 
-from openerp.tests.common import TransactionCase
+from odoo.tests.common import TransactionCase
 
 class TestReadGroup(TransactionCase):
     """Test function read_group with groupby on a many2one field to a model

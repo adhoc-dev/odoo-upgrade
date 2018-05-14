@@ -4,7 +4,7 @@ from lxml import etree
 from StringIO import StringIO
 import unittest
 
-from openerp.tools.view_validation import (valid_page_in_book, valid_att_in_form, valid_type_in_colspan,
+from odoo.tools.view_validation import (valid_page_in_book, valid_att_in_form, valid_type_in_colspan,
                                            valid_type_in_col, valid_att_in_field, valid_att_in_label,
                                            valid_field_in_graph, valid_field_in_tree
                                            )

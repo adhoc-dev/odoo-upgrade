@@ -6,10 +6,10 @@ import base64
 import logging
 from tempfile import TemporaryFile
 
-from openerp import tools
-from openerp.osv import osv, fields
-from openerp.exceptions import UserError
-from openerp.tools.translate import _
+from odoo import tools
+from odoo.osv import osv, fields
+from odoo.exceptions import UserError
+from odoo.tools.translate import _
 
 _logger = logging.getLogger(__name__)
 

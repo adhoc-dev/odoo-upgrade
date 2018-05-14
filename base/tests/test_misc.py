@@ -1,6 +1,6 @@
 import unittest
 
-from openerp.tools import misc
+from odoo.tools import misc
 
 
 class test_countingstream(unittest.TestCase):

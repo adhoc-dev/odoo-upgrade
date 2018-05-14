@@ -8,9 +8,9 @@ import uuid
 import datetime
 import logging
 
-from openerp import SUPERUSER_ID
-from openerp.osv import osv, fields
-from openerp.tools import misc, config, ormcache, mute_logger
+from odoo import SUPERUSER_ID
+from odoo.osv import osv, fields
+from odoo.tools import misc, config, ormcache, mute_logger
 
 _logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class ir_config_parameter(osv.osv):
         ('key_uniq', 'unique (key)', 'Key must be unique.')
     ]
 
-    @mute_logger('openerp.addons.base.ir.ir_config_parameter')
+    @mute_logger('odoo.addons.base.ir.ir_config_parameter')
     def init(self, cr, force=False):
         """
         Initializes the parameters listed in _default_parameters.

@@ -13,20 +13,20 @@ import re
 import smtplib
 import threading
 
-from openerp import SUPERUSER_ID
-from openerp.osv import osv, fields
-from openerp.tools.translate import _
-from openerp.tools import html2text
-import openerp.tools as tools
-from openerp.exceptions import UserError
-from openerp.exceptions import except_orm
+from odoo import SUPERUSER_ID
+from odoo.osv import osv, fields
+from odoo.tools.translate import _
+from odoo.tools import html2text
+import odoo.tools as tools
+from odoo.exceptions import UserError
+from odoo.exceptions import except_orm
 
 # ustr was originally from tools.misc.
 # it is moved to loglevels until we refactor tools.
-from openerp.loglevels import ustr
+from odoo.loglevels import ustr
 
 _logger = logging.getLogger(__name__)
-_test_logger = logging.getLogger('openerp.tests')
+_test_logger = logging.getLogger('odoo.tests')
 
 
 class MailDeliveryException(except_orm):

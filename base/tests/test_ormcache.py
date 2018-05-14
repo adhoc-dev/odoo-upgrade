@@ -1,6 +1,6 @@
 
-from openerp.tests import common
-from openerp.tools import get_cache_key_counter
+from odoo.tests import common
+from odoo.tools import get_cache_key_counter
 
 class TestOrmcache(common.TransactionCase):
     def test_ormcache(self):

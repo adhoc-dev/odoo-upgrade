@@ -1,7 +1,7 @@
 import unittest
 
-import openerp.tests.common as common
-from openerp.exceptions import ValidationError
+import odoo.tests.common as common
+from odoo.exceptions import ValidationError
 
 class test_base(common.TransactionCase):
 

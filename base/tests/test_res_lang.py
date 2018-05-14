@@ -1,11 +1,11 @@
 import unittest
 
-import openerp.tests.common as common
+import odoo.tests.common as common
 
 class test_res_lang(common.TransactionCase):
 
     def test_00_intersperse(self):
-        from openerp.addons.base.res.res_lang import intersperse
+        from odoo.addons.base.res.res_lang import intersperse
 
         assert intersperse("", []) == ("", 0)
         assert intersperse("0", []) == ("0", 0)

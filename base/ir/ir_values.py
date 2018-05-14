@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
-from openerp import tools
-from openerp.osv import osv, fields
-from openerp.exceptions import AccessError, MissingError
-from openerp.tools.translate import _
-from openerp.tools import pickle
+from odoo import tools
+from odoo.osv import osv, fields
+from odoo.exceptions import AccessError, MissingError
+from odoo.tools.translate import _
+from odoo.tools import pickle
 
 EXCLUDED_FIELDS = set((
     'report_sxw_content', 'report_rml_content', 'report_sxw', 'report_rml',
@@ -70,15 +70,15 @@ class ir_values(osv.osv):
        users, and set by their UI clients calling :meth:`~.set_default`.
        These default values are then automatically used by the
        ORM every time a new record is about to be created, i.e. when
-       :meth:`~openerp.osv.osv.osv.default_get`
-       or :meth:`~openerp.osv.osv.osv.create` are called.
+       :meth:`~odoo.osv.osv.osv.default_get`
+       or :meth:`~odoo.osv.osv.osv.create` are called.
 
        .. rubric:: Usage: action bindings
 
        Business applications will usually bind their actions during
        installation, and OpenERP UI clients will apply them as defined,
        based on the list of actions included in the result of
-       :meth:`~openerp.osv.osv.osv.fields_view_get`,
+       :meth:`~odoo.osv.osv.osv.fields_view_get`,
        or directly returned by explicit calls to :meth:`~.get_actions`.
     """
     _name = 'ir.values'
@@ -387,7 +387,7 @@ class ir_values(osv.osv):
                     where ``id`` is the ID of the default entry, ``name`` is the
                     action label, and ``action_def`` is a dict containing the
                     action definition as obtained by calling
-                    :meth:`~openerp.osv.osv.osv.read` on the action record.
+                    :meth:`~odoo.osv.osv.osv.read` on the action record.
         """
         assert action_slot in ACTION_SLOTS, 'Illegal action slot value: %s' % action_slot
         # use a direct SQL query for performance reasons,

@@ -7,16 +7,16 @@ import re
 import time
 import types
 
-import openerp
-from openerp import SUPERUSER_ID
-from openerp import models, tools, api
-from openerp.modules.registry import RegistryManager
-from openerp.osv import fields, osv
-from openerp.osv.orm import BaseModel, Model, MAGIC_COLUMNS
-from openerp.exceptions import UserError, AccessError
-from openerp.tools import config
-from openerp.tools.safe_eval import safe_eval as eval
-from openerp.tools.translate import _
+import odoo
+from odoo import SUPERUSER_ID
+from odoo import models, tools, api
+from odoo.modules.registry import RegistryManager
+from odoo.osv import fields, osv
+from odoo.osv.orm import BaseModel, Model, MAGIC_COLUMNS
+from odoo.exceptions import UserError, AccessError
+from odoo.tools import config
+from odoo.tools.safe_eval import safe_eval as eval
+from odoo.tools.translate import _
 
 _logger = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ class ir_model(osv.osv):
         res = super(ir_model, self).unlink(cr, user, ids, context)
         if not context.get(MODULE_UNINSTALL_FLAG):
             # only reload pool for normal unlink. For module uninstall the
-            # reload is done independently in openerp.modules.loading
+            # reload is done independently in odoo.modules.loading
             cr.commit() # must be committed before reloading registry in new cursor
             api.Environment.reset()
             RegistryManager.new(cr.dbname)
@@ -640,7 +640,7 @@ class ir_model_constraint(Model):
                 table = self.pool[model]._table
             else:
                 table = model.replace('.', '_')
-            name = openerp.tools.ustr(data.name)
+            name = odoo.tools.ustr(data.name)
             typ = data.type
 
             # double-check we are really going to delete all the owners of this schema element
@@ -699,7 +699,7 @@ class ir_model_relation(Model):
         ids.reverse()
         for data in self.browse(cr, uid, ids, context):
             model = data.model
-            name = openerp.tools.ustr(data.name)
+            name = odoo.tools.ustr(data.name)
 
             # double-check we are really going to delete all the owners of this schema element
             cr.execute("""SELECT id from ir_model_relation where name = %s""", (data.name,))
@@ -862,7 +862,7 @@ class ir_model_access(osv.osv):
                 msg_params = (model_name,)
             _logger.info('Access Denied by ACLs for operation: %s, uid: %s, model: %s', mode, uid, model_name)
             msg = '%s %s' % (msg_heads[mode], msg_tail)
-            raise openerp.exceptions.AccessError(msg % msg_params)
+            raise odoo.exceptions.AccessError(msg % msg_params)
         return bool(r)
 
     __cache_clearing_methods = []
@@ -1190,7 +1190,7 @@ class ir_model_data(osv.osv):
         return res_id
 
     def ir_set(self, cr, uid, key, key2, name, models, value, replace=True, isobject=False, meta=None, xml_id=False):
-        ir_values_obj = openerp.registry(cr.dbname)['ir.values']
+        ir_values_obj = odoo.registry(cr.dbname)['ir.values']
         ir_values_obj.set(cr, uid, key, key2, name, models, value, replace, isobject, meta)
         return True
 
@@ -1237,7 +1237,7 @@ class ir_model_data(osv.osv):
 
         for model,res_id in wkf_todo:
             try:
-                openerp.workflow.trg_write(uid, model, res_id, cr)
+                odoo.workflow.trg_write(uid, model, res_id, cr)
             except Exception:
                 _logger.info('Unable to force processing of workflow for item %s@%s in order to leave activity to be deleted', res_id, model, exc_info=True)
 
@@ -1255,7 +1255,7 @@ class ir_model_data(osv.osv):
                         _logger.info('Deleting orphan external_ids %s', external_ids)
                         self.unlink(cr, uid, external_ids)
                         continue
-                    if field.name in openerp.models.LOG_ACCESS_COLUMNS and field.model in self.pool and self.pool[field.model]._log_access:
+                    if field.name in odoo.models.LOG_ACCESS_COLUMNS and field.model in self.pool and self.pool[field.model]._log_access:
                         continue
                     if field.name == 'id':
                         continue

@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
 import re
-from openerp.osv import fields, osv
+from odoo.osv import fields, osv
 
 
 def location_name_search(self, cr, user, name='', args=None, operator='ilike',

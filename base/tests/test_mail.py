@@ -8,7 +8,7 @@ import cgi
 import lxml
 import unittest
 
-from openerp.tools import html_sanitize, html_email_clean, append_content_to_html, plaintext2html, email_split
+from odoo.tools import html_sanitize, html_email_clean, append_content_to_html, plaintext2html, email_split
 import test_mail_examples
 
 

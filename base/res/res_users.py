@@ -8,17 +8,17 @@ from itertools import repeat
 from lxml import etree
 from lxml.builder import E
 
-import openerp
-from openerp import api
-from openerp import SUPERUSER_ID, models
-from openerp import tools
-import openerp.exceptions
-from openerp import api
-from openerp.osv import fields, osv, expression
-from openerp.service.db import check_super
-from openerp.tools.translate import _
-from openerp.http import request
-from openerp.exceptions import UserError
+import odoo
+from odoo import api
+from odoo import SUPERUSER_ID, models
+from odoo import tools
+import odoo.exceptions
+from odoo import api
+from odoo.osv import fields, osv, expression
+from odoo.service.db import check_super
+from odoo.tools.translate import _
+from odoo.http import request
+from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -211,10 +211,10 @@ class res_users(osv.osv):
 
     # overridden inherited fields to bypass access rights, in case you have
     # access to the user but not its corresponding partner
-    name = openerp.fields.Char(related='partner_id.name', inherited=True)
-    email = openerp.fields.Char(related='partner_id.email', inherited=True)
-    log_ids = openerp.fields.One2many('res.users.log', 'create_uid', string='User log entries')
-    login_date = openerp.fields.Datetime(related='log_ids.create_date', string='Latest connection')
+    name = odoo.fields.Char(related='partner_id.name', inherited=True)
+    email = odoo.fields.Char(related='partner_id.email', inherited=True)
+    log_ids = odoo.fields.One2many('res.users.log', 'create_uid', string='User log entries')
+    login_date = odoo.fields.Datetime(related='log_ids.create_date', string='Latest connection')
 
     def on_change_login(self, cr, uid, ids, login, context=None):
         if login and tools.single_email_re.match(login):
@@ -317,7 +317,7 @@ class res_users(osv.osv):
         if uid != SUPERUSER_ID:
             groupby_fields = set([groupby] if isinstance(groupby, basestring) else groupby)
             if groupby_fields.intersection(USER_PRIVATE_FIELDS):
-                raise openerp.exceptions.AccessError('Invalid groupby')
+                raise odoo.exceptions.AccessError('Invalid groupby')
         return super(res_users, self).read_group(
             cr, uid, domain, fields, groupby, offset=offset, limit=limit, context=context, orderby=orderby, lazy=lazy)
 
@@ -326,7 +326,7 @@ class res_users(osv.osv):
             domain_terms = [term for term in args if isinstance(term, (tuple, list))]
             domain_fields = set(left for (left, op, right) in domain_terms)
             if domain_fields.intersection(USER_PRIVATE_FIELDS):
-                raise openerp.exceptions.AccessError('Invalid search criterion')
+                raise odoo.exceptions.AccessError('Invalid search criterion')
         return super(res_users, self)._search(
             cr, user, args, offset=offset, limit=limit, order=order, context=context, count=count,
             access_rights_uid=access_rights_uid)
@@ -443,7 +443,7 @@ class res_users(osv.osv):
         """ Override this method to plug additional authentication methods"""
         res = self.search(cr, SUPERUSER_ID, [('id','=',uid),('password','=',password)])
         if not res:
-            raise openerp.exceptions.AccessDenied()
+            raise odoo.exceptions.AccessDenied()
 
     def _update_last_login(self, cr, uid):
         # only create new records to avoid any side-effect on concurrent transactions
@@ -461,7 +461,7 @@ class res_users(osv.osv):
                     user_id = res[0]
                     self.check_credentials(cr, user_id, password)
                     self._update_last_login(cr, user_id)
-        except openerp.exceptions.AccessDenied:
+        except odoo.exceptions.AccessDenied:
             _logger.info("Login failed for db:%s login:%s", db, login)
             user_id = False
         return user_id
@@ -478,7 +478,7 @@ class res_users(osv.osv):
                relevant environment attributes
         """
         uid = self._login(db, login, password)
-        if uid == openerp.SUPERUSER_ID:
+        if uid == odoo.SUPERUSER_ID:
             # Successfully logged in as admin!
             # Attempt to guess the web base url...
             if user_agent_env and user_agent_env.get('base_location'):
@@ -500,7 +500,7 @@ class res_users(osv.osv):
            raise an exception if it is not."""
         if not passwd:
             # empty passwords disallowed for obvious security reasons
-            raise openerp.exceptions.AccessDenied()
+            raise odoo.exceptions.AccessDenied()
         db = self.pool.db_name
         if self.__uid_cache.setdefault(db, {}).get(uid) == passwd:
             return
@@ -517,8 +517,8 @@ class res_users(osv.osv):
         password is not used to authenticate requests.
 
         :return: True
-        :raise: openerp.exceptions.AccessDenied when old password is wrong
-        :raise: openerp.exceptions.UserError when new password is not set or empty
+        :raise: odoo.exceptions.AccessDenied when old password is wrong
+        :raise: odoo.exceptions.UserError when new password is not set or empty
         """
         self.check(cr.dbname, uid, old_passwd)
         if new_passwd:
@@ -570,7 +570,7 @@ class res_users(osv.osv):
 
     @api.multi
     def _is_admin(self):
-        return self.id == openerp.SUPERUSER_ID or self.sudo(self).has_group('base.group_erp_manager')
+        return self.id == odoo.SUPERUSER_ID or self.sudo(self).has_group('base.group_erp_manager')
 
     def get_company_currency_id(self, cr, uid, context=None):
         return self.browse(cr, uid, uid, context=context).company_id.currency_id.id

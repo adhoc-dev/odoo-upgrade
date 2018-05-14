@@ -5,14 +5,14 @@ import logging
 from operator import attrgetter
 import re
 
-import openerp
-from openerp import SUPERUSER_ID
-from openerp.osv import osv, fields
-from openerp.tools import ustr
-from openerp.tools.translate import _
-from openerp import exceptions
+import odoo
+from odoo import SUPERUSER_ID
+from odoo.osv import osv, fields
+from odoo.tools import ustr
+from odoo.tools.translate import _
+from odoo import exceptions
 from lxml import etree
-from openerp.exceptions import UserError
+from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -543,7 +543,7 @@ class res_config_settings(osv.osv_memory, res_config_module_installation_mixin):
 
         context = dict(context, active_test=False)
         if not self.pool['res.users']._is_admin(cr, uid, [uid]):
-            raise openerp.exceptions.AccessError(_("Only administrators can change the settings"))
+            raise odoo.exceptions.AccessError(_("Only administrators can change the settings"))
 
         ir_values = self.pool['ir.values']
         ir_module = self.pool['ir.module.module']
@@ -594,7 +594,7 @@ class res_config_settings(osv.osv_memory, res_config_module_installation_mixin):
 
         # After the uninstall/install calls, the self.pool is no longer valid.
         # So we reach into the RegistryManager directly.
-        res_config = openerp.modules.registry.Registry(cr.dbname)['res.config']
+        res_config = odoo.modules.registry.Registry(cr.dbname)['res.config']
         config = res_config.next(cr, uid, [], context=context) or {}
         if config.get('type') not in ('ir.actions.act_window_close',):
             return config
@@ -672,7 +672,7 @@ class res_config_settings(osv.osv_memory, res_config_module_installation_mixin):
 
         Example of use:
         ---------------
-        from openerp.addons.base.res.res_config import get_warning_config
+        from odoo.addons.base.res.res_config import get_warning_config
         raise get_warning_config(cr, _("Error: this action is prohibited. You should check the field %(field:sale.config.settings.fetchmail_lead)s in %(menu:base.menu_sale_config)s."), context=context)
 
         This will return an exception containing the following message:
@@ -687,7 +687,7 @@ class res_config_settings(osv.osv_memory, res_config_module_installation_mixin):
             Cannot find any account journal of %s type for this company.\n\nYou can create one in the %%(menu:account.menu_account_config)s.
         """
 
-        res_config_obj = openerp.registry(cr.dbname)['res.config.settings']
+        res_config_obj = odoo.registry(cr.dbname)['res.config.settings']
         regex_path = r'%\(((?:menu|field):[a-z_\.]*)\)s'
 
         # Process the message

@@ -2,9 +2,9 @@
 
 import re
 
-from openerp import api, fields, models, _
-from openerp.osv import expression
-from openerp.exceptions import UserError
+from odoo import api, fields, models, _
+from odoo.osv import expression
+from odoo.exceptions import UserError
 
 def sanitize_account_number(acc_number):
     if acc_number:

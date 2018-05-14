@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
-from openerp.service import db
-from openerp.tools import config
-import openerp
+from odoo.service import db
+from odoo.tools import config
+import odoo
 import argparse
 import base64
 import logging
@@ -58,15 +58,15 @@ def main():
     args = parser.parse_args()
 
     # get env
-    openerp.cli.server.report_configuration()
-    openerp.service.server.start(preload=[], stop=True)
-    with openerp.api.Environment.manage():
-        registry = openerp.modules.registry.Registry(db_name)
+    odoo.cli.server.report_configuration()
+    odoo.service.server.start(preload=[], stop=True)
+    with odoo.api.Environment.manage():
+        registry = odoo.modules.registry.Registry(db_name)
         with registry.cursor() as cr:
-            uid = openerp.SUPERUSER_ID
-            ctx = openerp.api.Environment(
+            uid = odoo.SUPERUSER_ID
+            ctx = odoo.api.Environment(
                 cr, uid, {})['res.users'].context_get()
-            env = openerp.api.Environment(cr, uid, ctx)
+            env = odoo.api.Environment(cr, uid, ctx)
 
             errors += pre_migration_checks()
             errors += pre_migration_scripts()

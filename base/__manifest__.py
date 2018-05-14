@@ -10,7 +10,7 @@
 The kernel of OpenERP, needed for all installation.
 ===================================================
 """,
-    'website': 'http://www.openerp.com',
+    'website': 'http://www.odoo.com',
     'depends': [],
     'data': [
         'base_data.xml',

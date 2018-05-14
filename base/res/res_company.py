@@ -3,12 +3,12 @@
 
 import os
 import re
-import openerp
-from openerp import SUPERUSER_ID, tools, api
-from openerp.osv import fields, osv
-from openerp.tools.translate import _
-from openerp.tools.safe_eval import safe_eval as eval
-from openerp.tools import image_resize_image
+import odoo
+from odoo import SUPERUSER_ID, tools, api
+from odoo.osv import fields, osv
+from odoo.tools.translate import _
+from odoo.tools.safe_eval import safe_eval as eval
+from odoo.tools import image_resize_image
   
 
 class res_company(osv.osv):
@@ -23,9 +23,9 @@ class res_company(osv.osv):
         for company in self.browse(cr, uid, ids, context=context):
             result[company.id] = {}.fromkeys(field_names, False)
             if company.partner_id:
-                address_data = part_obj.address_get(cr, openerp.SUPERUSER_ID, [company.partner_id.id], adr_pref=['contact'])
+                address_data = part_obj.address_get(cr, odoo.SUPERUSER_ID, [company.partner_id.id], adr_pref=['contact'])
                 if address_data['contact']:
-                    address = part_obj.read(cr, openerp.SUPERUSER_ID, [address_data['contact']], field_names, context=context)[0]
+                    address = part_obj.read(cr, odoo.SUPERUSER_ID, [address_data['contact']], field_names, context=context)[0]
                     for field in field_names:
                         result[company.id][field] = address[field] or False
         return result

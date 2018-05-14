@@ -8,12 +8,12 @@ import pytz
 import threading
 import urllib.parse as urlparse
 
-import openerp
-from openerp import tools, api, SUPERUSER_ID
-from openerp.osv import osv, fields
-from openerp.osv.expression import get_unaccent_wrapper
-from openerp.tools.translate import _
-from openerp.exceptions import UserError
+import odoo
+from odoo import tools, api, SUPERUSER_ID
+from odoo.osv import osv, fields
+from odoo.osv.expression import get_unaccent_wrapper
+from odoo.tools.translate import _
+from odoo.exceptions import UserError
 
 ADDRESS_FORMAT_CLASSES = {
     '%(city)s %(state_code)s\n%(zip)s': 'o_city_state',
@@ -251,14 +251,14 @@ class res_partner(osv.Model, format_address):
     }
 
     # image: all image fields are base64 encoded and PIL-supported
-    image = openerp.fields.Binary("Image", attachment=True,
+    image = odoo.fields.Binary("Image", attachment=True,
         help="This field holds the image used as avatar for this contact, limited to 1024x1024px",
         default=lambda self: self._get_default_image(False, True))
-    image_medium = openerp.fields.Binary("Medium-sized image", attachment=True,
+    image_medium = odoo.fields.Binary("Medium-sized image", attachment=True,
         help="Medium-sized image of this contact. It is automatically "\
              "resized as a 128x128px image, with aspect ratio preserved. "\
              "Use this field in form views or some kanban views.")
-    image_small = openerp.fields.Binary("Small-sized image", attachment=True,
+    image_small = odoo.fields.Binary("Small-sized image", attachment=True,
         help="Small-sized image of this contact. It is automatically "\
              "resized as a 64x64px image, with aspect ratio preserved. "\
              "Use this field anywhere a small image is required.")
@@ -274,11 +274,11 @@ class res_partner(osv.Model, format_address):
             return False
 
         if self.env.context.get('partner_type') == 'delivery':
-            img_path = openerp.modules.get_module_resource('base', 'static/src/img', 'truck.png')
+            img_path = odoo.modules.get_module_resource('base', 'static/src/img', 'truck.png')
         elif self.env.context.get('partner_type') == 'invoice':
-            img_path = openerp.modules.get_module_resource('base', 'static/src/img', 'money.png')
+            img_path = odoo.modules.get_module_resource('base', 'static/src/img', 'money.png')
         else:
-            img_path = openerp.modules.get_module_resource(
+            img_path = odoo.modules.get_module_resource(
                 'base', 'static/src/img', 'company_image.png' if is_company else 'avatar.png')
         with open(img_path, 'rb') as f:
             image = f.read()

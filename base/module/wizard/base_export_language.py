@@ -5,10 +5,10 @@ import base64
 import contextlib
 import cStringIO
 
-from openerp import tools
-from openerp.osv import fields,osv
-from openerp.tools.translate import _
-from openerp.tools.misc import get_iso_codes
+from odoo import tools
+from odoo.osv import fields,osv
+from odoo.tools.translate import _
+from odoo.tools.misc import get_iso_codes
 
 NEW_LANG_KEY = '__new__'
 

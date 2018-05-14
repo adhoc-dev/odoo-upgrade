@@ -1,7 +1,7 @@
 import unittest
 
-import openerp
-import openerp.tests.common as common
+import odoo
+import odoo.tests.common as common
 
 class test_res_config(common.TransactionCase):
 
@@ -63,7 +63,7 @@ class test_res_config(common.TransactionCase):
         res = self.res_config.get_config_warning(self.cr, self.error_msg, context=None)
 
         # Check type
-        self.assertIsInstance(res, openerp.exceptions.RedirectWarning)
+        self.assertIsInstance(res, odoo.exceptions.RedirectWarning)
 
         # Check returned value
         self.assertEqual(res.args[0], self.expected_final_error_msg)
@@ -74,7 +74,7 @@ class test_res_config(common.TransactionCase):
         res = self.res_config.get_config_warning(self.cr, self.error_msg_wo_menu, context=None)
 
         # Check type
-        self.assertIsInstance(res, openerp.exceptions.Warning)
+        self.assertIsInstance(res, odoo.exceptions.Warning)
 
         # Check returned value
         self.assertEqual(res.args[0], self.expected_final_error_msg_wo_menu)

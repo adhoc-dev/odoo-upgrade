@@ -5,10 +5,10 @@ import re
 import time
 import math
 
-from openerp import api, fields as fields2
-from openerp import tools
-from openerp.osv import fields, osv
-from openerp.tools import float_round, float_is_zero, float_compare
+from odoo import api, fields as fields2
+from odoo import tools
+from odoo.osv import fields, osv
+from odoo.tools import float_round, float_is_zero, float_compare
 import json
 
 CURRENCY_DISPLAY_PATTERN = re.compile(r'(\w+)\s*(?:\((.*)\))?')
@@ -241,7 +241,7 @@ class res_currency(osv.osv):
         function = ""
         for row in self.search_read(cr, uid, domain=[], fields=['id', 'name', 'symbol', 'decimal_places', 'position'], context=context):
             symbol = row['symbol'] or row['name']
-            format_number_str = "openerp.web.format_value(arguments[0], {type: 'float', digits: [69," + str(row['decimal_places']) + "]}, 0.00)"
+            format_number_str = "odoo.web.format_value(arguments[0], {type: 'float', digits: [69," + str(row['decimal_places']) + "]}, 0.00)"
             if row['position'] == 'after':
                 return_str = "return " + format_number_str + " + '\\xA0' + " + json.dumps(symbol) + ";"
             else:

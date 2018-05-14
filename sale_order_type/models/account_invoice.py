@@ -3,7 +3,7 @@
 # For copyright and license notices, see __manifest__.py file in root directory
 ##############################################################################
 
-from openerp import api, models, fields
+from odoo import api, models, fields
 
 
 class AccountInvoice(models.Model):

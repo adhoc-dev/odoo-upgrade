@@ -1,8 +1,8 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 import logging
 
-from openerp.osv import osv, fields
-from openerp.tools.translate import _
+from odoo.osv import osv, fields
+from odoo.tools.translate import _
 
 class ir_logging(osv.Model):
     _name = 'ir.logging'

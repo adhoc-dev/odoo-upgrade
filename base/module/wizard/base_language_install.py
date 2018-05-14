@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
-from openerp import tools
-from openerp.osv import osv, fields
-from openerp.tools.translate import _
+from odoo import tools
+from odoo.osv import osv, fields
+from odoo.tools.translate import _
 
 class base_language_install(osv.osv_memory):
     """ Install Language"""

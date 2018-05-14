@@ -1,8 +1,8 @@
 import unittest
 
-from openerp.exceptions import ValidationError
-import openerp.tests.common as common
-from openerp.tools import mute_logger
+from odoo.exceptions import ValidationError
+import odoo.tests.common as common
+from odoo.tools import mute_logger
 
 
 class TestServerActionsBase(common.TransactionCase):
@@ -212,7 +212,7 @@ workflow"""
         self.assertEqual(self.test_country.code, 'ZZ', 'ir_actions_server: incorrect signal trigger')
 
         # Clear workflow cache, otherwise openerp will try to create workflows even if it has been deleted
-        from openerp.workflow import clear_cache
+        from odoo.workflow import clear_cache
         clear_cache(cr, uid)
 
     def test_30_client(self):
@@ -355,7 +355,7 @@ workflow"""
         cids = self.res_country.search(cr, uid, [('name', 'ilike', 'NewCountry')])
         self.assertEqual(len(cids), 1, 'ir_actions_server: TODO')
 
-    @mute_logger('openerp.addons.base.ir.ir_model', 'openerp.models')
+    @mute_logger('odoo.addons.base.ir.ir_model', 'odoo.models')
     def test_60_multi(self):
         cr, uid = self.cr, self.uid
 

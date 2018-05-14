@@ -21,7 +21,7 @@
 ##############################################################################
 
 from openupgradelib import openupgrade
-# from openerp.addons.openupgrade_records.lib import apriori
+# from odoo.addons.openupgrade_records.lib import apriori
 
 
 renamed_modules = {
@@ -140,8 +140,8 @@ def migrate(cr, version):
     # esto era para borrar todas las vistas customizadas de vistas modulos
     # que potencialmente se borran pero todabía no es necesario y no lo
     # terminamos de testear
-    # from openerp.addons.base.obsolte_modules import obsolte_modules
-    # from openerp.addons.base.new_obsolte_modules import new_obsolte_modules
+    # from odoo.addons.base.obsolte_modules import obsolte_modules
+    # from odoo.addons.base.new_obsolte_modules import new_obsolte_modules
     # # desactivamos vistas customizadas
     # openupgrade.logged_query(cr, """
     #     DELETE from ir_ui_view where id in (
@@ -278,7 +278,7 @@ def migrate(cr, version):
     def _check_lock_date(self):
         return True
     # desactivamos check contable
-    from openerp.addons.account.models.account_move import AccountMove
+    from odoo.addons.account.models.account_move import AccountMove
     # original_check_lock_date = AccountMove._check_lock_date
     AccountMove._check_lock_date = _check_lock_date
 

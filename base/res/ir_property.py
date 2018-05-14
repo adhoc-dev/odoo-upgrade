@@ -4,10 +4,10 @@
 from operator import itemgetter
 import time
 
-from openerp import models, api
-from openerp.osv import osv, orm, fields
-from openerp.tools.misc import attrgetter
-from openerp.exceptions import UserError
+from odoo import models, api
+from odoo.osv import osv, orm, fields
+from odoo.tools.misc import attrgetter
+from odoo.exceptions import UserError
 
 # -------------------------------------------------------------------------
 # Properties

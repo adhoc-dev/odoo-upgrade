@@ -3,7 +3,7 @@
 
 from lxml.etree import XMLSyntaxError
 import unittest
-from openerp.tools.translate import quote, unquote, xml_translate, html_translate
+from odoo.tools.translate import quote, unquote, xml_translate, html_translate
 
 class TranslationToolsTestCase(unittest.TestCase):
 

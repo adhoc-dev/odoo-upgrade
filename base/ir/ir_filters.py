@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
-from openerp import exceptions
-from openerp.osv import osv, fields
-from openerp.tools.translate import _
+from odoo import exceptions
+from odoo.osv import osv, fields
+from odoo.tools.translate import _
 
 class ir_filters(osv.osv):
     _name = 'ir.filters'
@@ -61,7 +61,7 @@ class ir_filters(osv.osv):
         This method should only be called if ``vals`` is trying to set
         ``is_default``
 
-        :raises openerp.exceptions.Warning: if there is an existing default and
+        :raises odoo.exceptions.Warning: if there is an existing default and
                                             we're not updating it
         """
         action_domain = self._get_action_domain(cr, uid, vals.get('action_id'))

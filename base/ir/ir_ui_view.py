@@ -17,19 +17,19 @@ import HTMLParser
 from lxml import etree
 from lxml.etree import LxmlError
 
-import openerp
-from openerp import tools, api
-from openerp.exceptions import ValidationError
-from openerp.http import request
-from openerp.modules.module import get_resource_path, get_resource_from_path
-from openerp.osv import fields, osv, orm
-from openerp.tools import config, graph, SKIPPED_ELEMENT_TYPES, SKIPPED_ELEMENTS
-from openerp.tools.convert import _fix_multiple_roots
-from openerp.tools.parse_version import parse_version
-from openerp.tools.safe_eval import safe_eval as eval
-from openerp.tools.view_validation import valid_view
-from openerp.tools import misc
-from openerp.tools.translate import TRANSLATED_ATTRS, encode, xml_translate, _
+import odoo
+from odoo import tools, api
+from odoo.exceptions import ValidationError
+from odoo.http import request
+from odoo.modules.module import get_resource_path, get_resource_from_path
+from odoo.osv import fields, osv, orm
+from odoo.tools import config, graph, SKIPPED_ELEMENT_TYPES, SKIPPED_ELEMENTS
+from odoo.tools.convert import _fix_multiple_roots
+from odoo.tools.parse_version import parse_version
+from odoo.tools.safe_eval import safe_eval as eval
+from odoo.tools.view_validation import valid_view
+from odoo.tools import misc
+from odoo.tools.translate import TRANSLATED_ATTRS, encode, xml_translate, _
 
 _logger = logging.getLogger(__name__)
 
@@ -1041,7 +1041,7 @@ class view(osv.osv):
         # Deprecated: templates are translated once read from database
         return arch
 
-    @openerp.tools.ormcache('uid', 'id')
+    @odoo.tools.ormcache('uid', 'id')
     def get_view_xmlid(self, cr, uid, id):
         imd = self.pool['ir.model.data']
         domain = [('model', '=', 'ir.ui.view'), ('res_id', '=', id)]
@@ -1076,7 +1076,7 @@ class view(osv.osv):
         #       match the module dependency graph.
         def get_modules_order():
             if request:
-                from openerp.addons.web.controllers.main import module_boot
+                from odoo.addons.web.controllers.main import module_boot
                 return json.dumps(module_boot())
             return '[]'
         qcontext['get_modules_order'] = get_modules_order

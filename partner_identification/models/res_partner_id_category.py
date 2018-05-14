@@ -10,10 +10,10 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
 
 
-from openerp import api, models, fields
-from openerp.exceptions import ValidationError, UserError
-from openerp.tools.safe_eval import safe_eval
-from openerp.tools.translate import _
+from odoo import api, models, fields
+from odoo.exceptions import ValidationError, UserError
+from odoo.tools.safe_eval import safe_eval
+from odoo.tools.translate import _
 
 
 class ResPartnerIdCategory(models.Model):
@@ -51,7 +51,7 @@ class ResPartnerIdCategory(models.Model):
     @api.multi
     def validate_id_number(self, id_number):
         """Validate the given ID number
-        The method raises an openerp.exceptions.ValidationError if the eval of
+        The method raises an odoo.exceptions.ValidationError if the eval of
         python validation code fails
         """
         self.ensure_one()

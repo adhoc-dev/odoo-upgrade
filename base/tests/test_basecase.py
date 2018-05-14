@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import unittest
 
-from openerp.tests import common
+from odoo.tests import common
 
 class test_single_transaction_case(common.SingleTransactionCase):
     """

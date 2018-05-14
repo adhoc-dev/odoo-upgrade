@@ -23,19 +23,19 @@ from lxml import etree, html
 from PIL import Image
 import psycopg2
 
-import openerp.http
-import openerp.tools
-from openerp.tools.func import lazy_property
-import openerp.tools.lru
-from openerp.exceptions import QWebException
-from openerp.fields import Datetime
-from openerp.http import request
-from openerp.tools.safe_eval import safe_eval as eval
-from openerp.osv import osv, orm, fields
-from openerp.tools import html_escape as escape
-from openerp.tools.misc import find_in_path
-from openerp.tools.translate import _
-from openerp.modules.module import get_resource_path
+import odoo.http
+import odoo.tools
+from odoo.tools.func import lazy_property
+import odoo.tools.lru
+from odoo.exceptions import QWebException
+from odoo.fields import Datetime
+from odoo.http import request
+from odoo.tools.safe_eval import safe_eval as eval
+from odoo.osv import osv, orm, fields
+from odoo.tools import html_escape as escape
+from odoo.tools.misc import find_in_path
+from odoo.tools.translate import _
+from odoo.modules.module import get_resource_path
 
 _logger = logging.getLogger(__name__)
 
@@ -259,7 +259,7 @@ class QWeb(orm.AbstractModel):
 
         debugger = element.get('t-debug')
         if debugger is not None:
-            if openerp.tools.config['dev_mode']:
+            if odoo.tools.config['dev_mode']:
                 __import__(debugger).set_trace()  # pdb, ipdb, pudb, ...
             else:
                 _logger.warning("@t-debug in template '%s' is only available in --dev mode" % qwebcontext['__template__'])
@@ -512,7 +512,7 @@ class QWeb(orm.AbstractModel):
                                  element, template_attributes, generated_attributes, qwebcontext, context=qwebcontext.context)
 
     def get_converter_for(self, field_type):
-        """ returns a :class:`~openerp.models.Model` used to render a
+        """ returns a :class:`~odoo.models.Model` used to render a
         ``t-field``.
 
         By default, tries to get the model named
@@ -523,7 +523,7 @@ class QWeb(orm.AbstractModel):
         return self.pool.get('ir.qweb.field.' + field_type, self.pool['ir.qweb.field'])
 
     def get_widget_for(self, widget):
-        """ returns a :class:`~openerp.models.Model` used to render a
+        """ returns a :class:`~odoo.models.Model` used to render a
         ``t-esc``
 
         :param str widget: name of the widget to use, or ``None``
@@ -725,13 +725,13 @@ class DateConverter(osv.AbstractModel):
 
         if isinstance(value, basestring):
             value = datetime.datetime.strptime(
-                value[:10], openerp.tools.DEFAULT_SERVER_DATE_FORMAT)
+                value[:10], odoo.tools.DEFAULT_SERVER_DATE_FORMAT)
 
         if options and 'format' in options:
             pattern = options['format']
         else:
             strftime_pattern = lang.date_format
-            pattern = openerp.tools.posix_to_ldml(strftime_pattern, locale=locale)
+            pattern = odoo.tools.posix_to_ldml(strftime_pattern, locale=locale)
 
         return babel.dates.format_date(
             value, format=pattern,
@@ -748,7 +748,7 @@ class DateTimeConverter(osv.AbstractModel):
 
         if isinstance(value, basestring):
             value = datetime.datetime.strptime(
-                value, openerp.tools.DEFAULT_SERVER_DATETIME_FORMAT)
+                value, odoo.tools.DEFAULT_SERVER_DATETIME_FORMAT)
         value = fields.datetime.context_timestamp(
             cr, uid, timestamp=value, context=context)
 
@@ -756,7 +756,7 @@ class DateTimeConverter(osv.AbstractModel):
             pattern = options['format']
         else:
             strftime_pattern = (u"%s %s" % (lang.date_format, lang.time_format))
-            pattern = openerp.tools.posix_to_ldml(strftime_pattern, locale=locale)
+            pattern = odoo.tools.posix_to_ldml(strftime_pattern, locale=locale)
 
         if options and options.get('hide_seconds'):
             pattern = pattern.replace(":ss", "").replace(":s", "")
@@ -965,7 +965,7 @@ class RelativeDatetimeConverter(osv.AbstractModel):
     _inherit = 'ir.qweb.field'
 
     def value_to_html(self, cr, uid, value, field, options=None, context=None):
-        parse_format = openerp.tools.DEFAULT_SERVER_DATETIME_FORMAT
+        parse_format = odoo.tools.DEFAULT_SERVER_DATETIME_FORMAT
         locale = babel.Locale.parse(
             self.user_lang(cr, uid, context=context).code)
 
@@ -1255,14 +1255,14 @@ class AssetsBundle(object):
             ('url', '=like', '/web/content/%-%/{0}%.{1}'.format(self.xmlid, type)),  # The wilcards are id, version and pagination number (if any)
             '!', ('url', '=like', '/web/content/%-{}/%'.format(self.version))
         ]
-        attachment_ids = ira.search(self.cr, openerp.SUPERUSER_ID, domain, context=self.context)
-        return ira.unlink(self.cr, openerp.SUPERUSER_ID, attachment_ids, context=self.context)
+        attachment_ids = ira.search(self.cr, odoo.SUPERUSER_ID, domain, context=self.context)
+        return ira.unlink(self.cr, odoo.SUPERUSER_ID, attachment_ids, context=self.context)
 
     def get_attachments(self, type, inc=None):
         ira = self.registry['ir.attachment']
         domain = [('url', '=like', '/web/content/%%-%s/%s%s.%s' % (self.version, self.xmlid, ('%%' if inc is None else '.%s' % inc), type))]
-        attachment_ids = ira.search(self.cr, openerp.SUPERUSER_ID, domain, order='name asc', context=self.context)
-        return ira.browse(self.cr, openerp.SUPERUSER_ID, attachment_ids, context=self.context)
+        attachment_ids = ira.search(self.cr, odoo.SUPERUSER_ID, domain, order='name asc', context=self.context)
+        return ira.browse(self.cr, odoo.SUPERUSER_ID, attachment_ids, context=self.context)
 
     def save_attachment(self, type, content, inc=None):
         ira = self.registry['ir.attachment']
@@ -1277,21 +1277,21 @@ class AssetsBundle(object):
             'public': True,
             'datas': content.encode('utf8').encode('base64'),
         }
-        attachment_id = ira.create(self.cr, openerp.SUPERUSER_ID, values, context=self.context)
+        attachment_id = ira.create(self.cr, odoo.SUPERUSER_ID, values, context=self.context)
 
         url = '/web/content/%s-%s/%s' % (attachment_id, self.version, fname)
         values = {
             'name': url,
             'url': url,
         }
-        ira.write(self.cr, openerp.SUPERUSER_ID, attachment_id, values, context=self.context)
+        ira.write(self.cr, odoo.SUPERUSER_ID, attachment_id, values, context=self.context)
 
         if self.context.get('commit_assetsbundle') is True:
             self.cr.commit()
 
         self.clean_attachments(type)
 
-        return ira.browse(self.cr, openerp.SUPERUSER_ID, attachment_id, context=self.context)
+        return ira.browse(self.cr, odoo.SUPERUSER_ID, attachment_id, context=self.context)
 
     def js(self):
         attachments = self.get_attachments('js')
@@ -1349,7 +1349,7 @@ class AssetsBundle(object):
         """ % message
 
     def is_css_preprocessed(self):
-        uid = openerp.SUPERUSER_ID
+        uid = odoo.SUPERUSER_ID
         preprocessed = True
         for atype in (SassStylesheetAsset, LessStylesheetAsset):
             outdated = False
@@ -1406,7 +1406,7 @@ class AssetsBundle(object):
                             fname = os.path.basename(asset.url)
                             url = asset.html_url
                             with self.cr.savepoint():
-                                ira.create(self.cr, openerp.SUPERUSER_ID, dict(
+                                ira.create(self.cr, odoo.SUPERUSER_ID, dict(
                                     datas=asset.content.encode('utf8').encode('base64'),
                                     mimetype='text/css',
                                     type='binary',
@@ -1503,7 +1503,7 @@ class WebAsset(object):
                 fields = ['__last_update', 'datas', 'mimetype']
                 domain = [('type', '=', 'binary'), ('url', '=', self.url)]
                 ira = self.registry['ir.attachment']
-                attach = ira.search_read(self.cr, openerp.SUPERUSER_ID, domain, fields, context=self.context)
+                attach = ira.search_read(self.cr, odoo.SUPERUSER_ID, domain, fields, context=self.context)
                 self._ir_attach = attach[0]
             except Exception:
                 raise AssetNotFound("Could not find %s" % self.name)
@@ -1518,7 +1518,7 @@ class WebAsset(object):
             if self._filename:
                 return datetime.datetime.fromtimestamp(os.path.getmtime(self._filename))
             elif self._ir_attach:
-                server_format = openerp.tools.misc.DEFAULT_SERVER_DATETIME_FORMAT
+                server_format = odoo.tools.misc.DEFAULT_SERVER_DATETIME_FORMAT
                 last_update = self._ir_attach['__last_update']
                 try:
                     return datetime.datetime.strptime(last_update, server_format + '.%f')

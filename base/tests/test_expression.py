@@ -1,10 +1,10 @@
 import unittest
 
-import openerp
-import openerp.osv.expression as expression
-from openerp.osv.expression import get_unaccent_wrapper
-from openerp.osv.orm import BaseModel
-import openerp.tests.common as common
+import odoo
+import odoo.osv.expression as expression
+from odoo.osv.expression import get_unaccent_wrapper
+from odoo.osv.orm import BaseModel
+import odoo.tests.common as common
 
 class test_expression(common.TransactionCase):
 
@@ -494,7 +494,7 @@ class test_expression(common.TransactionCase):
         state_country_id_col._auto_join = False
 
     def test_30_normalize_domain(self):
-        expression = openerp.osv.expression
+        expression = odoo.osv.expression
         norm_domain = domain = ['&', (1, '=', 1), ('a', '=', 'b')]
         assert norm_domain == expression.normalize_domain(domain), "Normalized domains should be left untouched"
         domain = [('x', 'in', ['y', 'z']), ('a.v', '=', 'e'), '|', '|', ('a', '=', 'b'), '!', ('c', '>', 'd'), ('e', '!=', 'f'), ('g', '=', 'h')]

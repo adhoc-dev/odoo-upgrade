@@ -8,14 +8,14 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import pytz
 
-import openerp
-from openerp import SUPERUSER_ID, netsvc, api
-from openerp.osv import fields, osv
-from openerp.tools import DEFAULT_SERVER_DATETIME_FORMAT
-from openerp.tools.safe_eval import safe_eval as eval
-from openerp.tools.translate import _
-from openerp.modules import load_information_from_description_file
-from openerp.exceptions import UserError
+import odoo
+from odoo import SUPERUSER_ID, netsvc, api
+from odoo.osv import fields, osv
+from odoo.tools import DEFAULT_SERVER_DATETIME_FORMAT
+from odoo.tools.safe_eval import safe_eval as eval
+from odoo.tools.translate import _
+from odoo.modules import load_information_from_description_file
+from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class ir_cron(osv.osv):
     # TODO: perhaps in the future we could consider a flag on ir.cron jobs
     # that would cause database wake-up even if the database has not been
     # loaded yet or was already unloaded (e.g. 'force_db_wakeup' or something)
-    # See also openerp.cron
+    # See also odoo.cron
 
     _name = "ir.cron"
     _order = 'name'
@@ -116,8 +116,8 @@ class ir_cron(osv.osv):
         """
         try:
             args = str2tuple(args)
-            openerp.modules.registry.Registry.check_registry_signaling(cr.dbname)
-            registry = openerp.registry(cr.dbname)
+            odoo.modules.registry.Registry.check_registry_signaling(cr.dbname)
+            registry = odoo.registry(cr.dbname)
             if model_name in registry:
                 model = registry[model_name]
                 if hasattr(model, method_name):
@@ -129,7 +129,7 @@ class ir_cron(osv.osv):
                     if _logger.isEnabledFor(logging.DEBUG):
                         end_time = time.time()
                         _logger.debug('%.3fs (%s, %s)' % (end_time - start_time, model_name, method_name))
-                    openerp.modules.registry.Registry.signal_caches_change(cr.dbname)
+                    odoo.modules.registry.Registry.signal_caches_change(cr.dbname)
                 else:
                     msg = "Method `%s.%s` does not exist." % (model_name, method_name)
                     _logger.warning(msg)
@@ -186,7 +186,7 @@ class ir_cron(osv.osv):
 
         If a job was processed, returns True, otherwise returns False.
         """
-        db = openerp.sql_db.db_connect(db_name)
+        db = odoo.sql_db.db_connect(db_name)
         threading.current_thread().dbname = db_name
         jobs = []
         try:
@@ -235,7 +235,7 @@ class ir_cron(osv.osv):
                 _logger.debug('Starting job `%s`.', job['name'])
                 job_cr = db.cursor()
                 try:
-                    registry = openerp.registry(db_name)
+                    registry = odoo.registry(db_name)
                     registry[cls._name]._process_job(job_cr, job, lock_cr)
                 except Exception:
                     _logger.exception('Unexpected exception while processing cron job %r', job)

@@ -7,11 +7,11 @@ from locale import localeconv
 import logging
 import re
 
-from openerp import tools
-from openerp.osv import fields, osv
-from openerp.tools.safe_eval import safe_eval as eval
-from openerp.tools.translate import _
-from openerp.exceptions import UserError
+from odoo import tools
+from odoo.osv import fields, osv
+from odoo.tools.safe_eval import safe_eval as eval
+from odoo.tools.translate import _
+from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class lang(osv.osv):
     def install_lang(self, cr, uid, **args):
         """
 
-        This method is called from openerp/addons/base/base_data.xml to load
+        This method is called from odoo/addons/base/base_data.xml to load
         some language and set it as the default for every partners. The
         language is set via tools.config by the RPC 'create' method on the
         'db' object. This is a fragile solution and something else should be

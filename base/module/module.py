@@ -17,24 +17,24 @@ import urllib.parse as urlparse
 import zipfile
 import zipimport
 import lxml.html
-from openerp.exceptions import UserError
+from odoo.exceptions import UserError
 
 try:
     from io import StringIO
 except ImportError:
     from StringIO import StringIO   # NOQA
 
-import openerp
-import openerp.exceptions
-from openerp import modules, tools
-from openerp.modules.db import create_categories
-from openerp.modules import get_module_resource
-from openerp.tools import ormcache
-from openerp.tools.parse_version import parse_version
-from openerp.tools.translate import _
-from openerp.tools import html_sanitize
-from openerp.osv import osv, orm, fields
-from openerp import api, fields as fields2
+import odoo
+import odoo.exceptions
+from odoo import modules, tools
+from odoo.modules.db import create_categories
+from odoo.modules import get_module_resource
+from odoo.tools import ormcache
+from odoo.tools.parse_version import parse_version
+from odoo.tools.translate import _
+from odoo.tools import html_sanitize
+from odoo.osv import osv, orm, fields
+from odoo import api, fields as fields2
 
 _logger = logging.getLogger(__name__)
 
@@ -531,7 +531,7 @@ class module(osv.osv):
 
         cr.commit()
         api.Environment.reset()
-        registry = openerp.modules.registry.Registry.new(cr.dbname, update_module=True)
+        registry = odoo.modules.registry.Registry.new(cr.dbname, update_module=True)
 
         cr.commit()
         config = registry['res.config'].next(cr, uid, [], context=context) or {}
@@ -687,20 +687,20 @@ class module(osv.osv):
 
     def install_from_urls(self, cr, uid, urls, context=None):
         if not self.pool['res.users'].has_group(cr, uid, 'base.group_system'):
-            raise openerp.exceptions.AccessDenied()
+            raise odoo.exceptions.AccessDenied()
 
         # One-click install is opt-in - cfr Issue #15225
-        ad_dir = openerp.tools.config.addons_data_dir
+        ad_dir = odoo.tools.config.addons_data_dir
         if not os.access(ad_dir, os.W_OK):
             msg = (_("Automatic install of downloaded Apps is currently disabled.") + "\n\n" +
                    _("To enable it, make sure this directory exists and is writable on the server:") +
                    "\n%s" % ad_dir)
             _logger.warning(msg)
-            raise openerp.exceptions.AccessError(msg)
+            raise odoo.exceptions.AccessError(msg)
 
         apps_server = urlparse.urlparse(self.get_apps_server(cr, uid, context=context))
 
-        OPENERP = openerp.release.product_name.lower()
+        OPENERP = odoo.release.product_name.lower()
         tmp = tempfile.mkdtemp()
         _logger.debug('Install from url: %r', urls)
         try:
@@ -711,7 +711,7 @@ class module(osv.osv):
 
                 up = urlparse.urlparse(url)
                 if up.scheme != apps_server.scheme or up.netloc != apps_server.netloc:
-                    raise openerp.exceptions.AccessDenied()
+                    raise odoo.exceptions.AccessDenied()
 
                 try:
                     _logger.info('Downloading module `%s` from OpenERP Apps', module_name)
@@ -747,7 +747,7 @@ class module(osv.osv):
                         shutil.copytree(os.path.join(base_path, d), destdir)
 
                 # then replace the server by the new "base" module
-                server_dir = openerp.tools.config['root_path']      # XXX or dirname()
+                server_dir = odoo.tools.config['root_path']      # XXX or dirname()
                 bck = backup(server_dir)
                 _logger.info('Copy downloaded module `openerp` to `%s`', server_dir)
                 shutil.move(os.path.join(tmp, OPENERP), server_dir)
@@ -766,7 +766,7 @@ class module(osv.osv):
             if already_installed or to_install_ids:
                 # in this case, force server restart to reload python code...
                 cr.commit()
-                openerp.service.server.restart()
+                odoo.service.server.restart()
                 return {
                     'type': 'ir.actions.client',
                     'tag': 'home',
@@ -777,7 +777,7 @@ class module(osv.osv):
             shutil.rmtree(tmp)
 
     def get_apps_server(self, cr, uid, context=None):
-        return tools.config.get('apps_server', 'https://apps.openerp.com/apps')
+        return tools.config.get('apps_server', 'https://apps.odoo.com/apps')
 
     def _update_dependencies(self, cr, uid, mod_browse, depends=None):
         if depends is None:

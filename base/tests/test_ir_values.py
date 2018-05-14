@@ -1,6 +1,6 @@
 import unittest
 
-import openerp.tests.common as common
+import odoo.tests.common as common
 
 class test_ir_values(common.TransactionCase):
 

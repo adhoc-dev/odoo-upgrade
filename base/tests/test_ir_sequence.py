@@ -11,16 +11,16 @@ import psycopg2
 import psycopg2.errorcodes
 import unittest
 
-import openerp
-from openerp.tests import common
+import odoo
+from odoo.tests import common
 
 ADMIN_USER_ID = common.ADMIN_USER_ID
 
 def registry(model):
-    return openerp.modules.registry.Registry(common.get_db_name())[model]
+    return odoo.modules.registry.Registry(common.get_db_name())[model]
 
 def cursor():
-    return openerp.modules.registry.Registry(common.get_db_name()).cursor()
+    return odoo.modules.registry.Registry(common.get_db_name()).cursor()
 
 
 def drop_sequence(code):

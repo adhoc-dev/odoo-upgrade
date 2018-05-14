@@ -18,15 +18,15 @@ import werkzeug.routing
 import werkzeug.urls
 import werkzeug.utils
 
-import openerp
-import openerp.exceptions
-import openerp.models
-from openerp import http
-from openerp.tools.mimetypes import guess_mimetype
-from openerp.http import request, STATIC_CACHE
+import odoo
+import odoo.exceptions
+import odoo.models
+from odoo import http
+from odoo.tools.mimetypes import guess_mimetype
+from odoo.http import request, STATIC_CACHE
 # , content_disposition
-from openerp.modules.module import get_resource_path, get_module_path
-from openerp.osv import osv, orm
+from odoo.modules.module import get_resource_path, get_module_path
+from odoo.osv import osv, orm
 
 _logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class ir_http(osv.AbstractModel):
 
     def _auth_method_public(self):
         if not request.session.uid:
-            dummy, request.uid = self.pool['ir.model.data'].get_object_reference(request.cr, openerp.SUPERUSER_ID, 'base', 'public_user')
+            dummy, request.uid = self.pool['ir.model.data'].get_object_reference(request.cr, odoo.SUPERUSER_ID, 'base', 'public_user')
         else:
             request.uid = request.session.uid
 
@@ -98,22 +98,22 @@ class ir_http(osv.AbstractModel):
                     # what if error in security.check()
                     #   -> res_users.check()
                     #   -> res_users.check_credentials()
-                except (openerp.exceptions.AccessDenied, openerp.http.SessionExpiredException):
+                except (odoo.exceptions.AccessDenied, odoo.http.SessionExpiredException):
                     # All other exceptions mean undetermined status (e.g. connection pool full),
                     # let them bubble up
                     request.session.logout(keep_db=True)
             if request.uid is None:
                 getattr(self, "_auth_method_%s" % auth_method)()
-        except (openerp.exceptions.AccessDenied, openerp.http.SessionExpiredException, werkzeug.exceptions.HTTPException):
+        except (odoo.exceptions.AccessDenied, odoo.http.SessionExpiredException, werkzeug.exceptions.HTTPException):
             raise
         except Exception:
             _logger.info("Exception during request Authentication.", exc_info=True)
-            raise openerp.exceptions.AccessDenied()
+            raise odoo.exceptions.AccessDenied()
         return auth_method
 
     def _serve_attachment(self):
         domain = [('type', '=', 'binary'), ('url', '=', request.httprequest.path)]
-        attach = self.pool['ir.attachment'].search_read(request.cr, openerp.SUPERUSER_ID, domain, ['__last_update', 'datas', 'name', 'mimetype', 'checksum'], context=request.context)
+        attach = self.pool['ir.attachment'].search_read(request.cr, odoo.SUPERUSER_ID, domain, ['__last_update', 'datas', 'name', 'mimetype', 'checksum'], context=request.context)
         if attach:
             wdate = attach[0]['__last_update']
             datas = attach[0]['datas'] or ''
@@ -125,7 +125,7 @@ class ir_http(osv.AbstractModel):
                 return werkzeug.utils.redirect(name, 301)
 
             response = werkzeug.wrappers.Response()
-            server_format = openerp.tools.misc.DEFAULT_SERVER_DATETIME_FORMAT
+            server_format = odoo.tools.misc.DEFAULT_SERVER_DATETIME_FORMAT
             try:
                 response.last_modified = datetime.datetime.strptime(wdate, server_format + '.%f')
             except ValueError:
@@ -153,11 +153,11 @@ class ir_http(osv.AbstractModel):
                 return attach
 
         # Don't handle exception but use werkeug debugger if server in --dev mode
-        if openerp.tools.config['dev_mode']:
+        if odoo.tools.config['dev_mode']:
             raise
         try:
             return request._handle_exception(exception)
-        except openerp.exceptions.AccessDenied:
+        except odoo.exceptions.AccessDenied:
             return werkzeug.exceptions.Forbidden()
 
     def _dispatch(self):
@@ -196,16 +196,16 @@ class ir_http(osv.AbstractModel):
                 arguments[name] = arg.sudo(request.uid)
                 try:
                     arg.exists()
-                except openerp.models.MissingError:
+                except odoo.models.MissingError:
                     return self._handle_exception(werkzeug.exceptions.NotFound())
 
     def routing_map(self):
         if not hasattr(self, '_routing_map'):
             _logger.info("Generating routing map")
             installed = request.registry._init_modules - {'web'}
-            if openerp.tools.config['test_enable']:
-                installed.add(openerp.modules.module.current_test)
-            mods = [''] + openerp.conf.server_wide_modules + sorted(installed)
+            if odoo.tools.config['test_enable']:
+                installed.add(odoo.modules.module.current_test)
+            mods = [''] + odoo.conf.server_wide_modules + sorted(installed)
             self._routing_map = http.routing_map(mods, False, converters=self._get_converters())
 
         return self._routing_map
@@ -248,7 +248,7 @@ class ir_http(osv.AbstractModel):
         # check read access
         try:
             last_update = obj['__last_update']
-        except openerp.exceptions.AccessError:
+        except odoo.exceptions.AccessError:
             return (403, [], None)
 
         status, headers, content = None, [], None

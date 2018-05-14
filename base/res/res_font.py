@@ -2,9 +2,9 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
 from reportlab.pdfbase import ttfonts
-from openerp.modules.registry import RegistryManager
-from openerp.osv import fields, osv
-from openerp.report.render.rml2pdf import customfonts
+from odoo.modules.registry import RegistryManager
+from odoo.osv import fields, osv
+from odoo.report.render.rml2pdf import customfonts
 
 import logging
 
@@ -20,7 +20,7 @@ and Ubuntu distros, we have to override the search path, too.
 _logger = logging.getLogger(__name__)
 
 # Alternatives for the [broken] builtin PDF fonts. Default order chosen to match
-# the pre-v8 mapping from openerp.report.render.rml2pdf.customfonts.CustomTTFonts.
+# the pre-v8 mapping from odoo.report.render.rml2pdf.customfonts.CustomTTFonts.
 # Format: [ (BuiltinFontFamily, mode, [AlternativeFontName, ...]), ...]
 BUILTIN_ALTERNATIVES = [
     ('Helvetica', "normal", ["DejaVuSans", "LiberationSans"]),

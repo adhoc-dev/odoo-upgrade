@@ -2,24 +2,24 @@
 # This assumes an existing but uninitialized database.
 import unittest
 
-import openerp
-from openerp import SUPERUSER_ID
-from openerp.tests import common
+import odoo
+from odoo import SUPERUSER_ID
+from odoo.tests import common
 
 ADMIN_USER_ID = common.ADMIN_USER_ID
 
 def registry(model):
-    return openerp.modules.registry.Registry(common.get_db_name())[model]
+    return odoo.modules.registry.Registry(common.get_db_name())[model]
 
 def cursor():
-    return openerp.modules.registry.Registry(common.get_db_name()).cursor()
+    return odoo.modules.registry.Registry(common.get_db_name()).cursor()
 
 def get_module(module_name):
-    registry = openerp.modules.registry.Registry(common.get_db_name())
+    registry = odoo.modules.registry.Registry(common.get_db_name())
     return registry.get(module_name)
 
 def reload_registry():
-    openerp.modules.registry.Registry.new(
+    odoo.modules.registry.Registry.new(
         common.get_db_name(), update_module=True)
 
 def search_registry(model_name, domain):
@@ -54,7 +54,7 @@ def uninstall_module(module_name):
 class test_uninstall(unittest.TestCase):
     """
     Test the install/uninstall of a test module. The module is available in
-    `openerp.tests` which should be present in the addons-path.
+    `odoo.tests` which should be present in the addons-path.
     """
 
     def test_01_install(self):

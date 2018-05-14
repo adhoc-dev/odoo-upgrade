@@ -8,12 +8,12 @@ import mimetypes
 import os
 import re
 
-from openerp import SUPERUSER_ID, tools
-from openerp.exceptions import AccessError
-from openerp.osv import fields,osv
-from openerp.tools.translate import _
-from openerp.tools.misc import ustr, html_escape
-from openerp.tools.mimetypes import guess_mimetype
+from odoo import SUPERUSER_ID, tools
+from odoo.exceptions import AccessError
+from odoo.osv import fields,osv
+from odoo.tools.translate import _
+from odoo.tools.misc import ustr, html_escape
+from odoo.tools.mimetypes import guess_mimetype
 
 _logger = logging.getLogger(__name__)
 

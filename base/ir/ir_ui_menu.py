@@ -6,12 +6,12 @@ import operator
 import re
 import threading
 
-import openerp
-from openerp.osv import fields, osv
-from openerp import api, tools
-from openerp.http import request
-from openerp.tools.safe_eval import safe_eval as eval
-from openerp.tools.translate import _
+import odoo
+from odoo.osv import fields, osv
+from odoo import api, tools
+from odoo.http import request
+from odoo.tools.safe_eval import safe_eval as eval
+from odoo.tools.translate import _
 
 MENU_ITEM_SEPARATOR = "/"
 
@@ -164,7 +164,7 @@ class ir_ui_menu(osv.osv):
         if not path:
             return False
         path_info = path.split(',')
-        icon_path = openerp.modules.get_module_resource(path_info[0],path_info[1])
+        icon_path = odoo.modules.get_module_resource(path_info[0],path_info[1])
         icon_image = False
         if icon_path:
             try:
@@ -322,7 +322,7 @@ class ir_ui_menu(osv.osv):
         ]),
     }
 
-    web_icon_data = openerp.fields.Binary('Web Icon Image',
+    web_icon_data = odoo.fields.Binary('Web Icon Image',
         compute="_compute_web_icon", store=True, attachment=True)
 
     @api.depends('web_icon')

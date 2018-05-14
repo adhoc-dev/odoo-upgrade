@@ -1,9 +1,9 @@
 import unittest
 from lxml import etree
 
-from openerp.exceptions import AccessError
-from openerp.tools.misc import mute_logger
-from openerp.tests import common
+from odoo.exceptions import AccessError
+from odoo.tools.misc import mute_logger
+from odoo.tests import common
 
 # test group that demo user should not have
 GROUP_SYSTEM = 'base.group_system'
@@ -76,7 +76,7 @@ class TestACL(common.TransactionCase):
         #cleanup
         self.erp_system_group.write({'users': [(3, self.demo_uid)]})
 
-    @mute_logger('openerp.models')
+    @mute_logger('odoo.models')
     def test_field_crud_restriction(self):
         "Read/Write RPC access to restricted field should be forbidden"
         # Verify the test environment first
@@ -103,7 +103,7 @@ class TestACL(common.TransactionCase):
         #cleanup
         self.erp_system_group.write({'users': [(3, self.demo_uid)]})
 
-    @mute_logger('openerp.models')
+    @mute_logger('odoo.models')
     def test_fields_browse_restriction(self):
         """Test access to records having restricted fields"""
         self._set_field_groups(self.res_partner, 'email', GROUP_SYSTEM)
@@ -114,7 +114,7 @@ class TestACL(common.TransactionCase):
         part.name
         # ... except if they are restricted
         with self.assertRaises(AccessError) as cm:
-            with mute_logger('openerp.models'):
+            with mute_logger('odoo.models'):
                 part.email
 
         #Useless because we get the title in the client side now in the chrome.js file(map_title)

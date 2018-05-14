@@ -1,12 +1,12 @@
 import hashlib
 import os
 
-import openerp
-import openerp.tests.common
+import odoo
+import odoo.tests.common
 
 HASH_SPLIT = 2      # FIXME: testing implementations detail is not a good idea
 
-class test_ir_attachment(openerp.tests.common.TransactionCase):
+class test_ir_attachment(odoo.tests.common.TransactionCase):
     def setUp(self):
         super(test_ir_attachment, self).setUp()
         registry, cr, uid = self.registry, self.cr, self.uid

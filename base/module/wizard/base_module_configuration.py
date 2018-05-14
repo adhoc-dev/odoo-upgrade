@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
-from openerp.osv import osv
-from openerp.tools.translate import _
+from odoo.osv import osv
+from odoo.tools.translate import _
 
 class base_module_configuration(osv.osv_memory):
 

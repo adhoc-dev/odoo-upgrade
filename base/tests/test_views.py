@@ -9,10 +9,10 @@ from lxml.builder import E
 
 from psycopg2 import IntegrityError
 
-from openerp.osv.orm import modifiers_tests
-from openerp.exceptions import ValidationError
-from openerp.tests import common
-import openerp.tools
+from odoo.osv.orm import modifiers_tests
+from odoo.exceptions import ValidationError
+from odoo.tests import common
+import odoo.tools
 
 Field = E.field
 
@@ -378,7 +378,7 @@ class TestApplyInheritanceSpecs(ViewCase):
                     name="target"),
                 string="Title"))
 
-    @openerp.tools.mute_logger('openerp.addons.base.ir.ir_ui_view')
+    @odoo.tools.mute_logger('odoo.addons.base.ir.ir_ui_view')
     def test_invalid_position(self):
         spec = Field(
                 Field(name="whoops"),
@@ -389,7 +389,7 @@ class TestApplyInheritanceSpecs(ViewCase):
                                               self.base_arch,
                                               spec, None)
 
-    @openerp.tools.mute_logger('openerp.addons.base.ir.ir_ui_view')
+    @odoo.tools.mute_logger('odoo.addons.base.ir.ir_ui_view')
     def test_incorrect_version(self):
         # Version ignored on //field elements, so use something else
         arch = E.form(E.element(foo="42"))
@@ -402,7 +402,7 @@ class TestApplyInheritanceSpecs(ViewCase):
                                               arch,
                                               spec, None)
 
-    @openerp.tools.mute_logger('openerp.addons.base.ir.ir_ui_view')
+    @odoo.tools.mute_logger('odoo.addons.base.ir.ir_ui_view')
     def test_target_not_found(self):
         spec = Field(name="targut")
 
@@ -475,9 +475,9 @@ class TestNoModel(ViewCase):
 
 class TestTemplating(ViewCase):
     def setUp(self):
-        import openerp.modules
+        import odoo.modules
         super(TestTemplating, self).setUp()
-        self._pool = openerp.modules.registry.Registry(common.get_db_name())
+        self._pool = odoo.modules.registry.Registry(common.get_db_name())
         self._init = self._pool._init
         # fuck off
         self._pool._init = False
@@ -886,7 +886,7 @@ class ViewModeField(ViewCase):
         }))
         self.assertEqual(view2.mode, 'extension')
 
-    @openerp.tools.mute_logger('openerp.sql_db')
+    @odoo.tools.mute_logger('odoo.sql_db')
     def testModeExplicit(self):
         view = self.browse(self.create({
             'inherit_id': None,
@@ -906,7 +906,7 @@ class ViewModeField(ViewCase):
                 'arch': '<qweb/>'
             })
 
-    @openerp.tools.mute_logger('openerp.sql_db')
+    @odoo.tools.mute_logger('odoo.sql_db')
     def testPurePrimaryToExtension(self):
         """
         A primary view with inherit_id=None can't be converted to extension

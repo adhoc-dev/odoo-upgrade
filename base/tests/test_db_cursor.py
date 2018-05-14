@@ -2,20 +2,20 @@
 
 import unittest
 
-import openerp
-from openerp.tools.misc import mute_logger
-from openerp.tests import common
+import odoo
+from odoo.tools.misc import mute_logger
+from odoo.tests import common
 
 ADMIN_USER_ID = common.ADMIN_USER_ID
 
 def registry():
-    return openerp.modules.registry.Registry(common.get_db_name())
+    return odoo.modules.registry.Registry(common.get_db_name())
 
 
 class test_cr_execute(unittest.TestCase):
     """ Try cr.execute with wrong parameters """
 
-    @mute_logger('openerp.sql_db')
+    @mute_logger('odoo.sql_db')
     def test_execute_bad_params(self):
         """
         Try to use iterable but non-list or int params in query parameters.

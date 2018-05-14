@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
-import openerp
-from openerp.osv import osv, fields
-from openerp.tools.translate import _
-from openerp.exceptions import UserError
+import odoo
+from odoo.osv import osv, fields
+from odoo.tools.translate import _
+from odoo.exceptions import UserError
 
 class base_module_upgrade(osv.osv_memory):
     """ Module Upgrade """
@@ -83,8 +83,8 @@ class base_module_upgrade(osv.osv_memory):
             ir_module.download(cr, uid, ids, context=context)
             cr.commit() # save before re-creating cursor below
 
-        openerp.api.Environment.reset()
-        openerp.modules.registry.Registry.new(cr.dbname, update_module=True)
+        odoo.api.Environment.reset()
+        odoo.modules.registry.Registry.new(cr.dbname, update_module=True)
 
         return {'type': 'ir.actions.act_window_close'}
 

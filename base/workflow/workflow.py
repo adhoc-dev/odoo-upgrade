@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
-from openerp.exceptions import UserError
-from openerp.osv import fields, osv
-from openerp.tools.translate import _
-import openerp.workflow
+from odoo.exceptions import UserError
+from odoo.osv import fields, osv
+from odoo.tools.translate import _
+import odoo.workflow
 
 class workflow(osv.osv):
     _name = "workflow"
@@ -26,7 +26,7 @@ class workflow(osv.osv):
     def write(self, cr, user, ids, vals, context=None):
         if not context:
             context={}
-        openerp.workflow.clear_cache(cr, user)
+        odoo.workflow.clear_cache(cr, user)
         return super(workflow, self).write(cr, user, ids, vals, context=context)
 
     def get_active_workitems(self, cr, uid, res, res_id, context=None):
@@ -47,7 +47,7 @@ class workflow(osv.osv):
     def create(self, cr, user, vals, context=None):
         if not context:
             context={}
-        openerp.workflow.clear_cache(cr, user)
+        odoo.workflow.clear_cache(cr, user)
         return super(workflow, self).create(cr, user, vals, context=context)
 
 workflow()

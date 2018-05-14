@@ -7,11 +7,11 @@ import re
 import collections
 
 from lxml import etree
-from openerp.addons.base.ir.ir_qweb import QWebContext, FileSystemLoader
-import openerp.modules
+from odoo.addons.base.ir.ir_qweb import QWebContext, FileSystemLoader
+import odoo.modules
 
-from openerp.tests import common
-from openerp.addons.base.ir import ir_qweb
+from odoo.tests import common
+from odoo.addons.base.ir import ir_qweb
 
 class TestQWebTField(common.TransactionCase):
     def setUp(self):
@@ -98,7 +98,7 @@ class TestQWeb(common.TransactionCase):
     @classmethod
     def qweb_test_file_path(cls):
         path = os.path.dirname(
-            openerp.modules.get_module_resource(
+            odoo.modules.get_module_resource(
                 'web', 'static', 'lib', 'qweb', 'qweb2.js'))
         return path
 

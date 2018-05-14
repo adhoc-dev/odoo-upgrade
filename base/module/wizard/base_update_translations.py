@@ -3,10 +3,10 @@
 
 import cStringIO
 
-from openerp import tools
-from openerp.osv import osv, fields
-from openerp.tools.translate import _
-from openerp.exceptions import UserError
+from odoo import tools
+from odoo.osv import osv, fields
+from odoo.tools.translate import _
+from odoo.exceptions import UserError
 
 class base_update_translations(osv.osv_memory):
     def _get_languages(self, cr, uid, context):

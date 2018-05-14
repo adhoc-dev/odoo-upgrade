@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
-from openerp.service import db
-from openerp.tools import config
-import openerp
+from odoo.service import db
+from odoo.tools import config
+import odoo
 import argparse
 import base64
 import inspect
@@ -89,7 +89,7 @@ def main():
     errors = []
     args = parser.parse_args()
 
-    if db_name in openerp.service.db.list_dbs(True):
+    if db_name in odoo.service.db.list_dbs(True):
         _logger.warning('Database "%s" already existis' % db_name)
     else:
         database_file = args.database_file
@@ -141,13 +141,13 @@ def main():
 
 
 def uninstall_web_support_client(args):
-    with openerp.api.Environment.manage():
-        registry = openerp.modules.registry.Registry.new(db_name)
+    with odoo.api.Environment.manage():
+        registry = odoo.modules.registry.Registry.new(db_name)
         with registry.cursor() as cr:
-            uid = openerp.SUPERUSER_ID
-            ctx = openerp.api.Environment(
+            uid = odoo.SUPERUSER_ID
+            ctx = odoo.api.Environment(
                 cr, uid, {})['res.users'].context_get()
-            env = openerp.api.Environment(cr, uid, ctx)
+            env = odoo.api.Environment(cr, uid, ctx)
 
             env['ir.module.module'].search([
                 ('name', 'in', ['web_support_client']),
@@ -167,20 +167,20 @@ def upload_backup(
     # no se porque este parametro no me lo lee
     # config['saas_client.aws_s3_backup_enable'] = True
     config['saas_client.account_name'] = account_name
-    # openerp.cli.server.report_configuration()
-    # openerp.service.server.start(preload=[], stop=True)
-    openerp.api.Environment.reset()
-    with openerp.api.Environment.manage():
-        # registry = openerp.modules.registry.Registry(db_name)
-        registry = openerp.modules.registry.Registry.new(db_name)
+    # odoo.cli.server.report_configuration()
+    # odoo.service.server.start(preload=[], stop=True)
+    odoo.api.Environment.reset()
+    with odoo.api.Environment.manage():
+        # registry = odoo.modules.registry.Registry(db_name)
+        registry = odoo.modules.registry.Registry.new(db_name)
         # con esto trato de evitar un error que me dio
-        # openerp.modules.registry.Registry.signal_registry_change(
+        # odoo.modules.registry.Registry.signal_registry_change(
         #     db_name)
         with registry.cursor() as cr:
-            uid = openerp.SUPERUSER_ID
-            ctx = openerp.api.Environment(
+            uid = odoo.SUPERUSER_ID
+            ctx = odoo.api.Environment(
                 cr, uid, {})['res.users'].context_get()
-            env = openerp.api.Environment(cr, uid, ctx)
+            env = odoo.api.Environment(cr, uid, ctx)
             # lo steamos en el config porque si los borramos en realidad
             # ya estan en el backup
             set_param = env['ir.config_parameter'].set_param
@@ -240,17 +240,17 @@ def purge_database(args):
     errors = []
     # setamos log file (no me anduvo)
     # config['logfile'] = log_file
-    # openerp.cli.server.report_configuration()
-    # openerp.service.server.start(preload=[], stop=True)
-    openerp.api.Environment.reset()
-    with openerp.api.Environment.manage():
-        # registry = openerp.modules.registry.Registry(db_name)
-        registry = openerp.modules.registry.Registry.new(db_name)
+    # odoo.cli.server.report_configuration()
+    # odoo.service.server.start(preload=[], stop=True)
+    odoo.api.Environment.reset()
+    with odoo.api.Environment.manage():
+        # registry = odoo.modules.registry.Registry(db_name)
+        registry = odoo.modules.registry.Registry.new(db_name)
         with registry.cursor() as cr:
-            uid = openerp.SUPERUSER_ID
-            ctx = openerp.api.Environment(
+            uid = odoo.SUPERUSER_ID
+            ctx = odoo.api.Environment(
                 cr, uid, {})['res.users'].context_get()
-            env = openerp.api.Environment(cr, uid, ctx)
+            env = odoo.api.Environment(cr, uid, ctx)
 
             # purgamos bd
             for suffix in suffixs:
@@ -273,20 +273,20 @@ def purge_database(args):
 
 def run_script(args):
 
-    # openerp.tools.config.parse_config(args)
+    # odoo.tools.config.parse_config(args)
     errors = []
     # setamos log file (no me anduvo)
     # config['logfile'] = log_file
-    # openerp.service.server.start(preload=[], stop=True)
-    openerp.api.Environment.reset()
-    with openerp.api.Environment.manage():
-        # registry = openerp.modules.registry.Registry(db_name)
-        registry = openerp.modules.registry.Registry.new(db_name)
+    # odoo.service.server.start(preload=[], stop=True)
+    odoo.api.Environment.reset()
+    with odoo.api.Environment.manage():
+        # registry = odoo.modules.registry.Registry(db_name)
+        registry = odoo.modules.registry.Registry.new(db_name)
         with registry.cursor() as cr:
-            uid = openerp.SUPERUSER_ID
-            ctx = openerp.api.Environment(
+            uid = odoo.SUPERUSER_ID
+            ctx = odoo.api.Environment(
                 cr, uid, {})['res.users'].context_get()
-            env = openerp.api.Environment(cr, uid, ctx)
+            env = odoo.api.Environment(cr, uid, ctx)
 
             # corremos post scripts
             errors += post_migration_scripts.run_scripts(env)
@@ -295,7 +295,7 @@ def run_script(args):
 
 def copy_source_filestore(source_db_filestore):
     _logger.info("Copy source filestore from %s" % (source_db_filestore))
-    filestore = openerp.tools.config.filestore(db_name)
+    filestore = odoo.tools.config.filestore(db_name)
     copy_tree(source_db_filestore, filestore)
     # shutil.copytree(source_db_filestore, filestore)
 

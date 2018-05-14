@@ -7,8 +7,8 @@ import time
 import psycopg2
 import pytz
 
-from openerp import models, fields, api, _
-from openerp.tools import DEFAULT_SERVER_DATE_FORMAT, DEFAULT_SERVER_DATETIME_FORMAT, ustr
+from odoo import models, fields, api, _
+from odoo.tools import DEFAULT_SERVER_DATE_FORMAT, DEFAULT_SERVER_DATETIME_FORMAT, ustr
 
 REFERENCING_FIELDS = {None, 'id', '.id'}
 def only_ref_fields(record):
@@ -54,9 +54,9 @@ class ir_fields_converter(models.AbstractModel):
         """ Returns a converter object for the model. A converter is a
         callable taking a record-ish (a dictionary representing an openerp
         record with values of typetag ``fromtype``) and returning a converted
-        records matching what :meth:`openerp.osv.orm.Model.write` expects.
+        records matching what :meth:`odoo.osv.orm.Model.write` expects.
 
-        :param model: :class:`openerp.osv.orm.Model` for the conversion base
+        :param model: :class:`odoo.osv.orm.Model` for the conversion base
         :returns: a converter callable
         :rtype: (record: dict, logger: (field, error) -> None) -> dict
         """
@@ -123,7 +123,7 @@ class ir_fields_converter(models.AbstractModel):
         as ``ValueError`` above.
 
         :param field: field object to generate a value for
-        :type field: :class:`openerp.fields.Field`
+        :type field: :class:`odoo.fields.Field`
         :param fromtype: type to convert to something fitting for ``field``
         :type fromtype: type | str
         :param context: openerp request context

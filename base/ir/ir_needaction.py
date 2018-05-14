@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
-from openerp.osv import osv
+from odoo.osv import osv
 
 
 class ir_needaction_mixin(osv.AbstractModel):

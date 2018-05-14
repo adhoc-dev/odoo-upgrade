@@ -11,8 +11,8 @@ import hooks
 
 def post_init(cr, registry):
     """Rewrite ICP's to force groups"""
-    from openerp import SUPERUSER_ID
-    from openerp.addons.base.ir.ir_config_parameter import _default_parameters
+    from odoo import SUPERUSER_ID
+    from odoo.addons.base.ir.ir_config_parameter import _default_parameters
     ICP = registry['ir.config_parameter']
     for k, func in _default_parameters.items():
         v = ICP.get_param(cr, SUPERUSER_ID, k)

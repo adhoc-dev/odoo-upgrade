@@ -2,11 +2,11 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 import time
 
-from openerp import SUPERUSER_ID
-from openerp import tools
-from openerp.osv import fields, osv, expression
-from openerp.tools.safe_eval import safe_eval as eval
-from openerp.tools.misc import unquote as unquote
+from odoo import SUPERUSER_ID
+from odoo import tools
+from odoo.osv import fields, osv, expression
+from odoo.tools.safe_eval import safe_eval as eval
+from odoo.tools.misc import unquote as unquote
 
 class ir_rule(osv.osv):
     _name = 'ir.rule'

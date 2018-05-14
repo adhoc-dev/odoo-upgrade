@@ -5,11 +5,11 @@ from collections import defaultdict
 from difflib import get_close_matches
 import logging
 
-from openerp import api, tools, SUPERUSER_ID
-import openerp.modules
-from openerp.osv import fields, osv
-from openerp.tools.translate import _
-from openerp.exceptions import AccessError, UserError, ValidationError
+from odoo import api, tools, SUPERUSER_ID
+import odoo.modules
+from odoo.osv import fields, osv
+from odoo.tools.translate import _
+from odoo.exceptions import AccessError, UserError, ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -695,7 +695,7 @@ class ir_translation(osv.osv):
     def load_module_terms(self, cr, modules, langs, context=None):
         context_template = dict(context or {}) # local copy
         for module_name in modules:
-            modpath = openerp.modules.get_module_path(module_name)
+            modpath = odoo.modules.get_module_path(module_name)
             if not modpath:
                 continue
             for lang in langs:
@@ -707,28 +707,28 @@ class ir_translation(osv.osv):
 
                 # Step 1: for sub-languages, load base language first (e.g. es_CL.po is loaded over es.po)
                 if base_lang_code:
-                    base_trans_file = openerp.modules.get_module_resource(module_name, 'i18n', base_lang_code + '.po')
+                    base_trans_file = odoo.modules.get_module_resource(module_name, 'i18n', base_lang_code + '.po')
                     if base_trans_file:
                         _logger.info('module %s: loading base translation file %s for language %s', module_name, base_lang_code, lang)
                         tools.trans_load(cr, base_trans_file, lang, verbose=False, module_name=module_name, context=context)
                         context['overwrite'] = True # make sure the requested translation will override the base terms later
 
                     # i18n_extra folder is for additional translations handle manually (eg: for l10n_be)
-                    base_trans_extra_file = openerp.modules.get_module_resource(module_name, 'i18n_extra', base_lang_code + '.po')
+                    base_trans_extra_file = odoo.modules.get_module_resource(module_name, 'i18n_extra', base_lang_code + '.po')
                     if base_trans_extra_file:
                         _logger.info('module %s: loading extra base translation file %s for language %s', module_name, base_lang_code, lang)
                         tools.trans_load(cr, base_trans_extra_file, lang, verbose=False, module_name=module_name, context=context)
                         context['overwrite'] = True # make sure the requested translation will override the base terms later
 
                 # Step 2: then load the main translation file, possibly overriding the terms coming from the base language
-                trans_file = openerp.modules.get_module_resource(module_name, 'i18n', lang_code + '.po')
+                trans_file = odoo.modules.get_module_resource(module_name, 'i18n', lang_code + '.po')
                 if trans_file:
                     _logger.info('module %s: loading translation file (%s) for language %s', module_name, lang_code, lang)
                     tools.trans_load(cr, trans_file, lang, verbose=False, module_name=module_name, context=context)
                 elif lang_code != 'en_US':
                     _logger.info('module %s: no translation for language %s', module_name, lang_code)
 
-                trans_extra_file = openerp.modules.get_module_resource(module_name, 'i18n_extra', lang_code + '.po')
+                trans_extra_file = odoo.modules.get_module_resource(module_name, 'i18n_extra', lang_code + '.po')
                 if trans_extra_file:
                     _logger.info('module %s: loading extra translation file (%s) for language %s', module_name, lang_code, lang)
                     tools.trans_load(cr, trans_extra_file, lang, verbose=False, module_name=module_name, context=context)

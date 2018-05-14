@@ -10,20 +10,20 @@ import datetime
 import dateutil
 import pytz
 
-import openerp
-from openerp import SUPERUSER_ID
-from openerp import tools
-from openerp import workflow
-import openerp.api
-from openerp.osv import fields, osv
-from openerp.osv.orm import browse_record
-import openerp.report.interface
-from openerp.report.report_sxw import report_sxw, report_rml
-from openerp.tools import ormcache
-from openerp.tools.safe_eval import safe_eval as eval
-from openerp.tools.translate import _
-import openerp.workflow
-from openerp.exceptions import MissingError, UserError
+import odoo
+from odoo import SUPERUSER_ID
+from odoo import tools
+from odoo import workflow
+import odoo.api
+from odoo.osv import fields, osv
+from odoo.osv.orm import browse_record
+import odoo.report.interface
+from odoo.report.report_sxw import report_sxw, report_rml
+from odoo.tools import ormcache
+from odoo.tools.safe_eval import safe_eval as eval
+from odoo.tools.translate import _
+import odoo.workflow
+from odoo.exceptions import MissingError, UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -126,8 +126,8 @@ class ir_actions_report_xml(osv.osv):
         # First lookup in the deprecated place, because if the report definition
         # has not been updated, it is more likely the correct definition is there.
         # Only reports with custom parser sepcified in Python are still there.
-        if 'report.' + name in openerp.report.interface.report_int._reports:
-            new_report = openerp.report.interface.report_int._reports['report.' + name]
+        if 'report.' + name in odoo.report.interface.report_int._reports:
+            new_report = odoo.report.interface.report_int._reports['report.' + name]
         else:
             cr.execute("SELECT * FROM ir_act_report_xml WHERE report_name=%s", (name,))
             r = cr.dictfetchone()
@@ -136,7 +136,7 @@ class ir_actions_report_xml(osv.osv):
                     return r['report_name']
                 elif r['report_rml'] or r['report_rml_content_data']:
                     if r['parser']:
-                        kwargs = { 'parser': operator.attrgetter(r['parser'])(openerp.addons) }
+                        kwargs = { 'parser': operator.attrgetter(r['parser'])(odoo.addons) }
                     else:
                         kwargs = {}
                     new_report = report_sxw('report.'+r['report_name'], r['model'],
@@ -188,7 +188,7 @@ class ir_actions_report_xml(osv.osv):
         if isinstance(new_report, (str, unicode)):  # Qweb report
             # The only case where a QWeb report is rendered with this method occurs when running
             # yml tests originally written for RML reports.
-            if openerp.tools.config['test_enable'] and not tools.config['test_report_directory']:
+            if odoo.tools.config['test_enable'] and not tools.config['test_report_directory']:
                 # Only generate the pdf when a destination folder has been provided.
                 return self.pool['report'].get_html(cr, uid, res_ids, new_report, data=data, context=context), 'html'
             else:
@@ -392,27 +392,27 @@ class ir_actions_act_window(osv.osv):
         res_id = dataobj.browse(cr, uid, data_id, context).res_id
         return self.read(cr, uid, [res_id], [], context)[0]
 
-    @openerp.api.model
+    @odoo.api.model
     def create(self, vals):
         self.clear_caches()
         return super(ir_actions_act_window, self).create(vals)
 
-    @openerp.api.multi
+    @odoo.api.multi
     def unlink(self):
         self.clear_caches()
         return super(ir_actions_act_window, self).unlink()
 
-    @openerp.api.multi
+    @odoo.api.multi
     def exists(self):
         ids = self._existing()
         existing = self.filtered(lambda rec: rec.id in ids)
         if len(existing) < len(self):
             # mark missing records in cache with a failed value
             exc = MissingError(_("Record does not exist or has been deleted."))
-            (self - existing)._cache.update(openerp.fields.FailedValue(exc))
+            (self - existing)._cache.update(odoo.fields.FailedValue(exc))
         return existing
 
-    @openerp.api.model
+    @odoo.api.model
     @ormcache()
     def _existing(self):
         self._cr.execute("SELECT id FROM %s" % self._table)
@@ -922,7 +922,7 @@ class ir_actions_server(osv.osv):
         record = action.env[action.model_id.model].browse(context['active_id'])
         if action.use_relational_model == 'relational':
             record = getattr(record, action.wkf_field_id.name)
-            if not isinstance(record, openerp.models.BaseModel):
+            if not isinstance(record, odoo.models.BaseModel):
                 record = action.env[action.wkf_model_id.model].browse(record)
 
         record.signal_workflow(action.wkf_transition_id.signal)
@@ -1016,7 +1016,7 @@ class ir_actions_server(osv.osv):
 
         eval_context = super(ir_actions_server, self)._get_eval_context(cr, uid, action=action, context=context)
         obj_pool = self.pool[action.model_id.model]
-        env = openerp.api.Environment(cr, uid, context)
+        env = odoo.api.Environment(cr, uid, context)
         model = env[action.model_id.model]
         obj = None
         if context.get('active_model') == action.model_id.model and context.get('active_id'):
@@ -1029,7 +1029,7 @@ class ir_actions_server(osv.osv):
             'model': model,
             'workflow': workflow,
             # Exceptions
-            'Warning': openerp.exceptions.Warning,
+            'Warning': odoo.exceptions.Warning,
             # record
             # TODO: When porting to master move badly named obj and object to
             # deprecated and define record (active_id) and records (active_ids)
@@ -1166,7 +1166,7 @@ Launch Manually Once: after having been launched manually, it sets automatically
     }
     _order="sequence,id"
 
-    @openerp.api.multi
+    @odoo.api.multi
     def unlink(self):
         if self:
             try:

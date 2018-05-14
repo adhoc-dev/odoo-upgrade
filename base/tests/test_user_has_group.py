@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-import openerp.tests
+import odoo.tests
 
-class TestHasGroup(openerp.tests.TransactionCase):
+class TestHasGroup(odoo.tests.TransactionCase):
     def setUp(self):
         super(TestHasGroup, self).setUp()
 
