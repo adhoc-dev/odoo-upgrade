@@ -44,7 +44,7 @@ class base_language_import(osv.osv_memory):
             fileformat = os.path.splitext(this.filename)[-1][1:].lower()
     
             tools.trans_load_data(cr, fileobj, fileformat, this.code, lang_name=this.name, context=context)
-        except Exception, e:
+        except Exception as e:
             _logger.exception('File unsuccessfully imported, due to format mismatch.')
             raise UserError(_('File not imported due to format mismatch or a malformed file. (Valid formats are .csv, .po, .pot)\n\nTechnical Details:\n%s') % tools.ustr(e))
         finally:

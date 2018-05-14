@@ -355,7 +355,7 @@ class module(osv.osv):
         terp = cls.get_module_info(module_name)
         try:
             cls._check_external_dependencies(terp)
-        except Exception, e:
+        except Exception as e:
             if newstate == 'to install':
                 msg = _('Unable to install module "%s" because an external dependency is not met: %s')
             elif newstate == 'to upgrade':

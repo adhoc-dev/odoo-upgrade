@@ -258,7 +258,7 @@ def purge_database(args):
                 try:
                     env['cleanup.purge.wizard.%s' % suffix].create(
                         {}).purge_all()
-                except Exception, e:
+                except Exception as e:
                     errors.append('Error al purgar %s:\n%s' % (suffix, e))
 
                 # esta tabla tiene nombre totalmente distinto
@@ -266,7 +266,7 @@ def purge_database(args):
                 try:
                     env['cleanup.create_indexes.wizard'].create(
                         {}).purge_all()
-                except Exception, e:
+                except Exception as e:
                     errors.append('Error al purgar %s:\n%s' % (suffix, e))
     return errors
 

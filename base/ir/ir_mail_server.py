@@ -188,7 +188,7 @@ class ir_mail_server(osv.osv):
                 smtp = self.connect(smtp_server.smtp_host, smtp_server.smtp_port, user=smtp_server.smtp_user,
                                     password=smtp_server.smtp_pass, encryption=smtp_server.smtp_encryption,
                                     smtp_debug=smtp_server.smtp_debug)
-            except Exception, e:
+            except Exception as e:
                 raise UserError(_("Connection Test Failed! Here is what we got instead:\n %s") % tools.ustr(e))
             finally:
                 try:
@@ -475,7 +475,7 @@ class ir_mail_server(osv.osv):
             finally:
                 if smtp is not None:
                     smtp.quit()
-        except Exception, e:
+        except Exception as e:
             msg = _("Mail delivery failed via SMTP server '%s'.\n%s: %s") % (tools.ustr(smtp_server),
                                                                              e.__class__.__name__,
                                                                              tools.ustr(e))

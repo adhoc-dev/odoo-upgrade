@@ -136,7 +136,7 @@ class ir_cron(osv.osv):
             else:
                 msg = "Model `%s` does not exist." % model_name
                 _logger.warning(msg)
-        except Exception, e:
+        except Exception as e:
             _logger.exception("Call of self.pool.get('%s').%s(cr, uid, *%r) failed in Job %s" % (model_name, method_name, args, job_id))
             self._handle_callback_exception(cr, uid, model_name, method_name, args, job_id, e)
 

@@ -184,7 +184,7 @@ class ir_http(osv.AbstractModel):
             result = request.dispatch()
             if isinstance(result, Exception):
                 raise result
-        except Exception, e:
+        except Exception as e:
             return self._handle_exception(e)
 
         return result
