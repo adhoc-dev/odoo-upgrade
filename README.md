@@ -1,6 +1,6 @@
-[![Runbot Status](http://runbot.adhoc.com.a1r/runbot/badge/flat/12/9.0.svg)](http://runbot.adhoc.com.ar/runbot/repo/github-com-ingadhoc-odoo-upgrade-12)
-[![Build Status](https://travis-ci.org/ingadhoc/odoo-upgrade.svg?branch=9.0)](https://travis-ci.org/ingadhoc/odoo-upgrade)
-[![Coverage Status](https://coveralls.io/repos/ingadhoc/odoo-upgrade/badge.png?branch=9.0)](https://coveralls.io/r/ingadhoc/odoo-upgrade?branch=9.0)
+[![Runbot Status](http://runbot.adhoc.com.a1r/runbot/badge/flat/12/11.0.svg)](http://runbot.adhoc.com.ar/runbot/repo/github-com-ingadhoc-odoo-upgrade-12)
+[![Build Status](https://travis-ci.org/ingadhoc/odoo-upgrade.svg?branch=11.0)](https://travis-ci.org/ingadhoc/odoo-upgrade)
+[![Coverage Status](https://coveralls.io/repos/ingadhoc/odoo-upgrade/badge.png?branch=11.0)](https://coveralls.io/r/ingadhoc/odoo-upgrade?branch=11.0)
 [![Code Climate](https://codeclimate.com/github/ingadhoc/odoo-upgrade/badges/gpa.svg)](https://codeclimate.com/github/ingadhoc/odoo-upgrade)
 
 # ADHOC odoo-upgrade
@@ -20,10 +20,10 @@ ingenea:
         cambiar inicio Home shop y ordenear para arriba 
 
 ## Para probar en remoto
-    * sudo docker run --rm -ti -w /opt/odoo/ -e SERVER_MODE=migraciones --link db-migraciones-cedent:db -v /opt/odoo/cedent/test/data_dir:/opt/odoo/old_data -u root --name odoo-migraciones-cedent adhoc/odoo-ar-e:9.0 /bin/bash
+    * sudo docker run --rm -ti -w /opt/odoo/ -e SERVER_MODE=migraciones --link db-migraciones-cedent:db -v /opt/odoo/cedent/test/data_dir:/opt/odoo/old_data -u root --name odoo-migraciones-cedent adhoc/odoo-ar-e:11.0 /bin/bash
 
 ## Para probar en local
-    * sudo docker run --rm -ti -w /opt/odoo/ -v /home/jjscarafia/.local/share/Odoo:/opt/odoo/old_data -v /home/jjscarafia/odoo/90/sources/ingadhoc/:/opt/odoo/custom-addons -e SERVER_MODE=migraciones --name odoo-migraciones-local --net=host -e PGUSER=80 -e PGPASSWORD=80 -e PGHOST=localhost adhoc/odoo-ar-e:9.0 /bin/bash
+    * sudo docker run --rm -ti -w /opt/odoo/ -v /home/jjscarafia/.local/share/Odoo:/opt/odoo/old_data -v /home/jjscarafia/odoo/90/sources/ingadhoc/:/opt/odoo/custom-addons -e SERVER_MODE=migraciones --name odoo-migraciones-local --net=host -e PGUSER=80 -e PGPASSWORD=80 -e PGHOST=localhost adhoc/odoo-ar-e:11.0 /bin/bash
     * python custom-addons/odoo-upgrade/migrate_script.py  -i xxx -t "xxxxxxx" -a xxxx
     * python sources/ingadhoc/odoo-upgrade/migrate_script.py  -i xxx -t "xxxxxxx" -a xxxx
 
@@ -53,7 +53,6 @@ TODO:
 ADHOC Odoo odoo-upgrade Modules
 
 [//]: # (addons)
-This part will be replaced when running the oca-gen-addons-table script from OCA/maintainer-tools.
 [//]: # (end addons)
 
 ----
