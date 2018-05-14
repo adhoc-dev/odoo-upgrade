@@ -6,7 +6,7 @@ from lxml import etree
 import math
 import pytz
 import threading
-import urlparse
+import urllib.parse as urlparse
 
 import openerp
 from openerp import tools, api, SUPERUSER_ID

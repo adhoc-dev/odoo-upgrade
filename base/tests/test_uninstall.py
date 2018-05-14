@@ -9,17 +9,17 @@ from openerp.tests import common
 ADMIN_USER_ID = common.ADMIN_USER_ID
 
 def registry(model):
-    return openerp.modules.registry.RegistryManager.get(common.get_db_name())[model]
+    return openerp.modules.registry.Registry(common.get_db_name())[model]
 
 def cursor():
-    return openerp.modules.registry.RegistryManager.get(common.get_db_name()).cursor()
+    return openerp.modules.registry.Registry(common.get_db_name()).cursor()
 
 def get_module(module_name):
-    registry = openerp.modules.registry.RegistryManager.get(common.get_db_name())
+    registry = openerp.modules.registry.Registry(common.get_db_name())
     return registry.get(module_name)
 
 def reload_registry():
-    openerp.modules.registry.RegistryManager.new(
+    openerp.modules.registry.Registry.new(
         common.get_db_name(), update_module=True)
 
 def search_registry(model_name, domain):

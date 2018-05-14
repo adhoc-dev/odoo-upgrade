@@ -13,14 +13,14 @@ import shutil
 import tempfile
 import urllib
 import urllib2
-import urlparse
+import urllib.parse as urlparse
 import zipfile
 import zipimport
 import lxml.html
 from openerp.exceptions import UserError
 
 try:
-    from cStringIO import StringIO
+    from io import StringIO
 except ImportError:
     from StringIO import StringIO   # NOQA
 
@@ -531,7 +531,7 @@ class module(osv.osv):
 
         cr.commit()
         api.Environment.reset()
-        registry = openerp.modules.registry.RegistryManager.new(cr.dbname, update_module=True)
+        registry = openerp.modules.registry.Registry.new(cr.dbname, update_module=True)
 
         cr.commit()
         config = registry['res.config'].next(cr, uid, [], context=context) or {}

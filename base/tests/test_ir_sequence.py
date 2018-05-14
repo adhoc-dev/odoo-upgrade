@@ -17,10 +17,10 @@ from openerp.tests import common
 ADMIN_USER_ID = common.ADMIN_USER_ID
 
 def registry(model):
-    return openerp.modules.registry.RegistryManager.get(common.get_db_name())[model]
+    return openerp.modules.registry.Registry(common.get_db_name())[model]
 
 def cursor():
-    return openerp.modules.registry.RegistryManager.get(common.get_db_name()).cursor()
+    return openerp.modules.registry.Registry(common.get_db_name()).cursor()
 
 
 def drop_sequence(code):

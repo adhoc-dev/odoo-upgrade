@@ -84,7 +84,7 @@ class base_module_upgrade(osv.osv_memory):
             cr.commit() # save before re-creating cursor below
 
         openerp.api.Environment.reset()
-        openerp.modules.registry.RegistryManager.new(cr.dbname, update_module=True)
+        openerp.modules.registry.Registry.new(cr.dbname, update_module=True)
 
         return {'type': 'ir.actions.act_window_close'}
 

@@ -14,7 +14,7 @@ import sys
 import textwrap
 import uuid
 from subprocess import Popen, PIPE
-from urlparse import urlparse
+from urllib.parse import urllib.parse as urlparse
 
 import babel
 import babel.dates

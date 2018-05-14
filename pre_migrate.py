@@ -61,7 +61,7 @@ def main():
     openerp.cli.server.report_configuration()
     openerp.service.server.start(preload=[], stop=True)
     with openerp.api.Environment.manage():
-        registry = openerp.modules.registry.RegistryManager.get(db_name)
+        registry = openerp.modules.registry.Registry(db_name)
         with registry.cursor() as cr:
             uid = openerp.SUPERUSER_ID
             ctx = openerp.api.Environment(

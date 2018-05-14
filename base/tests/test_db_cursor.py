@@ -9,7 +9,7 @@ from openerp.tests import common
 ADMIN_USER_ID = common.ADMIN_USER_ID
 
 def registry():
-    return openerp.modules.registry.RegistryManager.get(common.get_db_name())
+    return openerp.modules.registry.Registry(common.get_db_name())
 
 
 class test_cr_execute(unittest.TestCase):

@@ -594,7 +594,7 @@ class res_config_settings(osv.osv_memory, res_config_module_installation_mixin):
 
         # After the uninstall/install calls, the self.pool is no longer valid.
         # So we reach into the RegistryManager directly.
-        res_config = openerp.modules.registry.RegistryManager.get(cr.dbname)['res.config']
+        res_config = openerp.modules.registry.Registry(cr.dbname)['res.config']
         config = res_config.next(cr, uid, [], context=context) or {}
         if config.get('type') not in ('ir.actions.act_window_close',):
             return config

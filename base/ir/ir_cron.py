@@ -116,7 +116,7 @@ class ir_cron(osv.osv):
         """
         try:
             args = str2tuple(args)
-            openerp.modules.registry.RegistryManager.check_registry_signaling(cr.dbname)
+            openerp.modules.registry.Registry.check_registry_signaling(cr.dbname)
             registry = openerp.registry(cr.dbname)
             if model_name in registry:
                 model = registry[model_name]
@@ -129,7 +129,7 @@ class ir_cron(osv.osv):
                     if _logger.isEnabledFor(logging.DEBUG):
                         end_time = time.time()
                         _logger.debug('%.3fs (%s, %s)' % (end_time - start_time, model_name, method_name))
-                    openerp.modules.registry.RegistryManager.signal_caches_change(cr.dbname)
+                    openerp.modules.registry.Registry.signal_caches_change(cr.dbname)
                 else:
                     msg = "Method `%s.%s` does not exist." % (model_name, method_name)
                     _logger.warning(msg)
