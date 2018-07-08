@@ -13,7 +13,7 @@ from odoo.osv import expression
 from odoo.tools import pycompat
 from odoo.tools.safe_eval import safe_eval
 
-from odoo.openupgrade import openupgrade_log
+# from odoo.openupgrade import openupgrade_log
 from openupgradelib import openupgrade
 
 _logger = logging.getLogger(__name__)
@@ -1460,8 +1460,8 @@ class IrModelData(models.Model):
     @api.model
     def _update(self, model, module, values, xml_id=False, store=True, noupdate=False, mode='init', res_id=False):
         #OpenUpgrade: log entry (used in csv import)
-        if xml_id:
-            openupgrade_log.log_xml_id(self.env.cr, module, xml_id)
+        # if xml_id:
+        #     openupgrade_log.log_xml_id(self.env.cr, module, xml_id)
 
         # records created during module install should not display the messages of OpenChatter
         self = self.with_context(install_mode=True)
