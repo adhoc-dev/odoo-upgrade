@@ -1,4 +1,5 @@
 from openupgradelib import openupgrade, openupgrade_merge_records
+from odoo.addons.base import dynamic_data
 
 # traer actualizado de
 # https://github.com/OCA/OpenUpgrade/blob/11.0/odoo/addons/openupgrade_records/lib/apriori.py
@@ -80,6 +81,12 @@ merged_modules = {
 @openupgrade.migrate()
 def migrate(env, version):
     cr = env.cr
+
+    if dynamic_data.renamed_modules:
+        renamed_modules = dynamic_data.renamed_modules
+    if dynamic_data.merged_modules:
+        merged_modules = dynamic_data.merged_modules
+
     openupgrade.update_module_names(cr, renamed_modules.items())
     openupgrade.update_module_names(
         cr, merged_modules.items(), merge_modules=True)
