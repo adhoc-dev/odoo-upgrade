@@ -44,9 +44,6 @@ renamed_modules = {
     'purchase_contract': 'purchase_subscription',
 }
 
-# TODO borrar
-# 'project_usability_issue'
-# 'stock_usability_quant_manual_assign'
 merged_modules = {
     # OCA/account-financial-reporting
     # Done here for avoiding problems if updating from a previous version
