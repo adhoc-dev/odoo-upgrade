@@ -5,6 +5,15 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
+# como nosotros reseteamos y ponemos todos los modulos 
+from odoo.addons.base.module.module import Module
+# original_check_external_dependencies = Module.check_external_dependencies
+def patched_check_external_dependencies(
+        cls, module_name, newstate='to install'):
+    pass
+Module.check_external_dependencies = patched_check_external_dependencies
+
+
 def add_module_dependencies(cr, module_list):
     """
     Robamos este metodo de openupgrade y sacamos la parte que extiende al
