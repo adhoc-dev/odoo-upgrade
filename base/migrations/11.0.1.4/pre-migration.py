@@ -100,13 +100,12 @@ def migrate(env, version):
     # TODO we are not unintalling downstream_dependencies
 
     if to_remove:
-        openupgrade.logged_query(cr,"""
+        openupgrade.logged_query(cr, """
             UPDATE ir_module_module
             SET state = 'to remove'
             WHERE name in %s AND state in ('installed', 'to upgrade')
             """, (tuple(to_remove),))
 
-    openupgrade.logged_query(cr, sql_remove)
     openupgrade.update_module_names(cr, renamed_modules.items())
     openupgrade.update_module_names(
         cr, merged_modules.items(), merge_modules=True)
