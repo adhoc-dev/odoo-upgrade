@@ -75,6 +75,9 @@ merged_modules = {
 }
 
 
+to_remove = []
+
+
 @openupgrade.migrate()
 def migrate(env, version):
     cr = env.cr
@@ -83,7 +86,27 @@ def migrate(env, version):
         renamed_modules = dynamic_data.renamed_modules
     if dynamic_data.merged_modules:
         merged_modules = dynamic_data.merged_modules
+    if dynamic_data.to_remove:
+        to_remove = dynamic_data.to_remove
 
+    # TODO por ahora no lo hacemos aca ya que tampoco viene siendo necesario
+    # pero lo dejamos planteado por si llega a venir bien, en ese caso
+    # habria que adaptar saas_upgrade para que mande el to_remove
+    # we set to remove from here and not after install because now we are
+    # setting modules as "installed" (instead of on to upgrade) when we
+    # restore the upgraded database, and later, when we run -u all, when odoo
+    # calls button_upgrade method, it can raise to error because of deprecated
+    # modules without dependencies, so we set them to move
+    # TODO we are not unintalling downstream_dependencies
+
+    if to_remove:
+        openupgrade.logged_query(cr,"""
+            UPDATE ir_module_module
+            SET state = 'to remove'
+            WHERE name in %s AND state in ('installed', 'to upgrade')
+            """, (tuple(to_remove),))
+
+    openupgrade.logged_query(cr, sql_remove)
     openupgrade.update_module_names(cr, renamed_modules.items())
     openupgrade.update_module_names(
         cr, merged_modules.items(), merge_modules=True)
