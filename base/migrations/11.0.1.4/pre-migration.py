@@ -118,3 +118,11 @@ def fix_aeroo_reports(cr):
         UPDATE ir_act_report_xml SET parser_state = 'default',
             parser_loc = false
     """)
+
+
+# fix cuando instalamos helpdesk sobre issues migrados al querer obtener un
+# default team, sacamos el default
+from odoo.addons.helpdesk.models.helpdesk_ticket import HelpdeskTicket
+from odoo import fields
+HelpdeskTicket.team_id = fields.Many2one(
+    'helpdesk.team', string='Helpdesk Team', index=True)
