@@ -100,9 +100,11 @@ def migrate(env, version):
     # TODO we are not unintalling downstream_dependencies
 
     if to_remove:
+        # a todos los que querramos borrar los ponemos a desinstalar y tambien
+        # le sacamos el auto_install porque si no se terminan instalando luego
         openupgrade.logged_query(cr, """
             UPDATE ir_module_module
-            SET state = 'to remove'
+            SET state = 'to remove', auto_install = false
             WHERE name in %s AND state in ('installed', 'to upgrade')
             """, (tuple(to_remove),))
 
