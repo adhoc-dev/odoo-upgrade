@@ -6,7 +6,12 @@ from openupgradelib import openupgrade
 
 @openupgrade.migrate()
 def migrate(env, version):
-    openupgrade.disable_invalid_filters(env)
+    # lo hacemos con try porque en pocos casos nos dio error y no queremos
+    # bloquear upgrade por esto
+    try:
+        openupgrade.disable_invalid_filters(env)
+    except:
+        pass
     env.cr.execute(
         "UPDATE ir_module_module SET latest_version = '11.0.1.3' "
         "WHERE name = 'base'")
