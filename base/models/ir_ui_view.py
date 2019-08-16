@@ -354,13 +354,14 @@ actual arch.
                 if view_docs[0].tag == 'data':
                     # A <data> element is a wrapper for multiple root nodes
                     view_docs = view_docs[0]
-                for view_arch in view_docs:
-                    check = valid_view(view_arch)
-                    if not check:
-                        raise ValidationError(_('Invalid view %s definition in %s') % (view.name, view.arch_fs))
-                    # OpenUpgrade: Don't show this warning as useless and too much verbose
-                    # if check == "Warning":
-                        # _logger.warning(_('Invalid view %s definition in %s'), view.name, view.arch_fs)
+                # COMENTAMOS CUALQIER TIPO DE ERROR DE VIEW PARA NO RENEGAR, LOS HACEMOS EN POST SCRIPT MAS TARDE
+                # for view_arch in view_docs:
+                #     check = valid_view(view_arch)
+                #     if not check:
+                #         raise ValidationError(_('Invalid view %s definition in %s') % (view.name, view.arch_fs))
+                #     # OpenUpgrade: Don't show this warning as useless and too much verbose
+                #     # if check == "Warning":
+                #         # _logger.warning(_('Invalid view %s definition in %s'), view.name, view.arch_fs)
         return True
 
     @api.constrains('type', 'groups_id')

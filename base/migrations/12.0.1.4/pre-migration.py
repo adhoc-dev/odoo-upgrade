@@ -9,6 +9,7 @@ def migrate(env, version):
     renamed_modules = dynamic_data.renamed_modules
     merged_modules = dynamic_data.merged_modules
     to_remove = dynamic_data.to_remove
+    xmlid_renames = dynamic_data.xmlid_renames
 
     # TODO por ahora no lo hacemos aca ya que tampoco viene siendo necesario
     # pero lo dejamos planteado por si llega a venir bien, en ese caso
@@ -31,12 +32,7 @@ def migrate(env, version):
 
     openupgrade.update_module_names(cr, renamed_modules.items())
     openupgrade.update_module_names(cr, merged_modules.items(), merge_modules=True)
-
-    # TODO implementar?
-    # xmlid_renames = [
-    #     ('auth_signup.default_template_user', 'base.template_portal_user_id'),
-    # ]
-    # openupgrade.rename_xmlids(env.cr, xmlid_renames)
+    openupgrade.rename_xmlids(env.cr, xmlid_renames)
 
     # fix_aeroo_reports(cr)
 
