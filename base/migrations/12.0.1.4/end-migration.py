@@ -43,7 +43,7 @@ def migrate(env, version):
     except:
         pass
     env.cr.execute(
-        "UPDATE ir_module_module SET latest_version = '11.0.1.3' "
+        "UPDATE ir_module_module SET latest_version = '12.0.1.3' "
         "WHERE name = 'base'")
     # recargamos traducciones (nos da error y ademas seguramente no es necesario)
     # env['base.language.install'].create({'lang': 'es_AR', 'overwrite': True}).lang_install()
