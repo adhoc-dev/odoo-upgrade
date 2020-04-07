@@ -33,9 +33,10 @@ merged_modules = {
   'account_clean_cancelled_invoice_number': 'account_ux',
   'account_type_menu': 'account_menu',
   'account_document': 'l10n_latam_invoice_document',
-  'l10n_ar_account': 'l10n_ar',
-  'l10n_ar_afipws': 'l10n_ar_edi',
+  'l10n_ar_account': 'l10n_ar_ux', # lo hacemos a l10n_ar_ux para renombrar menos xmlids y tmb que se auto instale
+  'l10n_ar_afipws': 'l10n_ar_edi_ux', # lo hacemos a l10n_ar_edi pa que se auto instale
   'l10n_ar_afipws_fe': 'l10n_ar_edi',
+  'l10n_ar_partner': 'l10n_latam_base',
 }
 
 

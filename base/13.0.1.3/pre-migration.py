@@ -16,7 +16,7 @@ def _check_xml(self):
     try:
         _original_check_xml
     except Exception as e:
-        _logger.warning('Invalid view definition. This is what we get:\n%s'), e)
+        _logger.warning('Invalid view definition. This is what we get:\n%s', e)
 
 
 View._check_xml = _check_xml
@@ -47,6 +47,14 @@ def migrate(env, version):
     openupgrade.update_module_names(cr, renamed_modules.items())
     openupgrade.update_module_names(cr, merged_modules.items(), merge_modules=True)
     openupgrade.rename_xmlids(env.cr, xmlid_renames)
+
+    # a los modulos que hicimos merge y que no estaba instalados quedan con version vacia pero necesitamos que tengan
+    # version para que se corran los scripts (caso l10n_ar, l10n_latam_invoice_document, etc)
+    openupgrade.logged_query(cr, """
+        UPDATE ir_module_module
+        SET latest_version = '13.0.0.0.0'
+        WHERE latest_version is null and state = 'installed'
+        """)
 
 # fix cuando instalamos helpdesk sobre issues migrados al querer obtener un
 # default team, sacamos el default
