@@ -45,6 +45,7 @@ to_remove = [
   'product_variant_o2o', 'account_move_helper', 'snippet_google_map', 'saas_client_subscription', 'password_security', 'web_widget_datepicker_options',
   'base_partner_merge', 'portal_ux', 'web_sheet_full_width', 'stock_analysis_aeroo_report', 'account_reports_cash_flow', 'stock_inventory_require_lot', 'sale_restrict_partners',
   'account_financial_report_date_range',
+  'project_timeline_task_dependency',
   # de v13
   'web_widget_many2many_tags_multi_selection',
   'google_cloud_print',
@@ -55,6 +56,7 @@ to_remove = [
   'base_vat_sanitized',
   'saas_client_sale_timesheet',
   'website_logo',
+  'web_editor_background_color', # nativo en odoo
   # modulos que odoo auto-instalaba pero que nosotros no usamos y ahora NO auto instalamos
   'account_facturx',
   'account_bank_statement_import_ofx',
@@ -65,13 +67,40 @@ to_remove = [
   'account_plaid',
   'account_taxcloud',
   # probamos depreciar:
+  'web_export_view', # ALGO SIMILAR ES NATIVO EN ODOO
   'partner_external_map', # ALGO SIMILAR ES NATIVO EN ODOO
   'account_debt_management',
   'survey_append_filters',
   'l10n_ar_account_vat_ledger',
   'l10n_ar_account_vat_ledger_citi',
+  'web_widget_domain_editor_dialog',
+  'web_widget_image_url',
+  'web_action_conditionable',
+  'website_crm_recaptcha',
+  'dbfilter_from_header',
+  'datetime_formatter',
+  'base_search_mail_content',
+  'website_sale_require_legal',
+  'quality_control_stock',
+  'mrp_production_request',
+  'mrp_stock_orderpoint_manual_procurement',
+  'mrp_multi_level_estimate',
+  'website_cookie_notice',
+  'analytic_partner_hr_timesheet',
+  'crm_claim_code',
+  'stock_orderpoint_mrp_link',
+  'purchase_stock_picking_restrict_cancel',
+  'purchase_request_order_approved',
+  'sale_order_product_recommendation_secondary_unit',
+  'sale_automatic_workflow_payment_mode',
   # todavia no migrados
   'l10n_ar_sale',
+  'web_search_with_and',
+  'web_advanced_search',
+  'website_media_size',
+  'web_ir_actions_act_multi',
+  'web_disable_export_group',
+  'document_url',
 ]
 
 
