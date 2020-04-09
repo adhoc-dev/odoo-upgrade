@@ -56,8 +56,12 @@ to_remove = [
   'base_vat_sanitized',
   'saas_client_sale_timesheet',
   'website_logo',
+  'website_js_below_the_fold',
+  'crm_ux',
   'web_editor_background_color', # nativo en odoo
   # modulos que odoo auto-instalaba pero que nosotros no usamos y ahora NO auto instalamos
+  'odoo_referral',
+  'odoo_referral_portal',
   'account_facturx',
   'account_bank_statement_import_ofx',
   'account_bank_statement_import_camt',
@@ -66,6 +70,7 @@ to_remove = [
   'account_yodlee',
   'account_plaid',
   'account_taxcloud',
+  'l10n_fr_sale_closing',
   # probamos depreciar:
   'web_export_view', # ALGO SIMILAR ES NATIVO EN ODOO
   'partner_external_map', # ALGO SIMILAR ES NATIVO EN ODOO
@@ -93,18 +98,26 @@ to_remove = [
   'purchase_request_order_approved',
   'sale_order_product_recommendation_secondary_unit',
   'sale_automatic_workflow_payment_mode',
-  # todavia no migrados
-  'l10n_ar_sale',
+  # todavia no migrados (solo aquellos que no generan datos y se pueden volver a instalar luego)
   'web_search_with_and',
   'web_advanced_search',
   'website_media_size',
   'web_ir_actions_act_multi',
   'web_disable_export_group',
   'document_url',
+  'website_adv_image_optimization',
+  'mail_activity_board_ux',
+  'l10n_ar_website_sale_delivery',
+  'l10n_ar_website_sale',
+  'website_product_pack',
+  'mail_internal',
+  'database_cleanup',
+  'base_user_show_email',
 ]
 
 
 xmlid_renames = [
+  # creo que fuimos y vinimos con v11/v12 con esto y nos da error en algunos casos, de ultima se vuelve a activar o lo hacemos con post script
   # ('account_financial_amount.account_use_financial_amounts', 'account_debt_management.account_use_financial_amounts'),
   # ('account_debt_management.account_use_financial_amounts', 'account_financial_amount.account_use_financial_amounts'),
   ('purchase_ux.field_purchase_order_force_delivered_status', 'purchase_stock_ux.field_purchase_order_force_delivered_status'),
@@ -120,6 +133,7 @@ xmlid_renames = [
   ('saas_client.model_saas_client_changelog', 'saas_client_adhoc.model_saas_client_changelog'),
   ('saas_client.field_res_users__portal_access', 'saas_client_adhoc.field_res_users__portal_access'),
   ('saas_client.field_res_users__authorized_for_issues', 'saas_client_adhoc.field_res_users__authorized_for_issues'),
+  # para los campos no hace falta y nos queremos evitar posible error
   # ('saas_client.field_res_users__saas_provider_uuid', 'saas_client_adhoc.field_res_users__saas_provider_uuid'),
   ('saas_client.group_hidden_resources', 'saas_client_adhoc.group_hidden_resources'),
   ('saas_client.contract_adhoc_modules', 'saas_client_adhoc.contract_adhoc_modules'),
