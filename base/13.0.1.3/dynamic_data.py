@@ -47,6 +47,9 @@ to_remove = [
   'account_financial_report_date_range',
   'project_timeline_task_dependency',
   # de v13
+  'sale_stock_multic_fix',
+  'purchase_multic_fix',
+  'purchase_stock_multic_fix',
   'web_widget_many2many_tags_multi_selection',
   'google_cloud_print',
   'l10n_ar_aeroo_einvoice',
@@ -71,6 +74,7 @@ to_remove = [
   'account_plaid',
   'account_taxcloud',
   'l10n_fr_sale_closing',
+  'web_widget_color',
   # probamos depreciar:
   'web_export_view', # ALGO SIMILAR ES NATIVO EN ODOO
   'partner_external_map', # ALGO SIMILAR ES NATIVO EN ODOO
@@ -102,7 +106,6 @@ to_remove = [
   'web_search_with_and',
   'web_advanced_search',
   'website_media_size',
-  'web_ir_actions_act_multi',
   'web_disable_export_group',
   'document_url',
   'website_adv_image_optimization',
