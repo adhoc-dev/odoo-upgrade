@@ -46,6 +46,7 @@ to_remove = [
   'base_partner_merge', 'portal_ux', 'web_sheet_full_width', 'stock_analysis_aeroo_report', 'account_reports_cash_flow', 'stock_inventory_require_lot', 'sale_restrict_partners',
   'account_financial_report_date_range',
   'project_timeline_task_dependency',
+  'l10n_fr_sale_closing',
   # de v13
   'mrp_bom_structure_report', # estaria nativo en odoo algo similar
   'sale_stock_multic_fix',

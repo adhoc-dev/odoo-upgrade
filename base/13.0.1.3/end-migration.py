@@ -18,6 +18,17 @@ def migrate(env, version):
         for filename in ['data/mis_report.xml', 'data/mis_report_instance.xml', 'data/mis_report_style.xml']:
             openupgrade.load_data(env.cr, 'mis_builder_cash_flow', filename)
 
+    # TODO borrar modulos que desinstalamos (probablemente algunos ya no estan en la imagen y si no se marcan
+    # para auto instalar)
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    sys.path.insert(1, dir_path)
+    import dynamic_data
+    to_remove = dynamic_data.to_remove
+
+    env['ir.module.module'].search([('name', 'in', to_remove), ('state', '=', 'to install')]).button_install_cancel()
+    to_unlink = env['ir.module.module'].search([('name', 'in', to_remove), ('state', 'in', ['uninstalled', 'uninstallable'])])
+    to_unlink.unlink()
+
     # TODO REVISAR Y ACTIVAR
     # no forzamos actualizacion de plantilla de facturas y ventas porque son pocas y podemos hacerlo a mano (además nos desconfigura el reporte por defecto de Aeroo)
     # openupgrade.load_data(env.cr, 'account', 'data/mail_template_data.xml')
