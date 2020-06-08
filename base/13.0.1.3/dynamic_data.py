@@ -10,6 +10,7 @@ renamed_modules = {
   'helpdesk_project_ux' : 'helpdesk_timesheet_ux',
   # v13
   'saas_client_mass_editing': 'saas_client_mass_operation_abstract',
+  'l10n_ar_account_vat_ledger': 'l10n_ar_reports',
 }
 
 
@@ -62,18 +63,26 @@ to_remove = [
   'website_logo',
   'website_js_below_the_fold',
   'crm_ux',
+  'l10n_ar_account_vat_ledger_citi',
   'web_editor_background_color', # nativo en odoo
   # modulos que odoo auto-instalaba pero que nosotros no usamos y ahora NO auto instalamos
   'odoo_referral',
   'odoo_referral_portal',
   'account_facturx',
+  'snailmail',
+  'snailmail_account',
+  'account_cash_basis_base_account',
   'account_bank_statement_import_ofx',
+  'account_bank_statement_import_qif',
   'account_bank_statement_import_camt',
   'account_invoice_extract',
   'account_ponto',
   'account_yodlee',
   'account_plaid',
   'account_taxcloud',
+  'sale_account_taxcloud',
+  'website_sale_account_taxcloud',
+  'website_sale_taxcloud_delivery',
   'l10n_fr_sale_closing',
   'web_widget_color',
   'account_menu',  # usando enterprise no tendria sentido
@@ -95,8 +104,6 @@ to_remove = [
   'l10n_ar_base',
   'account_debt_management',
   'survey_append_filters',
-  'l10n_ar_account_vat_ledger',
-  'l10n_ar_account_vat_ledger_citi',
   'web_widget_domain_editor_dialog',
   'web_widget_image_url',
   'web_action_conditionable',
@@ -127,6 +134,8 @@ to_remove = [
   'l10n_ar_website_sale',
   'website_product_pack',
   'base_user_show_email',
+  'product_pricelist',
+  'mail_tracking_mass_mailing',
 ]
 
 
