@@ -10,7 +10,6 @@ renamed_modules = {
   'helpdesk_project_ux' : 'helpdesk_timesheet_ux',
   # v13
   'saas_client_mass_editing': 'saas_client_mass_operation_abstract',
-  'l10n_ar_account_vat_ledger': 'l10n_ar_reports',
 }
 
 
@@ -63,6 +62,7 @@ to_remove = [
   'website_logo',
   'website_js_below_the_fold',
   'crm_ux',
+  'l10n_ar_account_vat_ledger',
   'l10n_ar_account_vat_ledger_citi',
   'web_editor_background_color', # nativo en odoo
   # modulos que odoo auto-instalaba pero que nosotros no usamos y ahora NO auto instalamos
@@ -87,6 +87,7 @@ to_remove = [
   'web_widget_color',
   'account_menu',  # usando enterprise no tendria sentido
   'account_type_menu',
+  'sale_exceptions_timesheet',
   # probamos depreciar:
   'web_export_view', # ALGO SIMILAR ES NATIVO EN ODOO
   'partner_external_map', # ALGO SIMILAR ES NATIVO EN ODOO
