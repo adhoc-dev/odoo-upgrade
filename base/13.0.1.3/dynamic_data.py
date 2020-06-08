@@ -31,7 +31,7 @@ merged_modules = {
   # v13
   'l10n_ar_chart': 'l10n_ar',
   'account_clean_cancelled_invoice_number': 'account_ux',
-  'account_type_menu': 'account_menu',
+  # 'account_type_menu': 'account_menu', # a este lo depreciamos
   'account_document': 'l10n_latam_invoice_document',
   'l10n_ar_account': 'l10n_ar_ux', # lo hacemos a l10n_ar_ux para renombrar menos xmlids y tmb que se auto instale
   'l10n_ar_afipws': 'l10n_ar_edi_ux', # lo hacemos a l10n_ar_edi pa que se auto instale
@@ -47,6 +47,7 @@ to_remove = [
   'account_financial_report_date_range',
   'project_timeline_task_dependency',
   # de v13
+  'mrp_bom_structure_report', # estaria nativo en odoo algo similar
   'sale_stock_multic_fix',
   'purchase_multic_fix',
   'purchase_stock_multic_fix',
@@ -75,9 +76,23 @@ to_remove = [
   'account_taxcloud',
   'l10n_fr_sale_closing',
   'web_widget_color',
+  'account_menu',  # usando enterprise no tendria sentido
+  'account_type_menu',
   # probamos depreciar:
   'web_export_view', # ALGO SIMILAR ES NATIVO EN ODOO
   'partner_external_map', # ALGO SIMILAR ES NATIVO EN ODOO
+  'report_extended',
+  'report_extended_account',
+  'report_extended_payment_group',
+  'report_extended_purchase',
+  'report_extended_sale',
+  'report_extended_stock',
+  'report_extended_website_sale',
+  'l10n_ar_aeroo_base',
+  'l10n_ar_aeroo_payment_group',
+  'l10n_ar_aeroo_purchase',
+  'l10n_ar_aeroo_sale',
+  'l10n_ar_base',
   'account_debt_management',
   'survey_append_filters',
   'l10n_ar_account_vat_ledger',
@@ -104,17 +119,13 @@ to_remove = [
   'sale_automatic_workflow_payment_mode',
   # todavia no migrados (solo aquellos que no generan datos y se pueden volver a instalar luego)
   'web_search_with_and',
-  'web_advanced_search',
   'website_media_size',
   'web_disable_export_group',
-  'document_url',
   'website_adv_image_optimization',
   'mail_activity_board_ux',
   'l10n_ar_website_sale_delivery',
   'l10n_ar_website_sale',
   'website_product_pack',
-  'mail_internal',
-  'database_cleanup',
   'base_user_show_email',
 ]
 
