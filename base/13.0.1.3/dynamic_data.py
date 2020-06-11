@@ -86,7 +86,6 @@ to_remove = [
   'website_sale_taxcloud_delivery',
   'l10n_fr_sale_closing',
   'web_widget_color',
-  'account_menu',  # usando enterprise no tendria sentido
   'account_type_menu',
   'sale_exceptions_timesheet',
   'event_sale_ux',
