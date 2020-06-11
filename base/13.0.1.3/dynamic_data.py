@@ -90,8 +90,9 @@ to_remove = [
   'sale_exceptions_timesheet',
   'event_sale_ux',
   # probamos depreciar:
-  'web_export_view', # ALGO SIMILAR ES NATIVO EN ODOO
-  'partner_external_map', # ALGO SIMILAR ES NATIVO EN ODOO
+  'account_analytic_required',  # vamos a usar lo nuevo en account_ux
+  'web_export_view',  # ALGO SIMILAR ES NATIVO EN ODOO
+  'partner_external_map',  # ALGO SIMILAR ES NATIVO EN ODOO
   'report_extended',
   'report_extended_account',
   'report_extended_payment_group',
