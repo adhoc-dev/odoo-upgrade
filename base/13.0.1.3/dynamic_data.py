@@ -97,6 +97,9 @@ to_remove = [
   'sale_exceptions_timesheet',
   'event_sale_ux',
   # probamos depreciar:
+  'surveyor',
+  'surveyor_payments',
+  'analytic_surveyor',
   'web_dashboard_tile',  # ahora usamos el ninja
   'account_analytic_required',  # vamos a usar lo nuevo en account_ux
   'web_export_view',  # ALGO SIMILAR ES NATIVO EN ODOO
