@@ -89,6 +89,7 @@ to_remove = [
   'account_menu',  # usando enterprise no tendria sentido
   'account_type_menu',
   'sale_exceptions_timesheet',
+  'event_sale_ux',
   # probamos depreciar:
   'web_export_view', # ALGO SIMILAR ES NATIVO EN ODOO
   'partner_external_map', # ALGO SIMILAR ES NATIVO EN ODOO
