@@ -39,10 +39,6 @@ _xmlid_renames = [
 
     # renombrar tax groups
     # al final el modulo l10n_ar_account se renombro a l10n_ar_ux, por eso hacemos arl revx
-    # ('l10n_ar.tax_group_retencion_iva', 'l10n_ar_ux.tax_group_retencion_iva'),
-    # ('l10n_ar.tax_group_retencion_ganancias', 'l10n_ar_ux.tax_group_retencion_ganancias'),
-    # ('l10n_ar.tax_group_retencion_iibb', 'l10n_ar_ux.tax_group_retencion_iibb'),
-    # ('l10n_ar.tax_group_retencion_drei', 'l10n_ar_ux.tax_group_retencion_drei'),
     ('l10n_ar_ux.tax_group_percepcion_drei', 'l10n_ar.tax_group_percepcion_municipal'),
     ('l10n_ar_ux.tax_impuestos_internos', 'l10n_ar.tax_impuestos_internos'),
     ('l10n_ar_ux.tax_group_iva_no_corresponde', 'l10n_ar.tax_group_iva_no_corresponde'),
@@ -71,10 +67,6 @@ _xmlid_renames = [
     ('l10n_ar_ux.res_EVENTUAL', 'l10n_ar.res_EVENTUAL'),
     ('l10n_ar_ux.res_MON_SOCIAL', 'l10n_ar.res_MON_SOCIAL'),
     ('l10n_ar_ux.res_EVENTUAL_SOCIAL', 'l10n_ar.res_EVENTUAL_SOCIAL'),
-    # partners TODO tal vez hacer estos con try except? podrian estar borrados
-    ('l10n_ar_ux.par_cfa', 'l10n_ar.par_cfa'),
-    ('l10n_ar_ux.par_iibb_pagar', 'l10n_ar.par_iibb_pagar'),
-    ('l10n_ar_ux.partner_afip', 'l10n_ar.partner_afip'),
     # identification types que van a l10n_ar (importante hacerlo aca)
     ('l10n_latam_base.dt_CUIT', 'l10n_ar.it_cuit'),
     ('l10n_latam_base.dt_DNI', 'l10n_ar.it_dni'),
@@ -122,6 +114,15 @@ def migrate(env, version):
     openupgrade.rename_tables(env.cr, _table_renames)
     openupgrade.rename_fields(env, _field_renames)
     openupgrade.rename_xmlids(env.cr, _xmlid_renames)
+
+    # rename exml ids que podrian no estar mas
+    try:
+        openupgrade.rename_xmlids(env.cr, [
+            ('l10n_ar_ux.par_cfa', 'l10n_ar.par_cfa'),
+            ('l10n_ar_ux.par_iibb_pagar', 'l10n_ar.par_iibb_pagar'),
+            ('l10n_ar_ux.partner_afip', 'l10n_ar.partner_afip')])
+    except Exception as e:
+        _logger.debug('No pudimos actualizar xml ids de algunos partners, probablemente se borraron')
 
     # rename de columnas de fiscal position
     openupgrade.rename_columns(env.cr, _column_renames)

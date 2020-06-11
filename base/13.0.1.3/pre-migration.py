@@ -29,7 +29,6 @@ def migrate(env, version):
     import dynamic_data
     cr = env.cr
 
-
     renamed_modules = dynamic_data.renamed_modules
     merged_modules = dynamic_data.merged_modules
     to_remove = dynamic_data.to_remove
