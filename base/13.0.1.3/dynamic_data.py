@@ -66,7 +66,14 @@ to_remove = [
   'l10n_ar_account_vat_ledger',
   'l10n_ar_account_vat_ledger_citi',
   'web_editor_background_color', # nativo en odoo
+  'l10n_ar_aeroo_stock',
+  'theme_kea_sale',
+  'theme_loftspace_sale',
+  'website_anchor_smooth_scroll',
+  'theme_odoo_experts_sale',
+  'website_snippet_anchor',
   # modulos que odoo auto-instalaba pero que nosotros no usamos y ahora NO auto instalamos
+  'snailmail_account_followup',
   'odoo_referral',
   'odoo_referral_portal',
   'account_facturx',
@@ -90,6 +97,7 @@ to_remove = [
   'sale_exceptions_timesheet',
   'event_sale_ux',
   # probamos depreciar:
+  'web_dashboard_tile',  # ahora usamos el ninja
   'account_analytic_required',  # vamos a usar lo nuevo en account_ux
   'web_export_view',  # ALGO SIMILAR ES NATIVO EN ODOO
   'partner_external_map',  # ALGO SIMILAR ES NATIVO EN ODOO
@@ -128,6 +136,7 @@ to_remove = [
   'sale_order_product_recommendation_secondary_unit',
   'sale_automatic_workflow_payment_mode',
   # todavia no migrados (solo aquellos que no generan datos y se pueden volver a instalar luego)
+  'website_sale_exception',
   'web_search_with_and',
   'website_media_size',
   'web_disable_export_group',
