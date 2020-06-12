@@ -21,6 +21,9 @@ def migrate(env, version):
     sys.path.insert(1, dir_path)
     import dynamic_data
     to_remove = dynamic_data.to_remove
+    to_uninstall = env['ir.module.module'].search([('name', 'in', to_remove), ('state', 'in', ['installed', 'to upgrade'])])
+    if to_uninstall:
+        to_uninstall.button_immediate_uninstall()
 
     env['ir.module.module'].search([('name', 'in', to_remove), ('state', '=', 'to install')]).button_install_cancel()
     to_unlink = env['ir.module.module'].search([('name', 'in', to_remove), ('state', 'in', ['uninstalled', 'uninstallable'])])
