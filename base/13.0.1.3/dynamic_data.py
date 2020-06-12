@@ -72,6 +72,7 @@ to_remove = [
   'website_anchor_smooth_scroll',
   'theme_odoo_experts_sale',
   'website_snippet_anchor',
+  'mrp_consume_restrict_lot',
   # modulos que odoo auto-instalaba pero que nosotros no usamos y ahora NO auto instalamos
   'snailmail_account_followup',
   'odoo_referral',
@@ -83,7 +84,6 @@ to_remove = [
   'account_bank_statement_import_ofx',
   'account_bank_statement_import_qif',
   'account_bank_statement_import_camt',
-  'account_invoice_extract',
   'account_ponto',
   'account_yodlee',
   'account_plaid',
@@ -150,7 +150,6 @@ to_remove = [
   'website_product_pack',
   'base_user_show_email',
   'product_pricelist',
-  'mail_tracking_mass_mailing',
 ]
 
 
