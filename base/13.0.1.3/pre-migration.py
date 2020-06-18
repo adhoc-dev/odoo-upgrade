@@ -31,17 +31,7 @@ def migrate(env, version):
 
     renamed_modules = dynamic_data.renamed_modules
     merged_modules = dynamic_data.merged_modules
-    to_remove = dynamic_data.to_remove
     xmlid_renames = dynamic_data.xmlid_renames
-
-    if to_remove:
-        # a todos los que querramos borrar los ponemos a desinstalar y tambien
-        # le sacamos el auto_install porque si no se terminan instalando luego
-        openupgrade.logged_query(cr, """
-            UPDATE ir_module_module
-            SET state = 'to remove', auto_install = false
-            WHERE name in %s AND state in ('installed', 'to upgrade')
-            """, (tuple(to_remove),))
 
     openupgrade.update_module_names(cr, renamed_modules.items())
     openupgrade.update_module_names(cr, merged_modules.items(), merge_modules=True)
