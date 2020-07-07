@@ -11,6 +11,10 @@ to_install = [
 
 
 def install_new_modules(cr):
+    mods_to_install = to_install
+    cr.execute("select id from sale_order_line_pack_line;")
+    if cr.fetchall():
+        mods_to_install += ['sale_product_pack_assisted']
     sql = """
     UPDATE ir_module_module
     SET state='to install'
