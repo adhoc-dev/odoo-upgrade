@@ -12,9 +12,12 @@ def migrate(env, version):
         pass
 
     # migracion de cash flow
-    if env['ir.module.module'].search([('name', '=', 'mis_builder_cash_flow'), ('state', '=', 'installed')]):
-        for filename in ['data/mis_report.xml', 'data/mis_report_instance.xml', 'data/mis_report_style.xml']:
-            openupgrade.load_data(env.cr, 'mis_builder_cash_flow', filename)
+    # try:
+    #     if env['ir.module.module'].search([('name', '=', 'mis_builder_cash_flow'), ('state', '=', 'installed')]):
+    #         for filename in ['data/mis_report.xml', 'data/mis_report_instance.xml', 'data/mis_report_style.xml']:
+    #             openupgrade.load_data(env.cr, 'mis_builder_cash_flow', filename)
+    # except:
+    #     pass
 
     # # recargamos traducciones (por ahora no lo hacemos, si llegamos a ver que suma y es necesario probamos activarlo)
     # env['base.language.install'].create({'lang': 'es_AR', 'overwrite': True}).lang_install()
