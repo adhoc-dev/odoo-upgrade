@@ -10,6 +10,7 @@ renamed_modules = {
   'helpdesk_project_ux' : 'helpdesk_timesheet_ux',
   # v13
   'saas_client_mass_editing': 'saas_client_mass_operation_abstract',
+  'logos_product_attributes': 'logos_personalization',
 }
 
 
