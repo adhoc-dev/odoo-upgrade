@@ -30,6 +30,8 @@ merged_modules = {
   'account_asset_management': 'account_asset',
   'portal_sale_distributor_wesbite_quote': 'portal_sale_distributor',
   # v13
+  'transindar_personalization': 'personalizations_ingenieriaboggio',
+  'logos_personalization': 'personalizations_edicioneslogos',
   'l10n_ar_chart': 'l10n_ar',
   'account_clean_cancelled_invoice_number': 'account_ux',
   # 'account_type_menu': 'account_menu', # a este lo depreciamos
