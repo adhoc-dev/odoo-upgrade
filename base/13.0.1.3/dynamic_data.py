@@ -11,6 +11,7 @@ renamed_modules = {
   # v13
   'saas_client_mass_editing': 'saas_client_mass_operation_abstract',
   'logos_product_attributes': 'logos_personalization',
+  'legal': 'personalizations_royr',
 }
 
 
