@@ -12,6 +12,8 @@ renamed_modules = {
   'saas_client_mass_editing': 'saas_client_mass_operation_abstract',
   'logos_product_attributes': 'logos_personalization',
   'legal': 'personalizations_royr',
+  'website_sale_product_description': 'website_sale_prod_description',
+  'website_sale_order_type': 'website_sale_order_type_ux',
 }
 
 
