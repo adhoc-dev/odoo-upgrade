@@ -1,6 +1,7 @@
 # mas info sobre openupgradelib aca: https://github.com/OCA/openupgradelib/tree/master/openupgradelib
 from openupgradelib import openupgrade, openupgrade_merge_records
 from odoo.addons.base.models.ir_ui_view import View
+from odoo.release import major_version
 import os
 import sys
 import logging
@@ -41,12 +42,12 @@ def migrate(env, version):
     # version para que se corran los scripts (caso l10n_ar, l10n_latam_invoice_document, etc)
     openupgrade.logged_query(cr, """
         UPDATE ir_module_module
-        SET latest_version = '13.0.0.0.0'
+        SET latest_version = '%s.0.0.0'
         WHERE latest_version is null and state = 'installed'
-        """)
+        """ % major_version)
 
-# fix cuando instalamos helpdesk sobre issues migrados al querer obtener un
-# default team, sacamos el default
-from odoo.addons.helpdesk.models.helpdesk_ticket import HelpdeskTicket
-from odoo import fields
-HelpdeskTicket.team_id = fields.Many2one('helpdesk.team', string='Helpdesk Team', index=True)
+# CUALQUIER Monkey patch necesario lo podemos hacer acá, por ej:
+# fix cuando instalamos helpdesk sobre issues migrados al querer obtener un default team, sacamos el default
+# from odoo.addons.helpdesk.models.helpdesk_ticket import HelpdeskTicket
+# from odoo import fields
+# HelpdeskTicket.team_id = fields.Many2one('helpdesk.team', string='Helpdesk Team', index=True)
