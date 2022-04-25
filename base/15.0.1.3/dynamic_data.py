@@ -1,4 +1,5 @@
 renamed_modules = {
+    'product_reference_required': 'product_code_mandatory',
 }
 
 
@@ -9,4 +10,5 @@ merged_modules = {
 
 
 xmlid_renames = [
+    ('product_reference_required.sequence', 'product_code_mandatory.product_default_code_seq'),
 ]
