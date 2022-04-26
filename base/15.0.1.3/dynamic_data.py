@@ -1,9 +1,9 @@
 renamed_modules = {
-    'product_reference_required': 'product_code_mandatory',
 }
 
 
 merged_modules = {
+    'product_reference_required': 'product_code_mandatory',
     'account_payment_fix': 'account_ux',
     'account_payment_group_document': 'account_payment_group',
 }
