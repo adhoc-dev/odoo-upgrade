@@ -1,4 +1,6 @@
 renamed_modules = {
+    # WIP
+    # 'account_check': 'l10n_latam_check',
 }
 
 
