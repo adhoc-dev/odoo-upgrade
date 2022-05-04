@@ -1,6 +1,7 @@
 renamed_modules = {
     # WIP
     # 'account_check': 'l10n_latam_check',
+    'report_pdf_preview': 'prt_report_attachment_preview',
 }
 
 
