@@ -6,6 +6,10 @@ _logger = logging.getLogger(__name__)
 
 def adapt_journals(env):
     _logger.info('ajustando diarios de cheques de terceros')
+
+    # recargamos la data para que se actualicen codes, nombres y demas
+    openupgrade.load_data(env.cr, 'l10n_latam_check', 'data/account_payment_method_data.xml')
+
     # si diarios de cheques de terceros estaban como bank los pasamos a cash
     third_checks_journals = env['account.journal'].with_context(active_test=False).search([
         '|',
@@ -24,6 +28,8 @@ def adapt_journals(env):
                         'sequence': 1,
                         })],
                 })
+    # por alguna razon el sequence anterior no anda, le pisamos con sequence 1
+    env['account.payment.method.line'].search([('payment_method_id', '=', new_third_checks_id)]).write({'sequence': 1})
 
     _logger.info('creando diarios para cheques rechazados')
     # creamos diario de cheques propios
@@ -144,26 +150,27 @@ def adapt_third_checks(env):
                 not_on_menu.append((check_number, check_id))
             continue
 
+        if check_state == 'holding':
+            # usamos current_journal_id en vez de payment.journal_id porque podria haber sido transferido
+            journal_id = current_journal_id
+        elif check_state == 'rejected':
+            journal_id = rejected_checks_journals_map.get(check_payment.company_id.id)
+        else:
+            journal_id = None
+        check_payment._write({
+            'payment_method_line_id': checks_payment_method_lines_map[check_payment.journal_id.id].id,
+            'payment_method_id': checks_payment_method_lines_map[check_payment.journal_id.id].payment_method_id.id,
+            'check_number': check_number,
+            'l10n_latam_check_bank_id': check_bank_id,
+            'l10n_latam_check_issuer_vat': check_owner_vat,
+            'l10n_latam_check_payment_date': check_payment_date,
+            'l10n_latam_check_current_journal_id': journal_id,
+        })
+
         check_data = []
         for operation_origin, operation, operation_date in operations_data[1:]:
             operation_date = operation_date.strftime('%d/%m/%Y')
             _logger.info('Migrating third check %s (id %s) on payment id %s', check_number, check_id, check_payment_id)
-            if check_state == 'holding':
-                # usamos current_journal_id en vez de payment.journal_id porque podria haber sido transferido
-                journal_id = current_journal_id
-            elif check_state == 'rejected':
-                journal_id = rejected_checks_journals_map.get(check_payment.company_id.id)
-            else:
-                journal_id = None
-            check_payment._write({
-                'payment_method_line_id': checks_payment_method_lines_map[check_payment.journal_id.id].id,
-                'payment_method_id': checks_payment_method_lines_map[check_payment.journal_id.id].payment_method_id.id,
-                'check_number': check_number,
-                'l10n_latam_check_bank_id': check_bank_id,
-                'l10n_latam_check_issuer_vat': check_owner_vat,
-                'l10n_latam_check_payment_date': check_payment_date,
-                'l10n_latam_check_current_journal_id': journal_id,
-            })
 
             if operation_origin:
                 res_model, res_id = operation_origin.split(',')
