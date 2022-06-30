@@ -57,6 +57,7 @@ def adapt_journals(env):
 def adapt_own_checks(env):
 
     env.cr.execute("select id, state, number, payment_date from account_check_bu where type = 'issue_check'")
+    payment_model_id = env.ref('account.model_account_payment').id
     checks_data = env.cr.fetchall()
     not_on_menu = []
     for check_id, check_state, check_number, check_payment_date in checks_data:
@@ -87,6 +88,9 @@ def adapt_own_checks(env):
             operation_date = operation_date.strftime('%d/%m/%Y')
             _logger.info('Migrating own check %s (id %s) on payment id %s', check_number, check_id, check_payment_id)
             check_payment = env['account.payment'].browse(check_payment_id)
+            activities = env['mail.activity'].search([('res_id', '=', check_id), ('res_model', '=', 'account.check')])
+            if activities:
+                activities.write({'res_id': check_payment.id, 'res_model': 'account.payment', 'res_model_id': payment_model_id})
             check_payment._write({
                 'check_number': check_number,
                 'l10n_latam_check_payment_date': check_payment_date,
@@ -111,6 +115,7 @@ def adapt_own_checks(env):
 
 def adapt_third_checks(env):
     new_third_checks_id = env.ref('l10n_latam_check.account_payment_method_new_third_party_checks').id
+    payment_model_id = env.ref('account.model_account_payment').id
     checks_payment_method_lines_map = {
         x.journal_id.id: x for x in env['account.payment.method.line'].search([('payment_method_id', '=', new_third_checks_id)])}
     rejected_checks_journals_map = {
@@ -157,6 +162,9 @@ def adapt_third_checks(env):
             journal_id = rejected_checks_journals_map.get(check_payment.company_id.id)
         else:
             journal_id = None
+        activities = env['mail.activity'].search([('res_id', '=', check_id), ('res_model', '=', 'account.check')])
+        if activities:
+            activities.write({'res_id': check_payment.id, 'res_model': 'account.payment', 'res_model_id': payment_model_id})
         check_payment._write({
             'payment_method_line_id': checks_payment_method_lines_map[check_payment.journal_id.id].id,
             'payment_method_id': checks_payment_method_lines_map[check_payment.journal_id.id].payment_method_id.id,
