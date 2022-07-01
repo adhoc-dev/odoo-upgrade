@@ -56,9 +56,9 @@ def adapt_journals(env):
 
 def adapt_own_checks(env):
 
-    env.cr.execute("select id, state, number, payment_date from account_check_bu where type = 'issue_check'")
-    payment_model_id = env.ref('account.model_account_payment').id
+    env.cr.execute("select id, state, name, payment_date from account_check_bu where type = 'issue_check'")
     checks_data = env.cr.fetchall()
+    payment_model_id = env.ref('account.model_account_payment').id
     not_on_menu = []
     for check_id, check_state, check_number, check_payment_date in checks_data:
         if check_state == 'draft':
@@ -83,18 +83,25 @@ def adapt_own_checks(env):
             not_on_menu.append((check_number, check_id))
             continue
 
+        _logger.info('Migrating own check %s (id %s) on payment id %s', check_number, check_id, check_payment_id)
+        check_payment = env['account.payment'].browse(check_payment_id)
+        check_payment._write({
+            'check_number': check_number,
+            'l10n_latam_check_payment_date': check_payment_date,
+        })
+        # si esta debitado lo marcamos conciliado con banco por mas que no lo este
+        if check_state == 'debited' and not check_payment.is_matched:
+            check_payment._write({'is_matched': True})
+
+        activities = env['mail.activity'].search([('res_id', '=', check_id), ('res_model', '=', 'account.check')])
+        if activities:
+            activities.write({'res_id': check_payment.id, 'res_model': 'account.payment', 'res_model_id': payment_model_id})
+        attachments = env['ir.attachment'].search([('res_id', '=', check_id), ('res_model', '=', 'account.check')])
+        if attachments:
+            attachments.write({'res_id': check_payment.id, 'res_model': 'account.payment'})
         check_data = []
         for operation_origin, operation, operation_date in operations_data[1:]:
             operation_date = operation_date.strftime('%d/%m/%Y')
-            _logger.info('Migrating own check %s (id %s) on payment id %s', check_number, check_id, check_payment_id)
-            check_payment = env['account.payment'].browse(check_payment_id)
-            activities = env['mail.activity'].search([('res_id', '=', check_id), ('res_model', '=', 'account.check')])
-            if activities:
-                activities.write({'res_id': check_payment.id, 'res_model': 'account.payment', 'res_model_id': payment_model_id})
-            check_payment._write({
-                'check_number': check_number,
-                'l10n_latam_check_payment_date': check_payment_date,
-            })
             if operation_origin:
                 res_model, res_id = operation_origin.split(',')
                 related_record = env[res_model].browse(int(res_id))
@@ -123,7 +130,7 @@ def adapt_third_checks(env):
 
     third_on_hand_states = ['holding', 'rejected']
 
-    env.cr.execute("select id, state, number, bank_id, owner_vat, payment_date, journal_id from account_check_bu where type = 'third_check'")
+    env.cr.execute("select id, state, name, bank_id, owner_vat, payment_date, journal_id from account_check_bu where type = 'third_check'")
     checks_data = env.cr.fetchall()
     not_on_menu = []
     not_on_menu_on_hand = []
@@ -165,6 +172,10 @@ def adapt_third_checks(env):
         activities = env['mail.activity'].search([('res_id', '=', check_id), ('res_model', '=', 'account.check')])
         if activities:
             activities.write({'res_id': check_payment.id, 'res_model': 'account.payment', 'res_model_id': payment_model_id})
+        attachments = env['ir.attachment'].search([('res_id', '=', check_id), ('res_model', '=', 'account.check')])
+        if attachments:
+            attachments.write({'res_id': check_payment.id, 'res_model': 'account.payment'})
+        _logger.info('Migrating third check %s (id %s) on payment id %s', check_number, check_id, check_payment_id)
         check_payment._write({
             'payment_method_line_id': checks_payment_method_lines_map[check_payment.journal_id.id].id,
             'payment_method_id': checks_payment_method_lines_map[check_payment.journal_id.id].payment_method_id.id,
@@ -178,7 +189,6 @@ def adapt_third_checks(env):
         check_data = []
         for operation_origin, operation, operation_date in operations_data[1:]:
             operation_date = operation_date.strftime('%d/%m/%Y')
-            _logger.info('Migrating third check %s (id %s) on payment id %s', check_number, check_id, check_payment_id)
 
             if operation_origin:
                 res_model, res_id = operation_origin.split(',')
@@ -199,7 +209,6 @@ def adapt_third_checks(env):
 
         # error.append('Cheque %s, esta en cartera pero no fue originado con un payment')
         # info.append('Cheque %s fue originado con un asiento manual, en la nueva version no figura en listado de cheques pero ya no estaba mas en cartera)
-        return
 
 
 @openupgrade.migrate()
