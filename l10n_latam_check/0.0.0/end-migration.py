@@ -104,9 +104,13 @@ def adapt_own_checks(env):
             operation_date = operation_date.strftime('%d/%m/%Y')
             if operation_origin:
                 res_model, res_id = operation_origin.split(',')
-                related_record = env[res_model].browse(int(res_id))
-                related_record_info = related_record.display_name if related_record.exists() else \
-                    'Registro no encontrado (%s, %s)' % (res_model, res_id)
+                if res_model == 'account.check':
+                    number = [x[0] == res_id and x[2] or ' ' for x in checks_data]
+                    related_record_info = 'Cambio de cheque N°: %s' % number
+                else:
+                    related_record = env[res_model].browse(int(res_id))
+                    related_record_info = related_record.display_name if related_record.exists() else \
+                        'Registro no encontrado (%s, %s)' % (res_model, res_id)
                 check_data.append("<li>%s: Operación de cheque '%s' con el registro <a href=# data-oe-model=%s data-oe-id=%d>%s</a></li>" % (
                     operation_date,
                     operation,
