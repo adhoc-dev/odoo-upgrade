@@ -1,5 +1,5 @@
 from openupgradelib import openupgrade
-from odoo import Command
+from odoo import Command, fields
 import logging
 _logger = logging.getLogger(__name__)
 
@@ -127,6 +127,21 @@ def adapt_own_checks(env):
 def adapt_third_checks(env):
     new_third_checks_id = env.ref('l10n_latam_check.account_payment_method_new_third_party_checks').id
     payment_model_id = env.ref('account.model_account_payment').id
+    third_checks_journals = env['account.payment.method.line'].search([('payment_method_id', '=', new_third_checks_id)]).mapped('journal_id')
+    # checks_payment_manual_method_lines_map = {}
+    manual_payment_method = env.ref('account.account_payment_method_manual_in')
+    manual_payment_method_line = env['account.payment.method.line'].search([('payment_method_id', '=', manual_payment_method.id), ('journal_id', '=', False)])
+    if not manual_payment_method_line:
+        manual_payment_method_line = env['account.payment.method.line'].create({
+            'payment_method_id': manual_payment_method.id,
+            'name': 'Manual',
+        })
+    # for journal in third_checks_journals:
+    #     manual_method = journal.inbound_payment_method_line_ids.filtered(
+    #         lambda pm: pm.payment_method_id == env.ref('l10n_latam_check.account_payment_method_in_third_party_checks')):
+    #     if not manual_method:
+    #         manual_method = journal.create
+    #     checks_payment_method_lines_map[journal.id] = manual_method
     checks_payment_method_lines_map = {
         x.journal_id.id: x for x in env['account.payment.method.line'].search([('payment_method_id', '=', new_third_checks_id)])}
     rejected_checks_journals_map = {
@@ -140,6 +155,7 @@ def adapt_third_checks(env):
     not_on_menu_on_hand = []
     # other_errors = []
     for check_id, check_state, check_number, check_bank_id, check_owner_vat, check_payment_date, current_journal_id in checks_data:
+        check_data = []
         if check_state == 'draft':
             _logger.info('Skipping check %s (id %s) as it is in draft', check_number, check_id)
             continue
@@ -180,17 +196,56 @@ def adapt_third_checks(env):
         if attachments:
             attachments.write({'res_id': check_payment.id, 'res_model': 'account.payment'})
         _logger.info('Migrating third check %s (id %s) on payment id %s', check_number, check_id, check_payment_id)
+        # si el no está en mano (journal_id = False) y la fecha de pago (o del payment si no tiene fecha de pago) es 
+        # anterior a 60 dias, entonces NO lo creamos como un cheque para no tener que crearle transaccion acomodando
+        # diario actual
+        # si llega a ser necesario podemos hacer parametrizable el dato de 60 como un conf parameter
+        check_date = check_payment.l10n_latam_check_payment_date or check_payment.date
+        if not journal_id and (fields.Date.today() - check_date).days > 60:
+            payment_method_line_id = manual_payment_method_line.id
+            payment_method_id = manual_payment_method.id
+            payment_as_check = False
+        else:
+            payment_method_line_id = checks_payment_method_lines_map[check_payment.journal_id.id].id
+            payment_method_id = checks_payment_method_lines_map[check_payment.journal_id.id].payment_method_id.id
+            payment_as_check = True
         check_payment._write({
-            'payment_method_line_id': checks_payment_method_lines_map[check_payment.journal_id.id].id,
-            'payment_method_id': checks_payment_method_lines_map[check_payment.journal_id.id].payment_method_id.id,
+            'payment_method_line_id': payment_method_line_id,
+            'payment_method_id': payment_method_id,
             'check_number': check_number,
             'l10n_latam_check_bank_id': check_bank_id,
             'l10n_latam_check_issuer_vat': check_owner_vat,
             'l10n_latam_check_payment_date': check_payment_date,
             'l10n_latam_check_current_journal_id': journal_id,
         })
-
-        check_data = []
+        # check payment journa es el diario donde se cobro / genera el cheque
+        # journal es el diario de v13 donde esta el cheque
+        if payment_as_check and check_payment.journal_id.id != journal_id:
+            if journal_id:
+                payment_type = 'inbound'
+                new_pay_journal_id = journal_id
+                payment_method_line = env["account.journal"].browse(new_pay_journal_id).inbound_payment_method_line_ids.filtered(
+                    lambda pm: pm.payment_method_id == env.ref('l10n_latam_check.account_payment_method_in_third_party_checks'))
+            else:
+                payment_type = 'outbound'
+                new_pay_journal_id = check_payment.journal_id.id
+                payment_method_line = check_payment.journal_id.outbound_payment_method_line_ids.filtered(
+                    lambda pm: pm.payment_method_id == env.ref('l10n_latam_check.account_payment_method_out_third_party_checks'))
+            payment_transaction = env['account.payment'].create({
+                'l10n_latam_check_id': check_payment.id,
+                'date': check_payment.date,
+                'payment_type': payment_type,
+                'payment_method_line_id': payment_method_line.id,
+                'journal_id': new_pay_journal_id,
+                'partner_id': check_payment.partner_id.id,
+                'amount': 0.0,
+                'ref': 'Migration payment for updating current journal of check %s' % check_payment.name,
+            })
+            # llamamos a post del move que es lo que hace el action_post para hacer bypass a las constraints de latam
+            # check en action_post
+            payment_transaction.move_id._post(soft=False)
+            print ('payment_transaction', payment_transaction)
+            # payment_transaction.action_post()
         for operation_origin, operation, operation_date in operations_data[1:]:
             operation_date = operation_date.strftime('%d/%m/%Y')
 
@@ -209,10 +264,13 @@ def adapt_third_checks(env):
                     operation_date,
                     operation,
                 ))
-        check_payment.message_post(body='Cheque migrado desde v13, información de operaciones:<br/><ul>%s</ul>' % ''.join(check_data))
-
-        # error.append('Cheque %s, esta en cartera pero no fue originado con un payment')
-        # info.append('Cheque %s fue originado con un asiento manual, en la nueva version no figura en listado de cheques pero ya no estaba mas en cartera)
+        if payment_as_check and check_data:
+            check_payment.message_post(body='Cheque migrado desde v13, información de operaciones:<br/><ul>%s</ul>' % ''.join(check_data))
+        elif not payment_as_check:
+            check_payment.message_post(
+                body='Cheque %s (de CUIT %s) migrado desde v13 pero al no estar en mano y tener fecha de pago anterior '
+                'a los 60 dias, se migra como un pago normal para minimizar cambios en la base. Información de operaciones:<br/><ul>%s</ul>' % (
+                    check_number, check_owner_vat, ''.join(check_data)))
 
 
 @openupgrade.migrate()
