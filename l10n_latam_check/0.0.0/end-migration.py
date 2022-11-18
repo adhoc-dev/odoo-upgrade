@@ -130,7 +130,7 @@ def adapt_third_checks(env):
     third_checks_journals = env['account.payment.method.line'].search([('payment_method_id', '=', new_third_checks_id)]).mapped('journal_id')
     # checks_payment_manual_method_lines_map = {}
     manual_payment_method = env.ref('account.account_payment_method_manual_in')
-    manual_payment_method_line = env['account.payment.method.line'].search([('payment_method_id', '=', manual_payment_method.id), ('journal_id', '=', False)])
+    manual_payment_method_line = env['account.payment.method.line'].search([('payment_method_id', '=', manual_payment_method.id), ('journal_id', '=', False)], limit=1)
     if not manual_payment_method_line:
         manual_payment_method_line = env['account.payment.method.line'].create({
             'payment_method_id': manual_payment_method.id,
