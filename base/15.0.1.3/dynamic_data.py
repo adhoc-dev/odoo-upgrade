@@ -2,6 +2,7 @@ renamed_modules = {
     'report_pdf_preview': 'prt_report_attachment_preview',
     'account_check': 'l10n_latam_check',
     'crm_stage_teams': 'crm_teams_ux',
+    'account_bank_statement_import_txt_xlsx': 'account_statement_import_txt_xlsx',
 }
 
 
