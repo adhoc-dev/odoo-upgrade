@@ -18,8 +18,6 @@ def adapt_journals(env):
 
     new_third_checks_id = env.ref('l10n_latam_check.account_payment_method_new_third_party_checks').id
     for tc_journal in third_checks_journals:
-        if tc_journal.type != 'cash':
-            tc_journal.write({'type': 'cash'})
         if new_third_checks_id not in tc_journal.inbound_payment_method_line_ids.mapped('payment_method_id').ids:
             tc_journal.write({
                 'inbound_payment_method_line_ids': [
