@@ -11,6 +11,9 @@ merged_modules = {
     'account_payment_fix': 'account_ux',
     'account_payment_group_document': 'account_payment_group',
     'project_stage': 'project_ux',
+    # como este modulo ya viene en odoo 16 y viene indexado, si hacemos rename da error. Otra alternativa seria borra el registro de latam
+    # antes de llamar al rename, pero asi va bien
+    'account_check': 'l10n_latam_check',
 }
 
 
