@@ -1,4 +1,4 @@
-from odoo.addons.payment.models.account_journal import AccountJournal
+from odoo.addons.account_payment.models.account_journal import AccountJournal
 import logging
 _logger = logging.getLogger(__name__)
 
