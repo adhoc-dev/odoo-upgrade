@@ -35,7 +35,7 @@ def adapt_journals(env):
     env.cr.execute('select company_id from account_check_bu group by company_id;')
     company_ids = [x[0] for x in env.cr.fetchall()]
     for company_id in company_ids:
-        env['account.journal'].create({
+        journal = env['account.journal'].create({
             'name': 'Cheques Rechazados',
             'type': 'cash',
             'code': 'CR99',
@@ -50,6 +50,8 @@ def adapt_journals(env):
                 Command.create({'payment_method_id': env.ref(
                     'l10n_latam_check.account_payment_method_in_third_party_checks').id}),
             ]})
+        journal.outbound_payment_method_line_ids.write({'payment_account_id': journal.default_account_id.id})
+        journal.inbound_payment_method_line_ids.write({'payment_account_id': journal.default_account_id.id})
 
 
 def adapt_own_checks(env):
