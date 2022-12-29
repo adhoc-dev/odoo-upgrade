@@ -269,7 +269,16 @@ def adapt_third_checks(env):
                 body='Cheque %s (de CUIT %s) migrado desde v13 pero al no estar en mano y tener fecha de pago anterior '
                 'a los 60 dias, se migra como un pago normal para minimizar cambios en la base. Información de operaciones:<br/><ul>%s</ul>' % (
                     check_number, check_owner_vat, ''.join(check_data)))
-
+    msj_check_script = {}
+    # suffix = 'CH-'
+    if not_on_menu:
+        # suffix += str(len(not_on_menu))
+        msj_check_script['no_payment_not_on_hand'] = not_on_menu
+    if not_on_menu_on_hand:
+        # suffix += str(len(not_on_menu_on_hand))
+        msj_check_script['no_payment_on_hand'] = not_on_menu_on_hand
+    if msj_check_script:
+        env['ir.config_parameter'].sudo().set_param('upgrade_l10n_latam_check_warning' , msj_check_script)
 
 @openupgrade.migrate()
 def migrate(env, version):
