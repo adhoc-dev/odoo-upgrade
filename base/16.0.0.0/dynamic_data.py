@@ -1,11 +1,9 @@
+# NO LO USAMOS MAS, ahora lo hacemos con upgrade lines en adhoc
 renamed_modules = {
-  'mass_editing': 'server_action_mass_edit',
-  'account_statement_import': 'account_statement_import_file',
 }
 
 
 merged_modules = {
-  'stock_analytic_tag': 'stock_analytic',
 }
 
 

@@ -1,4 +1,6 @@
 # mas info sobre openupgradelib aca: https://github.com/OCA/openupgradelib/tree/master/openupgradelib
+# IMPORTANTE: en realidad lo unico que estamos utilizando de esto es el patch de check views.
+# TODO ver si limpiamos y/o lo movemos a otro lugar. Todo el resto lo estamos haciendo en upgrade lines de adhoc
 from openupgradelib import openupgrade, openupgrade_merge_records
 from odoo.addons.base.models.ir_ui_view import View
 from odoo.release import major_version
@@ -38,13 +40,14 @@ def migrate(env, version):
     openupgrade.update_module_names(cr, merged_modules.items(), merge_modules=True)
     openupgrade.rename_xmlids(env.cr, xmlid_renames)
 
-    # a los modulos que hicimos merge y que no estaba instalados quedan con version vacia pero necesitamos que tengan
-    # version para que se corran los scripts (caso l10n_ar, l10n_latam_invoice_document, etc)
-    openupgrade.logged_query(cr, """
-        UPDATE ir_module_module
-        SET latest_version = '%s.0.0.0'
-        WHERE latest_version is null and state = 'installed'
-        """ % major_version)
+    # esto ahora lo estamos haciendo en Modules renames/merge and xmlid renames xx to yy
+    # # a los modulos que hicimos merge y que no estaba instalados quedan con version vacia pero necesitamos que tengan
+    # # version para que se corran los scripts (caso l10n_ar, l10n_latam_invoice_document, etc)
+    # openupgrade.logged_query(cr, """
+    #     UPDATE ir_module_module
+    #     SET latest_version = '%s.0.0.0'
+    #     WHERE latest_version is null and state = 'installed'
+    #     """ % major_version)
 
 # CUALQUIER Monkey patch necesario lo podemos hacer acá, por ej:
 # fix cuando instalamos helpdesk sobre issues migrados al querer obtener un default team, sacamos el default
