@@ -153,6 +153,7 @@ def adapt_third_checks(env):
     checks_data = env.cr.fetchall()
     not_on_menu = []
     not_on_menu_on_hand = []
+    checks_with_wrong_opers = []
     # other_errors = []
     for check_id, check_state, check_number, check_bank_id, check_owner_vat, check_payment_date, current_journal_id in checks_data:
         check_data = []
@@ -251,6 +252,9 @@ def adapt_third_checks(env):
 
             if operation_origin:
                 res_model, res_id = operation_origin.split(',')
+                if res_model == 'account.check':
+                    checks_with_wrong_opers.append((check_number, check_id))
+                    continue
                 related_record = env[res_model].browse(int(res_id))
                 related_record_info = related_record.display_name if related_record.exists() else \
                     'Registro no encontrado (%s, %s)' % (res_model, res_id)
@@ -279,6 +283,8 @@ def adapt_third_checks(env):
     if not_on_menu_on_hand:
         # suffix += str(len(not_on_menu_on_hand))
         msj_check_script['no_payment_on_hand'] = not_on_menu_on_hand
+    if checks_with_wrong_opers:
+        msj_check_script['checks_with_wrong_opers'] = checks_with_wrong_opers
     if msj_check_script:
         env['ir.config_parameter'].sudo().set_param('upgrade_l10n_latam_check_warning' , msj_check_script)
 
