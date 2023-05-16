@@ -234,7 +234,8 @@ def adapt_third_checks(env):
                     lambda pm: pm.payment_method_id == env.ref('l10n_latam_check.account_payment_method_out_third_party_checks'))
             # creamos un pago dummy para representa el movimiento al diario actual donde esta el cheque
             # no pasamos partner_type, por defecto se va a hacer con tipo 'customer'
-            payment_transaction = env['account.payment'].create({
+            # evitamos creaar payment group ya que los payments son en cero y son para dejar registro
+            payment_transaction = env['account.payment'].with_context(avoid_create_payment_group=True).create({
                 'l10n_latam_check_id': check_payment.id,
                 'date': check_payment.date,
                 'payment_type': payment_type,
