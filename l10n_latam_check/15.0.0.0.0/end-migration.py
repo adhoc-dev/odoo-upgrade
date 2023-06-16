@@ -125,9 +125,21 @@ def adapt_own_checks(env):
 
 
 def adapt_third_checks(env):
+    """ La logica del script es mas o menos esta:
+    * Solo estamos migrando cheques en mano o cheques cuya fecha de pago no es mas vieja de 60 días
+    * Esto para minimizar crear pagos que acomden la situación actual del cheque.
+    * Eso si, en todos los pagos estamos dejando el registro de todas las operaciones que hubo
+    * Recorremos todos los cheques que guardamos en tabla account_check_bu
+    * para cada cheque vamos recorriendo las operaciones pero solo para agregar info en mensajeria
+    * si el estado fial de un cheque no se corresponde con el que debería, creamos un dummy payment para reflejarlo
+    pero no hacemos esfuerzo de vincular todos los payments de las operations viejas porque puede haber muchos casos
+    distintos
+    * por ultimo, a los payment que eran delivered third checks les ponemos tipo manual y dejamos info de cheques (mas
+    data al final del script)
+    """
     new_third_checks_id = env.ref('l10n_latam_check.account_payment_method_new_third_party_checks').id
     payment_model_id = env.ref('account.model_account_payment').id
-    third_checks_journals = env['account.payment.method.line'].search([('payment_method_id', '=', new_third_checks_id)]).mapped('journal_id')
+    # third_checks_journals = env['account.payment.method.line'].search([('payment_method_id', '=', new_third_checks_id)]).mapped('journal_id')
     # checks_payment_manual_method_lines_map = {}
     manual_payment_method = env.ref('account.account_payment_method_manual_in')
     manual_payment_method_line = env['account.payment.method.line'].search([('payment_method_id', '=', manual_payment_method.id), ('journal_id', '=', False)], limit=1)
@@ -290,6 +302,23 @@ def adapt_third_checks(env):
         msj_check_script['checks_with_wrong_opers'] = checks_with_wrong_opers
     if msj_check_script:
         env['ir.config_parameter'].sudo().set_param('upgrade_l10n_latam_check_warning' , msj_check_script)
+    # buscamos todos los pagos que eran envio de cheques y que quedaron sin latam_check para escribirles:
+    # convertirlos a manual (para que no exija cheque, reporte no imprima "False", y si se re-abre pago no genere problemas)
+    # no buscamos los 'in_third_party_checks',  porqu een version anterior no se podia recibir cheques (salvo cuando los creabas)
+    payments = env['account.payment'].search([('payment_method_line_id.code', 'in', ['out_third_party_checks']), ('l10n_latam_check_id', '=', False)])
+    for payment in payments:
+        env.cr.execute("select name from account_check_account_payment_rel_bu as acr_bu  join account_check_bu ac_bu ON ac_bu.id = account_check_id where account_payment_id = %s" % payment.id)
+        delivered_checks = env.cr.fetchall()
+        delivered_checks_str = ', '.join([x[0] for x in delivered_checks])
+        if payment.ref:
+            payment.ref += ' - Cheques: %s' % delivered_checks_str
+        else:
+            payment.ref = 'Cheques: %s' % delivered_checks_str
+        payment.write({
+            'payment_method_line_id': manual_payment_method_line.id,
+            'payment_method_id': manual_payment_method.id,
+        })
+        payment.message_post(body='Entrega de cheques generada en versión 13. Se migra como pago manual. Cheques entregados: %s' % delivered_checks_str)
 
 @openupgrade.migrate()
 def migrate(env, version):
