@@ -247,12 +247,11 @@ def adapt_third_checks(env):
             # creamos un pago dummy para representa el movimiento al diario actual donde esta el cheque
             # no pasamos partner_type, por defecto se va a hacer con tipo 'customer'
             # evitamos creaar payment group ya que los payments son en cero y son para dejar registro
-            payment_transaction = env['account.payment'].with_context(avoid_create_payment_group=True).create({
+            payment_transaction = env['account.payment'].with_company(check_payment.company_id.id).with_context(avoid_create_payment_group=True, default_journal_id=new_pay_journal_id).create({
                 'l10n_latam_check_id': check_payment.id,
                 'date': check_payment.date,
                 'payment_type': payment_type,
                 'payment_method_line_id': payment_method_line.id,
-                'journal_id': new_pay_journal_id,
                 'partner_id': check_payment.partner_id.id,
                 'amount': 0.0,
                 'ref': 'Migration payment for updating current journal of check %s' % check_payment.name,
