@@ -305,7 +305,7 @@ def adapt_third_checks(env):
     # convertirlos a manual (para que no exija cheque, reporte no imprima "False", y si se re-abre pago no genere problemas)
     # no buscamos los 'in_third_party_checks',  porqu een version anterior no se podia recibir cheques (salvo cuando los creabas)
     payments = env['account.payment'].search([('payment_method_line_id.code', 'in', ['out_third_party_checks']), ('l10n_latam_check_id', '=', False)])
-    for payment in payments:
+    for payment in payments.with_context(skip_account_move_synchronization=True):
         env.cr.execute("select name from account_check_account_payment_rel_bu as acr_bu  join account_check_bu ac_bu ON ac_bu.id = account_check_id where account_payment_id = %s" % payment.id)
         delivered_checks = env.cr.fetchall()
         delivered_checks_str = ', '.join([x[0] for x in delivered_checks])
