@@ -163,8 +163,8 @@ def adapt_third_checks(env):
 
     env.cr.execute("select id, state, name, bank_id, owner_vat, payment_date, journal_id from account_check_bu where type = 'third_check'")
     checks_data = env.cr.fetchall()
-    not_on_menu = []
-    not_on_menu_on_hand = []
+    checks_not_migrated_more_than_60 = []
+    checks_not_migrated_more_within_60 = []
     checks_with_wrong_opers = []
     # other_errors = []
     for check_id, check_state, check_number, check_bank_id, check_owner_vat, check_payment_date, current_journal_id in checks_data:
@@ -187,13 +187,20 @@ def adapt_third_checks(env):
             check_payment_id = False
         check_payment = env['account.payment'].browse(check_payment_id)
         if not check_payment.exists():
-            if check_state in third_on_hand_states:
-                _logger.warning('third check %s (id %s) was not created on a payment and is on hand!', check_number, check_id)
-                not_on_menu_on_hand.append((check_number, check_id))
+            if check_payment_date and (fields.Date.today() - check_payment_date).days <= 60:
+                _logger.warning('third check %s (id %s) was not created on a payment and was within 60 day for payment!', check_number, check_id)
+                checks_not_migrated_more_within_60.append((check_number, check_id))
             else:
                 _logger.info('third check %s (id %s) was not created on a payment and is not on hand', check_number, check_id)
-                not_on_menu.append((check_number, check_id))
+                checks_not_migrated_more_than_60.append((check_number, check_id))
             continue
+            # if check_state in third_on_hand_states:
+            #     _logger.warning('third check %s (id %s) was not created on a payment and is on hand!', check_number, check_id)
+            #     not_on_menu_on_hand.append((check_number, check_id))
+            # else:
+            #     _logger.info('third check %s (id %s) was not created on a payment and is not on hand', check_number, check_id)
+            #     not_on_menu.append((check_number, check_id))
+            # continue
 
         if check_state == 'holding':
             # usamos current_journal_id en vez de payment.journal_id porque podria haber sido transferido
@@ -267,7 +274,8 @@ def adapt_third_checks(env):
             if operation_origin:
                 res_model, res_id = operation_origin.split(',')
                 if res_model == 'account.check':
-                    checks_with_wrong_opers.append((check_number, check_id))
+                    if payment_as_check:
+                        checks_with_wrong_opers.append((check_number, check_id))
                     continue
                 related_record = env[res_model].browse(int(res_id))
                 related_record_info = related_record.display_name if related_record.exists() else \
@@ -291,12 +299,12 @@ def adapt_third_checks(env):
                     check_number, check_owner_vat, ''.join(check_data)))
     msj_check_script = {}
     # suffix = 'CH-'
-    if not_on_menu:
+    if checks_not_migrated_more_than_60:
         # suffix += str(len(not_on_menu))
-        msj_check_script['no_payment_not_on_hand'] = not_on_menu
-    if not_on_menu_on_hand:
+        msj_check_script['checks_not_migrated_more_than_60'] = checks_not_migrated_more_than_60
+    if checks_not_migrated_more_within_60:
         # suffix += str(len(not_on_menu_on_hand))
-        msj_check_script['no_payment_on_hand'] = not_on_menu_on_hand
+        msj_check_script['checks_not_migrated_more_within_60'] = checks_not_migrated_more_within_60
     if checks_with_wrong_opers:
         msj_check_script['checks_with_wrong_opers'] = checks_with_wrong_opers
     if msj_check_script:
