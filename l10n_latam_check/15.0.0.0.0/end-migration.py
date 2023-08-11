@@ -35,11 +35,15 @@ def adapt_journals(env):
     env.cr.execute('select company_id from account_check_bu group by company_id;')
     company_ids = [x[0] for x in env.cr.fetchall()]
     for company_id in company_ids:
+        #rejected_checks_account = env['account.account'].search([('company_id', '=', company_id), ('name', 'ilike', '%Cheque%Rechaz%')], limit=1)
+        env.cr.execute('select rejected_check_account_id_bu from res_company where id = %s' % (company_id,))
+        rejected_checks_account = env.cr.fetchall()
         journal = env['account.journal'].create({
             'name': 'Cheques Rechazados',
             'type': 'cash',
             'code': 'CR99',
             'company_id': company_id,
+            'default_account_id': rejected_checks_account[0][0] if rejected_checks_account else False,
             'outbound_payment_method_line_ids': [
                 Command.create({'payment_method_id': env.ref(
                     'l10n_latam_check.account_payment_method_out_third_party_checks').id}),
