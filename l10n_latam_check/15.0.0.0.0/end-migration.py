@@ -224,7 +224,7 @@ def adapt_third_checks(env):
         # anterior a 60 dias, entonces NO lo creamos como un cheque para no tener que crearle transaccion acomodando
         # diario actual
         # si llega a ser necesario podemos hacer parametrizable el dato de 60 como un conf parameter
-        check_date = check_payment.l10n_latam_check_payment_date or check_payment.date
+        check_date = check_payment_date or check_payment.date
         if not journal_id and (fields.Date.today() - check_date).days > 60:
             payment_method_line_id = manual_payment_method_line.id
             payment_method_id = manual_payment_method.id
