@@ -321,14 +321,16 @@ def adapt_third_checks(env):
         env.cr.execute("select name from account_check_account_payment_rel_bu as acr_bu  join account_check_bu ac_bu ON ac_bu.id = account_check_id where account_payment_id = %s" % payment.id)
         delivered_checks = env.cr.fetchall()
         delivered_checks_str = ', '.join([x[0] for x in delivered_checks])
-        if payment.ref:
-            payment.ref += ' - Cheques: %s' % delivered_checks_str
+        payment_ref = payment.ref
+        if payment_ref:
+            payment_ref += ' - Cheques: %s' % delivered_checks_str
         else:
-            payment.ref = 'Cheques: %s' % delivered_checks_str
-        payment.write({
+            payment_ref = 'Cheques: %s' % delivered_checks_str
+        payment._write({
             'payment_method_line_id': manual_payment_method_line.id,
             'payment_method_id': manual_payment_method.id,
         })
+        payment.move_id._write({'ref': payment_ref})
         payment.message_post(body='Entrega de cheques generada en versión 13. Se migra como pago manual. Cheques entregados: %s' % delivered_checks_str)
 
 @openupgrade.migrate()
