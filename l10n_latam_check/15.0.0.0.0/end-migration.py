@@ -93,10 +93,6 @@ def adapt_own_checks(env):
             'check_number': check_number,
             'l10n_latam_check_payment_date': check_payment_date,
         })
-        # si esta debitado lo marcamos conciliado con banco por mas que no lo este
-        if check_state == 'debited' and not check_payment.is_matched:
-            check_payment._write({'is_matched': True})
-
         activities = env['mail.activity'].search([('res_id', '=', check_id), ('res_model', '=', 'account.check')])
         if activities:
             activities.write({'res_id': check_payment.id, 'res_model': 'account.payment', 'res_model_id': payment_model_id})
