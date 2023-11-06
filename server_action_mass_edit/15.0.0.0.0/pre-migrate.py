@@ -51,7 +51,7 @@ def migrate_mass_editing(env):
         )
         SELECT
             me.id,
-            COALESCE(me.action_name, me.name),
+            jsonb_build_object('en_US', COALESCE(me.action_name, me.name)),
             'ir.actions.server',
             'ir_actions_server',
             'action',
