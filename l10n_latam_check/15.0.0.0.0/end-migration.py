@@ -1,5 +1,6 @@
 from openupgradelib import openupgrade
 from odoo import Command, fields
+import re
 import logging
 _logger = logging.getLogger(__name__)
 
@@ -207,6 +208,15 @@ def adapt_third_checks(env):
             journal_id = current_journal_id
         elif check_state == 'rejected':
             journal_id = rejected_checks_journals_map.get(check_payment.company_id.id)
+        elif check_state == 'deposited':
+            # para el caso de cheques depositados buscamos el diario del banco destino para agregarlo como journal_id en lugar de None. Esto contempla,
+            # el caso en que un cliente luego de migrar desea rechazar un cheque que habia sido depositado en la version anterior.
+            for origin, operation, date in operations_data:
+                if origin and operation == 'deposited':
+                    operation_id= int(re.search(r'\d+', origin).group()) or None
+            bank_journal_id=env['account.payment'].browse(operation_id).destination_journal_id.id
+            journal_id = bank_journal_id or None
+  
         else:
             journal_id = None
         activities = env['mail.activity'].search([('res_id', '=', check_id), ('res_model', '=', 'account.check')])
@@ -244,8 +254,11 @@ def adapt_third_checks(env):
             if journal_id:
                 payment_type = 'inbound'
                 new_pay_journal_id = journal_id
+                # como ahora existe el caso en donde se agrega el diario del banco, el mismo no posee como payment_method_id la opcion de 
+                # Received Third Check por ello se busca Manual tambien.
                 payment_method_line = env["account.journal"].browse(new_pay_journal_id).inbound_payment_method_line_ids.filtered(
-                    lambda pm: pm.payment_method_id == env.ref('l10n_latam_check.account_payment_method_in_third_party_checks'))
+                    lambda pm: pm.payment_method_id in [env.ref('l10n_latam_check.account_payment_method_in_third_party_checks'),
+                                                        env.ref('account.account_payment_method_manual_in')])
             else:
                 payment_type = 'outbound'
                 new_pay_journal_id = check_payment.journal_id.id
