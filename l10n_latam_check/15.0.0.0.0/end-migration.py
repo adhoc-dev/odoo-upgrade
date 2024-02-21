@@ -202,13 +202,27 @@ def adapt_third_checks(env):
             #     not_on_menu.append((check_number, check_id))
             # continue
 
+        check_date = check_payment_date or check_payment.date
+        journal_id = None
         if check_state == 'holding':
             # usamos current_journal_id en vez de payment.journal_id porque podria haber sido transferido
             journal_id = current_journal_id
         elif check_state == 'rejected':
             journal_id = rejected_checks_journals_map.get(check_payment.company_id.id)
-        else:
-            journal_id = None
+        # si el cheque esta depositado y la fecha de pago es reciente (desde -60 días para adelante) entonces buscamos operacion de deposito
+        # y setamos como que esta en ese journal para que luego se genere dummy operation y quede current journal de tal manera
+        # que de ser necesario el cheque pueda ser rechazado
+        # NOTA: para cheques entregados no es necesario porque no requieren de un current journal para ser regresados
+        elif check_state == 'deposited' and (fields.Date.today() - check_date).days < 60:
+            # para el caso de cheques depositados buscamos el diario del banco destino para agregarlo como journal_id en lugar de None. Esto contempla,
+            # el caso en que un cliente luego de migrar desea rechazar un cheque que habia sido depositado en la version anterior.
+            for origin, operation, date in operations_data:
+                if origin and operation == 'deposited' and 'account.payment,' in origin:
+                    operation_id= int(origin.replace('account.payment,', ''))
+                    bank_journal_id = env['account.payment'].browse(operation_id).destination_journal_id.id
+                    if bank_journal_id:
+                        journal_id = bank_journal_id
+                        break
         activities = env['mail.activity'].search([('res_id', '=', check_id), ('res_model', '=', 'account.check')])
         if activities:
             activities.write({'res_id': check_payment.id, 'res_model': 'account.payment', 'res_model_id': payment_model_id})
@@ -220,7 +234,7 @@ def adapt_third_checks(env):
         # anterior a 60 dias, entonces NO lo creamos como un cheque para no tener que crearle transaccion acomodando
         # diario actual
         # si llega a ser necesario podemos hacer parametrizable el dato de 60 como un conf parameter
-        check_date = check_payment_date or check_payment.date
+
         if not journal_id and (fields.Date.today() - check_date).days > 60:
             payment_method_line_id = manual_payment_method_line.id
             payment_method_id = manual_payment_method.id
@@ -244,8 +258,13 @@ def adapt_third_checks(env):
             if journal_id:
                 payment_type = 'inbound'
                 new_pay_journal_id = journal_id
+                # como ahora existe el caso en donde se agrega el diario del banco, el mismo no posee como payment_method_id la opcion de 
+                # Received Third Check por ello se busca Manual tambien.
                 payment_method_line = env["account.journal"].browse(new_pay_journal_id).inbound_payment_method_line_ids.filtered(
                     lambda pm: pm.payment_method_id == env.ref('l10n_latam_check.account_payment_method_in_third_party_checks'))
+                if not payment_method_line:
+                    payment_method_line = env["account.journal"].browse(new_pay_journal_id).inbound_payment_method_line_ids.filtered(
+                        lambda pm: pm.payment_method_id == env.ref('account.account_payment_method_manual_in'))
             else:
                 payment_type = 'outbound'
                 new_pay_journal_id = check_payment.journal_id.id
