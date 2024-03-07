@@ -64,6 +64,7 @@ def adapt_own_checks(env):
     checks_data = env.cr.fetchall()
     payment_model_id = env.ref('account.model_account_payment').id
     not_on_menu = []
+    own_checks_not_migrated_without_payment = []
     for check_id, check_state, check_number, check_payment_date in checks_data:
         if check_state == 'draft':
             _logger.info('Skipping check %s (id %s) as it is in draft', check_number, check_id)
@@ -85,6 +86,8 @@ def adapt_own_checks(env):
         if not check_payment.exists():
             _logger.info('own check %s (id %s) was not created on a payment', check_number, check_id)
             not_on_menu.append((check_number, check_id))
+            if check_state == 'handed':
+                own_checks_not_migrated_without_payment.append((check_number, check_id))
             continue
 
         _logger.info('Migrating own check %s (id %s) on payment id %s', check_number, check_id, check_payment_id)
@@ -122,6 +125,11 @@ def adapt_own_checks(env):
                     operation,
                 ))
         check_payment.message_post(body='Cheque migrado desde v13, información de operaciones:<br/><ul>%s</ul>' % ''.join(check_data))
+    msj_check_script = {}
+    if own_checks_not_migrated_without_payment:
+        msj_check_script['own_checks_not_migrated_without_payment'] = own_checks_not_migrated_without_payment
+    if msj_check_script:
+        env['ir.config_parameter'].sudo().set_param('own_checks_not_migrated_without_payment' , own_checks_not_migrated_without_payment)
 
 
 def adapt_third_checks(env):
