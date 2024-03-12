@@ -9,9 +9,10 @@ def migrate_payment_grup_data(env):
     queremos pasar alguna especie de domain porque solo queremos pasarlo al pamynet que era retencion
     """
     # mover campos (excepto m2m)
+    # retencion_ganancias y regimen_ganancias_id en realidad los crea l10n_ar_account_wihhtolding pero todo
+    # el que tiene este modulo tiene account_withholding_automatic
     query = """
         update account_payment ap set
-            unreconciled_amount = apg.unreconciled_amount,
             withholdable_advanced_amount = apg.withholdable_advanced_amount,
             retencion_ganancias = apg.retencion_ganancias,
             regimen_ganancias_id = apg.regimen_ganancias_id
@@ -19,31 +20,7 @@ def migrate_payment_grup_data(env):
         where
             ap.payment_group_id_bu = apg.id
         """
-    res = openupgrade.logged_query(env.cr, query)
-
-    # popular to_pay_move_lines (m2m field, en post)
-    query = """
-        insert into account_move_line_payment_to_pay_rel (to_pay_line_id, payment_id)
-        select
-            rel.to_pay_line_id,  ap.id as payment_id
-        from
-            account_move_line_payment_group_to_pay_rel_bu rel
-        join
-            account_payment ap on ap.payment_group_id_bu = rel.payment_group_id
-        """
-    res = openupgrade.logged_query(env.cr, query)
-
-    openupgrade.merge_models(env.cr, 'account.payment.group', 'account.payment', 'payment_group_id_bu')
-
-
-def migrate_taxes_config(env):
-    query = """update account_tax set
-        type_tax_use = 'none',
-        l10n_ar_withholding_payment_type = type_tax_use
-    where
-        type_tax_use in ('customer', 'supplier')
-    """
-    res = openupgrade.logged_query(env.cr, query)
+    openupgrade.logged_query(env.cr, query)
 
 
 def migrate_withholdings(env):
@@ -103,7 +80,7 @@ def migrate_withholdings(env):
         where
             apm.code = 'withholding'
     """
-    res = openupgrade.logged_query(env.cr, query)
+    openupgrade.logged_query(env.cr, query)
 
 
 @openupgrade.migrate()
@@ -111,4 +88,3 @@ def migrate(env, version):
     _logger.debug('Running migrate script for l10n_ar_withholding')
     migrate_payment_grup_data(env)
     migrate_withholdings(env)
-    migrate_taxes_config(env)
