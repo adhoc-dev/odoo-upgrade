@@ -65,6 +65,7 @@ def adapt_own_checks(env):
     payment_model_id = env.ref('account.model_account_payment').id
     not_on_menu = []
     own_checks_not_migrated_without_payment = []
+    own_checks_not_migrated_without_operation_register=[]
     for check_id, check_state, check_number, check_payment_date in checks_data:
         if check_state == 'draft':
             _logger.info('Skipping check %s (id %s) as it is in draft', check_number, check_id)
@@ -124,13 +125,18 @@ def adapt_own_checks(env):
                     operation_date,
                     operation,
                 ))
+                if operation=='debited':
+                    own_checks_not_migrated_without_operation_register.append((check_number, check_id))
+
         check_payment.message_post(body='Cheque migrado desde v13, información de operaciones:<br/><ul>%s</ul>' % ''.join(check_data))
     msj_check_script = {}
     if own_checks_not_migrated_without_payment:
         msj_check_script['own_checks_not_migrated_without_payment'] = own_checks_not_migrated_without_payment
+    if own_checks_not_migrated_without_operation_register:
+        msj_check_script['own_checks_not_migrated_without_operation_register'] = own_checks_not_migrated_without_operation_register
     if msj_check_script:
         env['ir.config_parameter'].sudo().set_param('own_checks_not_migrated_without_payment' , own_checks_not_migrated_without_payment)
-
+        env['ir.config_parameter'].sudo().set_param('own_checks_not_migrated_without_operation_register' , own_checks_not_migrated_without_operation_register)
 
 def adapt_third_checks(env):
     """ La logica del script es mas o menos esta:
