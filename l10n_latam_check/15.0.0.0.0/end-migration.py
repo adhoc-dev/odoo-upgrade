@@ -151,6 +151,12 @@ def adapt_third_checks(env):
     * por ultimo, a los payment que eran delivered third checks les ponemos tipo manual y dejamos info de cheques (mas
     data al final del script)
     """
+
+    # Agregamos la posibilidad para aquellos clientes que utilizan como identificador del cheque el number 
+    # en lugar del name, que se migre con el number como identificador en la nueva version.
+    use_check_number_instead_of_name = env['ir.config_parameter'].sudo().get_param('use_check_number_instead_of_name', default=False)
+    name_or_number = 'name'
+
     new_third_checks_id = env.ref('l10n_latam_check.account_payment_method_new_third_party_checks').id
     payment_model_id = env.ref('account.model_account_payment').id
     # third_checks_journals = env['account.payment.method.line'].search([('payment_method_id', '=', new_third_checks_id)]).mapped('journal_id')
@@ -174,8 +180,9 @@ def adapt_third_checks(env):
         x.company_id.id: x.id for x in env['account.journal'].search([('code', '=', 'CR99')])}
 
     third_on_hand_states = ['holding', 'rejected']
-
-    env.cr.execute("select id, state, name, bank_id, owner_vat, payment_date, journal_id from account_check_bu where type = 'third_check'")
+    if use_check_number_instead_of_name:
+        name_or_number = 'number'
+    env.cr.execute("select id, state, %s, bank_id, owner_vat, payment_date, journal_id from account_check_bu where type = 'third_check'" % (name_or_number,))
     checks_data = env.cr.fetchall()
     checks_not_migrated_more_than_60 = []
     checks_not_migrated_more_within_60 = []
