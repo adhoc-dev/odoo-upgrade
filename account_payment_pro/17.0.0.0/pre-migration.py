@@ -21,8 +21,9 @@ def migrate(env, version):
     openupgrade.copy_columns(env.cr, _column_copy)
     # backup de tables y checkbooks
     for old_table, new_table in _table_renames:
-        if openupgrade.table_exists(env.cr, old_table):
-            openupgrade.rename_tables(env.cr, [(old_table, new_table)])
+        if openupgrade.table_exists(env.cr, old_table) and not openupgrade.table_exists(env.cr, new_table):
+            openupgrade.logged_query(
+                env.cr, "CREATE TABLE %s AS SELECT * FROM %s" % (new_table, old_table))
 
     # Add temporary table for avoiding the automatic launch of the compute method
     openupgrade.logged_query(
