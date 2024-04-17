@@ -16,7 +16,8 @@ def migrate_payment_grup_data(env):
     # mover campos (excepto m2m)
     query = """
         update account_payment ap set
-            unreconciled_amount = apg.unreconciled_amount
+            unreconciled_amount = apg.unreconciled_amount,
+            receiptbook_id = apg.receiptbook_id
         from account_payment_group_bu as apg
         where
             ap.payment_group_id_bu = apg.id

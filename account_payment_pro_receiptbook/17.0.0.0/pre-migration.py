@@ -10,7 +10,7 @@ _column_copy = {
 
 _table_renames = [
     ('account_payment_group', 'account_payment_group_bu'),
-    ('account_payment_receiptbook', 'account_payment_receiptbook_bu'),
+    # ('account_payment_receiptbook', 'account_payment_receiptbook_bu'),
     ('account_move_line_payment_group_to_pay_rel', 'account_move_line_payment_group_to_pay_rel_bu'),
 ]
 
@@ -25,7 +25,16 @@ def migrate(env, version):
             openupgrade.logged_query(
                 env.cr, "CREATE TABLE %s AS SELECT * FROM %s" % (new_table, old_table))
 
-    # Add temporary table for avoiding the automatic launch of the compute method
+    # lo movimos a ul 1026
+    # # Add temporary table for avoiding the automatic launch of the compute method
+    # openupgrade.logged_query(
+    #     env.cr, "CREATE TABLE account_move_line_payment_to_pay_rel (payment_id integer, to_pay_line_id integer)",
+    # )
+
     openupgrade.logged_query(
-        env.cr, "CREATE TABLE account_move_line_payment_to_pay_rel (payment_id integer, to_pay_line_id integer)",
+        env.cr,
+        """
+        ALTER TABLE account_payment
+        ADD COLUMN IF NOT EXISTS receiptbook_id int4
+        """,
     )
