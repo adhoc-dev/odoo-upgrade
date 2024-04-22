@@ -82,6 +82,17 @@ def migrate_withholdings(env):
     """
     openupgrade.logged_query(env.cr, query)
 
+    query = """
+        update account_payment ap
+            set amount = 0.0
+        from
+            account_payment_method apm
+        where
+            apm.id = ap.payment_method_id and
+            apm.code = 'withholding'
+    """
+    openupgrade.logged_query(env.cr, query)
+
 
 @openupgrade.migrate()
 def migrate(env, version):
