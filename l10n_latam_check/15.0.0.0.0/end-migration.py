@@ -162,6 +162,7 @@ def adapt_third_checks(env):
     # third_checks_journals = env['account.payment.method.line'].search([('payment_method_id', '=', new_third_checks_id)]).mapped('journal_id')
     # checks_payment_manual_method_lines_map = {}
     manual_payment_method = env.ref('account.account_payment_method_manual_in')
+    # manual_payment_method_line es un type "inbound"
     manual_payment_method_line = env['account.payment.method.line'].search([('payment_method_id', '=', manual_payment_method.id), ('journal_id', '=', False)], limit=1)
     if not manual_payment_method_line:
         manual_payment_method_line = env['account.payment.method.line'].create({
@@ -285,7 +286,7 @@ def adapt_third_checks(env):
                     lambda pm: pm.payment_method_id == env.ref('l10n_latam_check.account_payment_method_in_third_party_checks'))
                 if not payment_method_line:
                     payment_method_line = env["account.journal"].browse(new_pay_journal_id).inbound_payment_method_line_ids.filtered(
-                        lambda pm: pm.payment_method_id == env.ref('account.account_payment_method_manual_in'))
+                        lambda pm: pm.payment_method_id == env.ref('account.account_payment_method_manual_in')) or manual_payment_method_line
             else:
                 payment_type = 'outbound'
                 new_pay_journal_id = check_payment.journal_id.id
