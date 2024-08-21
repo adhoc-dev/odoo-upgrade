@@ -3,10 +3,28 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
+# adenda viene de l10n_uy_account pero ahora esta en l10n_uy_edi, no deberia haber problemas de que lo hagamos todo aca
+# porque el borrado de lo que no va odoo lo hace al final
 _table_renames = [
-    ('account_move', 'account_move_bu'),
+    ('l10n_uy_adenda', 'l10n_uy_edi_addenda'),
+]
+
+_model_renames = [
     ('l10n.uy.adenda', 'l10n_uy_edi.addenda'),
 ]
+
+_column_copy = {
+    'account_move': [
+        ('l10n_uy_cfe_state', 'l10n_uy_cfe_state_bu', None),
+        ('l10n_uy_cfe_uuid', 'l10n_uy_cfe_uuid_bu', None),
+        ('l10n_uy_cfe_file', 'l10n_uy_cfe_file_bu', None),
+        ('l10n_uy_ucfe_msg', 'l10n_uy_ucfe_msg_bu', None),
+        ('l10n_uy_additional_info', 'l10n_uy_additional_info_bu', None),
+    ],
+    'account_tax_group': [
+        ('l10n_uy_vat_code', 'l10n_uy_vat_code_bu', None),
+    ],
+}
 
 _field_renames = [
     ('account.move', 'account_move', 'l10n_uy_cfe_state', 'l10n_uy_edi_cfe_state'),
@@ -24,34 +42,36 @@ _field_renames = [
     ('res.company', 'res_company', 'l10n_uy_dgi_house_code', 'l10n_uy_edi_branch_code'),
     ('res.company', 'res_company', 'l10n_uy_adenda_ids', 'l10n_uy_edi_addenda_ids'),
 
+    ('l10n_uy_edi.addenda', 'l10n_uy_edi_addenda', 'legend_type', 'type'),
+]
+
 
 @openupgrade.migrate()
 def migrate(env, version):
     # backup de columnas que nos interesan antes de que se borren
     _logger.debug('Running migrate script for l10n_uy_edi')
 
-    # Popular nueva tabla con datos en el account move
-    openupgrade.logged_query(env.cr, """
-        INSERT INTO l10n_uy_edi_document (name, move_id, state, uuid, attachment_id, message)
-        SELECT
-            name as name,
-            id as move_id,
-            l10n_uy_cfe_state as state,
-            l10n_uy_cfe_uuid as uuid,
-            l10n_uy_cfe_file as attachment_id,
-            l10n_uy_ucfe_msg as message,
-        FROM account_move move
-        WHERE move.journal_id.l10n_uy_edi_type == 'electronic'
-    """)
-    # TODO
-    # attachment_file → campo binary. no existe ¿Cómo popular?
-    # request_datetime (campo requerido, dejar valor por defecto para los viejos?)
+    openupgrade.rename_models(env.cr, _model_renames)
 
-    # Agregar relacion entre tabla edi document y move. campo 'l10n_uy_edi_document_id'
-    openupgrade.logged_query(env.cr, """
-        UPDATE account_move move
-        SET
-            l10n_uy_edi_document_id = edi.id
-        FROM l10n_uy_edi_document AS edi
-        WHERE edi.move_id == move.id'
-    """)
+    for old_table, new_table in _table_renames:
+        if openupgrade.table_exists(env.cr, old_table):
+            openupgrade.rename_tables(env.cr, [(old_table, new_table)])
+
+    openupgrade.copy_columns(env.cr, _column_copy)
+
+    openupgrade.rename_fields(env, _field_renames)
+
+    # TODO implementar algo asi (los que se tienen que limpiar dejarlos en null)
+    openupgrade.logged_query(env.cr, "query")
+    # update account_move set state = xml_error where not_apply
+    # Quitamos opciones opciones
+    # Lo que era  'xml_error', 'connection_error', 'ucfe_error' ahora sería "error"
+    # Lo que era 'not_apply', 'draft_cfe' poner vacio 
+
+    # TODO implementar query de actualizar esto, tal vez en post vaya bien?
+    # legend_type → type
+    # Cambiaron opciones
+    # 'emisor' →"issuer" 
+    # 'receptor' →  "receiver"
+    # 'comprobante' →  "cfe_doc"
+    # 'adenda' →  "addenda"
