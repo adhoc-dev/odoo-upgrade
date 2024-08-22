@@ -8,7 +8,7 @@ def migrate(env, version):
     """ Para que odoo no genere movimientos raros al cancelar remanente tenemos que ajustar el deadline y description picking
     Por lo que vimos en realidad pisar el description_picking no seria necesario
     """
-    _logger.debug('Running fix for cancel remaining')
+    _logger.debug('Running fix for cancel remaining')s
     stock_moves = env['stock.move'].search([('sale_line_id.delivery_status', '=', 'to deliver'), ('state', 'not in', ['cancel', 'done'])])
     for move in stock_moves:
         line = move.sale_line_id
