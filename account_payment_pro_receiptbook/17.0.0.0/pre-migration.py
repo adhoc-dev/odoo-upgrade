@@ -18,7 +18,7 @@ _table_renames = [
 @openupgrade.migrate()
 def migrate(env, version):
     # backup de columnas que nos interesan antes de que se borren
-    openupgrade.copy_columns(env.cr, _column_copy)
+    # openupgrade.copy_columns(env.cr, _column_copy)
     # backup de tables y checkbooks
     for old_table, new_table in _table_renames:
         if openupgrade.table_exists(env.cr, old_table) and not openupgrade.table_exists(env.cr, new_table):

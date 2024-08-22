@@ -15,6 +15,6 @@ def migrate(env, version):
         move.write({
             # 'date_deadline': line.order_id.commitment_date or line.order_id.date_order + datetime.timedelta(days=line.customer_lead or 0.0)),
             'date_deadline': line.order_id.commitment_date or line.order_id.date_order,
-            'description_picking': line.name,
+            # 'description_picking': line.name,
             # 'price_unit': new_run_private_method('sale.order.line', '_get_stock_move_price_unit', line.ids),
         })
