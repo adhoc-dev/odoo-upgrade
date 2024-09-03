@@ -20,6 +20,7 @@ _column_copy = {
         ('l10n_uy_cfe_file', 'l10n_uy_cfe_file_bu', None),
         ('l10n_uy_ucfe_msg', 'l10n_uy_ucfe_msg_bu', None),
         ('l10n_uy_additional_info', 'l10n_uy_additional_info_bu', None),
+        ('l10n_uy_cfe_pdf', 'l10n_uy_cfe_pdf_bu', None),
     ],
     'account_tax_group': [
         ('l10n_uy_vat_code', 'l10n_uy_vat_code_bu', None),
@@ -29,7 +30,6 @@ _column_copy = {
 _field_renames = [
     ('account.move', 'account_move', 'l10n_uy_cfe_state', 'l10n_uy_edi_cfe_state'),
     ('account.move', 'account_move', 'l10n_uy_cfe_file', 'l10n_uy_edi_xml_attachment_id'),
-    ('account.move', 'account_move', 'l10n_uy_cfe_pdf', 'invoice_pdf_report_file'),
     ('account.move', 'account_move', 'l10n_uy_cfe_sale_mod', 'l10n_uy_edi_cfe_sale_mode'),
     ('account.move', 'account_move', 'l10n_uy_cfe_transport_route', 'l10n_uy_edi_cfe_transport_route'),
 
@@ -62,7 +62,7 @@ def migrate(env, version):
     openupgrade.rename_fields(env, _field_renames)
 
     # TODO implementar algo asi (los que se tienen que limpiar dejarlos en null)
-    openupgrade.logged_query(env.cr, "query")
+    # openupgrade.logged_query(env.cr, query)
     # update account_move set state = xml_error where not_apply
     # Quitamos opciones opciones
     # Lo que era  'xml_error', 'connection_error', 'ucfe_error' ahora sería "error"

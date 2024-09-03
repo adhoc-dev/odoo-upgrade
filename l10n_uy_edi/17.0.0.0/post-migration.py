@@ -32,6 +32,65 @@ def migrate(env, version):
         WHERE edi.move_id == move.id
     """)
 
+    # update account_move set state = xml_error where not_apply
+    # Quitamos opciones opciones
+    # Lo que era  'xml_error', 'connection_error', 'ucfe_error' ahora sería "error"
+    # Lo que era 'not_apply', 'draft_cfe' poner vacio
+    openupgrade.logged_query(env.cr, """
+        UPDATE account_move
+        SET
+            l10n_uy_edi_cfe_state = 'error'
+        FROM account_move
+        WHERE l10n_uy_cfe_state_bu IN ('xml_error', 'connection_error', 'ucfe_error');
+    """)
+
+    openupgrade.logged_query(env.cr, """
+        UPDATE account_move
+        SET
+            l10n_uy_edi_cfe_state = Null
+        FROM account_move
+        WHERE l10n_uy_cfe_state_bu IN ('not_apply', 'draft_cfe');
+    """)
+
+    # TODO implementar query de actualizar esto, tal vez en post vaya bien?
+    # legend_type → type
+    # Cambiaron opciones
+    # 'emisor' →"issuer" 
+    # 'receptor' →  "receiver"
+    # 'comprobante' →  "cfe_doc"
+    # 'adenda' →  "addenda"
+    openupgrade.logged_query(env.cr, """
+        UPDATE l10n_uy_edi_addenda
+        SET
+            type = 'issuer'
+        FROM l10n_uy_edi_addenda
+        WHERE type = 'emisor'
+    """)
+
+    openupgrade.logged_query(env.cr, """
+        UPDATE l10n_uy_edi_addenda
+        SET
+            type = 'receiver'
+        FROM l10n_uy_edi_addenda
+        WHERE type = 'receptor'
+    """)
+
+    openupgrade.logged_query(env.cr, """
+        UPDATE l10n_uy_edi_addenda
+        SET
+            type = 'cfe_doc'
+        FROM l10n_uy_edi_addenda
+        WHERE type = 'comprobante'
+    """)
+
+    openupgrade.logged_query(env.cr, """
+        UPDATE l10n_uy_edi_addenda
+        SET
+            type = 'addenda'
+        FROM l10n_uy_edi_addenda
+        WHERE type = 'adenda'
+    """)
+
     # convertimos nuestro "l10n_uy_cfe_file_bu" m2o a ir.attachment a un campo binary "attachment_file"
     for move in electronic_move_with_l10n_uy_cfe_file_bu:
         move.l10n_uy_cfe_file_bu.write({
@@ -54,8 +113,8 @@ def migrate(env, version):
     #         name as name,
     #         select l10n_uy_additional_info_bu from account_move where l10n_uy_additional_info_bu is not null
 
-    env[res.company].search(l10n_uy_edi_ucfe_env = False).l10n_uy_edi_ucfe_env = 'demo'
-    env[adenda].search(name like '{').is_legend = True
+    env['res.company'].search(l10n_uy_edi_ucfe_env = False).l10n_uy_edi_ucfe_env = 'demo'
+    env['l10n_uy_edi.addenda'].search(name like '{').is_legend = True
 
     # update account_tax set l10n_uy_tax_category = bla from tax_group where
     # tax.tax_group_id = tax_group.id 
