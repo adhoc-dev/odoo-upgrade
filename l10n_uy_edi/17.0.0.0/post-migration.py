@@ -5,18 +5,34 @@ _logger = logging.getLogger(__name__)
 
 @openupgrade.migrate()
 def migrate(env, version):
+
     # Popular nueva tabla con datos en el account move
     openupgrade.logged_query(env.cr, """
-        INSERT INTO l10n_uy_edi_document (name, move_id, state, uuid, attachment_id, message)
-        SELECT
-            name as name,
-            id as move_id,
-            l10n_uy_cfe_state_bu as state,
-            l10n_uy_cfe_uuid_bu as uuid,
-            l10n_uy_ucfe_msg_bu as message
-        FROM account_move move
-        WHERE move.journal_id.l10n_uy_edi_type == 'electronic'
+    INSERT INTO l10n_uy_edi_document (move_id, state, uuid, message, request_datetime)
+    SELECT
+        move.id as move_id,
+        move.l10n_uy_cfe_state_bu as state,
+        move.l10n_uy_cfe_uuid_bu as uuid,
+        move.l10n_uy_ucfe_msg_bu as message,
+        TO_TIMESTAMP(TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'), 'YYYY-MM-DD HH24:MI:SS') as request_datetime
+    FROM account_move move
+    JOIN account_journal journal ON move.journal_id = journal.id
+    WHERE journal.l10n_uy_edi_type = 'electronic' AND move.l10n_uy_cfe_state_bu NOTNULL
     """)
+
+    openupgrade.logged_query(env.cr, """
+    UPDATE ir_attachment SET 
+        res_id = subc.edi_id,
+        res_model = 'l10n_uy_edi.document',
+        res_field = 'attachment_file'
+    FROM (SELECT edi_doc.id AS edi_id, edi_doc.move_id from l10n_uy_edi_document edi_doc JOIN account_move ON account_move.id = edi_doc.move_id) as subc 
+    WHERE subc.move_id = res_id AND name like '%.xml';
+    """)
+    
+    for rec in env['l10n_uy_edi.document'].search([]):
+      datas = env['ir.attachment'].search([('res_id', '=', rec.id), ('res_model', '=', 'l10n_uy_edi.document')]).datas
+      if datas:
+           rec.attachment_file = datas
 
     # l10n_uy_cfe_file_bu as attachment_id,
     # TODO
