@@ -25,6 +25,12 @@ _column_copy = {
     'account_tax_group': [
         ('l10n_uy_vat_code', 'l10n_uy_vat_code_bu', None),
     ],
+    'product_product' : [
+        ('l10n_uy_additional_info', 'l10n_uy_additional_info_pro_bu', None),
+    ],
+    'res_partner' : [
+        ('l10n_uy_additional_info', 'l10n_uy_additional_info_part_bu', None),
+    ]
 }
 
 _field_renames = [
@@ -60,18 +66,3 @@ def migrate(env, version):
     openupgrade.copy_columns(env.cr, _column_copy)
 
     openupgrade.rename_fields(env, _field_renames)
-
-    # TODO implementar algo asi (los que se tienen que limpiar dejarlos en null)
-    # openupgrade.logged_query(env.cr, query)
-    # update account_move set state = xml_error where not_apply
-    # Quitamos opciones opciones
-    # Lo que era  'xml_error', 'connection_error', 'ucfe_error' ahora sería "error"
-    # Lo que era 'not_apply', 'draft_cfe' poner vacio 
-
-    # TODO implementar query de actualizar esto, tal vez en post vaya bien?
-    # legend_type → type
-    # Cambiaron opciones
-    # 'emisor' →"issuer" 
-    # 'receptor' →  "receiver"
-    # 'comprobante' →  "cfe_doc"
-    # 'adenda' →  "addenda"
