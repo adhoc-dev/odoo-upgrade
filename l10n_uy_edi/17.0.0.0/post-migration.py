@@ -32,15 +32,11 @@ def migrate(env, version):
         WHERE edi.move_id == move.id
     """)
 
-    # update account_move set state = xml_error where not_apply
-    # Quitamos opciones opciones
-    # Lo que era  'xml_error', 'connection_error', 'ucfe_error' ahora sería "error"
-    # Lo que era 'not_apply', 'draft_cfe' poner vacio
+    #Actualizamos los select de los estados del cfe
     openupgrade.logged_query(env.cr, """
         UPDATE account_move
         SET
             l10n_uy_edi_cfe_state = 'error'
-        FROM account_move
         WHERE l10n_uy_cfe_state_bu IN ('xml_error', 'connection_error', 'ucfe_error');
     """)
 
@@ -48,17 +44,10 @@ def migrate(env, version):
         UPDATE account_move
         SET
             l10n_uy_edi_cfe_state = Null
-        FROM account_move
         WHERE l10n_uy_cfe_state_bu IN ('not_apply', 'draft_cfe');
     """)
 
-    # TODO implementar query de actualizar esto, tal vez en post vaya bien?
-    # legend_type → type
-    # Cambiaron opciones
-    # 'emisor' →"issuer" 
-    # 'receptor' →  "receiver"
-    # 'comprobante' →  "cfe_doc"
-    # 'adenda' →  "addenda"
+    #Cambiamos los type de addendas
     openupgrade.logged_query(env.cr, """
         UPDATE l10n_uy_edi_addenda
         SET
@@ -97,25 +86,8 @@ def migrate(env, version):
             'res_field': 'attachment_file',
         })
 
-    # TODO implementar
-    # logged_query
-    # insert into adendas SELECT
-    #         name as name,
-    #         select l10n_uy_additional_info_bu from account_move where l10n_uy_additional_info_bu is not null
-
-    # TODO implementar para este caso de partners tmb l10n_uy_additional_info
-    # logged_query
-    # insert into adendas SELECT
-    #         name as name,
-    #         select l10n_uy_additional_info_bu from account_move where l10n_uy_additional_info_bu is not null
-
-    env['res.company'].search(l10n_uy_edi_ucfe_env = False).l10n_uy_edi_ucfe_env = 'demo'
-    env['l10n_uy_edi.addenda'].search(name like '{').is_legend = True
-
-    # update account_tax set l10n_uy_tax_category = bla from tax_group where
-    # tax.tax_group_id = tax_group.id 
-    # and l10n_uy_tax_category_bu is not null
-
+    env['res.company'].search([('l10n_uy_edi_ucfe_env', '=', False)]).l10n_uy_edi_ucfe_env = 'demo'
+    env['l10n_uy_edi.addenda'].search([('content', 'like', '{%}')]).is_legend = True
 
     env.ref('l10n_uy_edi.ir_cron_get_ucfe_notif').unlink()
     # lo re-creamos
