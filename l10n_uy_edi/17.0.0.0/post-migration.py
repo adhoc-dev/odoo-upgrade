@@ -63,7 +63,6 @@ def migrate(env, version):
         UPDATE l10n_uy_edi_addenda
         SET
             type = 'issuer'
-        FROM l10n_uy_edi_addenda
         WHERE type = 'emisor'
     """)
 
@@ -71,7 +70,6 @@ def migrate(env, version):
         UPDATE l10n_uy_edi_addenda
         SET
             type = 'receiver'
-        FROM l10n_uy_edi_addenda
         WHERE type = 'receptor'
     """)
 
@@ -79,7 +77,6 @@ def migrate(env, version):
         UPDATE l10n_uy_edi_addenda
         SET
             type = 'cfe_doc'
-        FROM l10n_uy_edi_addenda
         WHERE type = 'comprobante'
     """)
 
@@ -87,7 +84,6 @@ def migrate(env, version):
         UPDATE l10n_uy_edi_addenda
         SET
             type = 'addenda'
-        FROM l10n_uy_edi_addenda
         WHERE type = 'adenda'
     """)
 
