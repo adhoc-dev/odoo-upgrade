@@ -86,7 +86,65 @@ def migrate(env, version):
         WHERE type = 'adenda'
     """)
 
+    #TODO opcional: vincular las adendas con las facturas
+    openupgrade.logged_query(env.cr, """
+        INSERT INTO l10n_uy_edi_addenda (name, type, content, company_id)
+        SELECT
+            move.l10n_uy_additional_info_bu AS name,
+            'cfe_doc' AS type,
+            move.l10n_uy_additional_info_bu AS content,
+            move.company_id AS company_id
+        FROM account_move move
+        WHERE move.l10n_uy_additional_info_bu NOTNULL
+    """)
+
+    openupgrade.logged_query(env.cr, """
+        INSERT INTO l10n_uy_edi_addenda (name, type, content)
+        SELECT
+            product.l10n_uy_additional_info_pro_bu AS name,
+            'item' AS type,
+            product.l10n_uy_additional_info_pro_bu AS content
+            -- product.product_tmpl_id.company_id AS company_id
+        FROM product_product product
+        WHERE product.l10n_uy_additional_info_pro_bu NOTNULL
+    """)
+
+    openupgrade.logged_query(env.cr, """
+        INSERT INTO l10n_uy_edi_addenda (name, type, content, company_id)
+        SELECT
+            partner.l10n_uy_additional_info_part_bu AS name,
+            'receiver' AS type,
+            partner.l10n_uy_additional_info_part_bu AS content,
+            partner.company_id AS company_id
+        FROM res_partner partner
+        WHERE partner.l10n_uy_additional_info_part_bu NOTNULL
+    """)
+
     env['l10n_uy_edi.addenda'].search([('content', 'like', '{%}')]).is_legend = True
+
+    # Impuestos TERMINAR
+    # openupgrade.logged_query(env.cr, """
+    #     UPDATE account_tax SET
+    #         l10n_uy_tax_category = 'vat'
+    #     FROM
+    #         (SELECT ARRAY_AGG(tax.id) AS tax_ids
+    #         FROM account_tax_group AS tax_group
+    #         INNER JOIN account_tax AS tax
+    #         ON tax_group.id = tax.tax_group_id
+    #         WHERE tax_group.l10n_uy_vat_code_bu NOTNULL) as subc
+    #     WHERE account_tax.id IN subc.tax_ids
+    # """)
+
+    # query= f"""
+    #         SELECT tax.id
+    #         FROM account_tax_group AS tax_group
+    #         INNER JOIN account_tax AS tax
+    #         ON tax_group.id = tax.tax_group_id
+    #         WHERE tax_group.l10n_uy_vat_code_bu NOTNULL
+    #     """
+    # env._cr.execute(query)
+    # tax_ids = [tax.get('id') for tax in env._cr.dictfetchall()]
+    # env['account.tax'].browse(tax_ids).write({'l10n_uy_tax_category': 'vat'})
 
     # Seteamos los ambientes
     env['res.company'].search([('l10n_uy_edi_ucfe_env', '=', False)]).l10n_uy_edi_ucfe_env = 'demo'
