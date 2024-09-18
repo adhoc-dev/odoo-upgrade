@@ -122,29 +122,17 @@ def migrate(env, version):
 
     env['l10n_uy_edi.addenda'].search([('content', 'like', '{%}')]).is_legend = True
 
-    # Impuestos TERMINAR
-    # openupgrade.logged_query(env.cr, """
-    #     UPDATE account_tax SET
-    #         l10n_uy_tax_category = 'vat'
-    #     FROM
-    #         (SELECT ARRAY_AGG(tax.id) AS tax_ids
-    #         FROM account_tax_group AS tax_group
-    #         INNER JOIN account_tax AS tax
-    #         ON tax_group.id = tax.tax_group_id
-    #         WHERE tax_group.l10n_uy_vat_code_bu NOTNULL) as subc
-    #     WHERE account_tax.id IN subc.tax_ids
-    # """)
-
-    # query= f"""
-    #         SELECT tax.id
-    #         FROM account_tax_group AS tax_group
-    #         INNER JOIN account_tax AS tax
-    #         ON tax_group.id = tax.tax_group_id
-    #         WHERE tax_group.l10n_uy_vat_code_bu NOTNULL
-    #     """
-    # env._cr.execute(query)
-    # tax_ids = [tax.get('id') for tax in env._cr.dictfetchall()]
-    # env['account.tax'].browse(tax_ids).write({'l10n_uy_tax_category': 'vat'})
+    #Impuestos
+    query= f"""
+            SELECT tax.id
+            FROM account_tax_group AS tax_group
+            INNER JOIN account_tax AS tax
+            ON tax_group.id = tax.tax_group_id
+            WHERE tax_group.l10n_uy_vat_code_bu NOTNULL
+        """
+    env.cr.execute(query)
+    tax_ids = [tax.get('id') for tax in env.cr.dictfetchall()]
+    env['account.tax'].browse(tax_ids).write({'l10n_uy_tax_category': 'vat'})
 
     # Seteamos los ambientes
     env['res.company'].search([('l10n_uy_edi_ucfe_env', '=', False)]).l10n_uy_edi_ucfe_env = 'demo'
