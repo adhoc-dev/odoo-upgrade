@@ -5,7 +5,7 @@ _logger = logging.getLogger(__name__)
 
 @openupgrade.migrate()
 def migrate(env, version):
-
+    _logger.debug('Running pre-migrate script for l10n_uy')
     # TODO hacer los rename
     _xmlid_renames = [
         ('l10n_uy.tax_group_vat_22', 'l10n_uy.tax_group_iva_22'),
