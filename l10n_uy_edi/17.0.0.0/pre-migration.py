@@ -55,7 +55,7 @@ _field_renames = [
 @openupgrade.migrate()
 def migrate(env, version):
     # backup de columnas que nos interesan antes de que se borren
-    _logger.debug('Running migrate script for l10n_uy_edi')
+    _logger.info('Running migrate script for l10n_uy_edi')
 
     openupgrade.rename_models(env.cr, _model_renames)
 

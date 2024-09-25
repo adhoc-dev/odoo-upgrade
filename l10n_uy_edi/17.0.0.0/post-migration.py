@@ -5,7 +5,7 @@ _logger = logging.getLogger(__name__)
 
 @openupgrade.migrate()
 def migrate(env, version):
-    _logger.debug('Running post-migrate script for l10n_uy_edi')
+    _logger.info('Running post-migrate script for l10n_uy_edi')
     # Popular nueva tabla con datos en el account move
     openupgrade.logged_query(env.cr, """
     INSERT INTO l10n_uy_edi_document (move_id, state, uuid, message, request_datetime)
@@ -41,6 +41,13 @@ def migrate(env, version):
             l10n_uy_edi_document_id = edi.id
         FROM l10n_uy_edi_document AS edi
         WHERE edi.move_id == move.id
+    """)
+
+    openupgrade.logged_query(env.cr, """
+        UPDATE account_journal
+        SET
+            l10n_uy_edi_type = 'manual'
+        WHERE  l10n_uy_edi_type = 'preprinted'
     """)
 
     # Actualizamos los select de los estados del cfe
