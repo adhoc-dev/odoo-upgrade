@@ -40,7 +40,7 @@ def migrate(env, version):
         SET
             l10n_uy_edi_document_id = edi.id
         FROM l10n_uy_edi_document AS edi
-        WHERE edi.move_id == move.id
+        WHERE edi.move_id = move.id
     """)
 
     openupgrade.logged_query(env.cr, """
