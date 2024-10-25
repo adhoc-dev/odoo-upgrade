@@ -147,5 +147,8 @@ def migrate(env, version):
 
 
     # Los re-creamos
-    env.ref('l10n_uy_edi.ir_cron_get_ucfe_notif').unlink()
-    env.ref('l10n_uy_edi.ir_cron_get_vendor_bills_received').unlink()
+    cron_ucfe_notif = env.ref('l10n_uy_edi.ir_cron_get_ucfe_notif', raise_if_not_found=False)
+    cron_vendor_bills_received = env.ref('l10n_uy_edi.ir_cron_get_vendor_bills_received', raise_if_not_found=False)
+
+    cron_ucfe_notif.unlink() if cron_ucfe_notif else False
+    cron_vendor_bills_received.unlink() if cron_vendor_bills_received else False
