@@ -17,5 +17,5 @@ def _check_company(self, fnames=None):
 BaseModel._check_company = _check_company
 
 
-def migrate(env, version):
+def migrate(cr, version):
     pass

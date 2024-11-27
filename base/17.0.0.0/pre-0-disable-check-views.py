@@ -17,5 +17,5 @@ def _check_xml(self):
 View._check_xml = _check_xml
 
 
-def migrate(env, version):
+def migrate(cr, version):
     pass
