@@ -21,6 +21,8 @@ _column_copy = {
         ('l10n_uy_ucfe_msg', 'l10n_uy_ucfe_msg_bu', None),
         ('l10n_uy_additional_info', 'l10n_uy_additional_info_bu', None),
         ('l10n_uy_cfe_pdf', 'l10n_uy_cfe_pdf_bu', None),
+        ('l10n_uy_ucfe_prod_env', 'l10n_uy_ucfe_prod_env_bu', None),
+        ('l10n_uy_ucfe_test_env', 'l10n_uy_ucfe_test_env_bu', None),
     ],
     'account_tax_group': [
         ('l10n_uy_vat_code', 'l10n_uy_vat_code_bu', None),
@@ -47,8 +49,6 @@ _field_renames = [
     ('res.company', 'res_company', 'l10n_uy_ucfe_terminal_code', 'l10n_uy_edi_ucfe_terminal_code'),
     ('res.company', 'res_company', 'l10n_uy_dgi_house_code', 'l10n_uy_edi_branch_code'),
     ('res.company', 'res_company', 'l10n_uy_adenda_ids', 'l10n_uy_edi_addenda_ids'),
-    ('res.company', 'res_company', 'l10n_uy_ucfe_prod_env', 'l10n_uy_edi_ucfe_prod_env'),
-    ('res.company', 'res_company', 'l10n_uy_ucfe_test_env', 'l10n_uy_edi_ucfe_test_env'),
 
     ('l10n_uy_edi.addenda', 'l10n_uy_edi_addenda', 'legend_type', 'type'),
 ]
