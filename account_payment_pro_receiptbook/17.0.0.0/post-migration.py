@@ -24,6 +24,16 @@ def migrate_payment_grup_data(env):
         """
     openupgrade.logged_query(env.cr, query)
 
+    query = """
+        update account_move am set
+            receiptbook_id = ap.receiptbook_id
+        from account_payment as ap
+        where
+            am.payment_id = ap.id and ap.receiptbook_id is not null;
+    """
+
+    openupgrade.logged_query(env.cr, query)
+
     # popular to_pay_move_lines (m2m field, en post)
     query = """
         insert into account_move_line_payment_to_pay_rel (to_pay_line_id, payment_id)
