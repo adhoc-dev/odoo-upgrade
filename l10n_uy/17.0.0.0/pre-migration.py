@@ -1,11 +1,17 @@
 from openupgradelib import openupgrade
+from odoo import SUPERUSER_ID, api
 import logging
 _logger = logging.getLogger(__name__)
 
+_column_copy = {
+    'account_tax_group': [
+        ('l10n_uy_vat_code', 'l10n_uy_vat_code_bu', None),
+    ]
+}
 
-@openupgrade.migrate()
-def migrate(env, version):
+def migrate(cr, version):
     _logger.info('Running pre-migrate script for l10n_uy')
+    env = api.Environment(cr, SUPERUSER_ID, {})
     # TODO hacer los rename
     _xmlid_renames = [
         ('l10n_uy.tax_group_vat_22', 'l10n_uy.tax_group_iva_22'),
@@ -15,3 +21,4 @@ def migrate(env, version):
     ]
 
     openupgrade.rename_xmlids(env.cr, _xmlid_renames)
+    openupgrade.copy_columns(env.cr, _column_copy)

@@ -1,11 +1,12 @@
 from openupgradelib import openupgrade
+from odoo import SUPERUSER_ID, api
 import logging
 _logger = logging.getLogger(__name__)
 
 
-@openupgrade.migrate()
-def migrate(env, version):
+def migrate(cr, version):
     _logger.info('Running post-migrate script for l10n_uy_edi')
+    env = api.Environment(cr, SUPERUSER_ID, {})
     # Popular nueva tabla con datos en el account move
     openupgrade.logged_query(env.cr, """
     INSERT INTO l10n_uy_edi_document (move_id, state, uuid, message, request_datetime)
@@ -28,7 +29,7 @@ def migrate(env, version):
     FROM (SELECT edi_doc.id AS edi_id, edi_doc.move_id from l10n_uy_edi_document edi_doc JOIN account_move ON account_move.id = edi_doc.move_id) as subc 
     WHERE subc.move_id = res_id AND name like '%.xml';
     """)
-    
+
     for rec in env['l10n_uy_edi.document'].search([]):
       datas = env['ir.attachment'].search([('res_id', '=', rec.id), ('res_model', '=', 'l10n_uy_edi.document')]).datas
       if datas:
@@ -130,18 +131,6 @@ def migrate(env, version):
 
     env['l10n_uy_edi.addenda'].search([('content', 'like', '{%}')]).is_legend = True
 
-    #Impuestos
-    query= f"""
-            SELECT tax.id
-            FROM account_tax_group AS tax_group
-            INNER JOIN account_tax AS tax
-            ON tax_group.id = tax.tax_group_id
-            WHERE tax_group.l10n_uy_vat_code_bu NOTNULL
-        """
-    env.cr.execute(query)
-    tax_ids = [tax.get('id') for tax in env.cr.dictfetchall()]
-    env['account.tax'].browse(tax_ids).write({'l10n_uy_tax_category': 'vat'})
-
     # Seteamos los ambientes
     env['res.company'].search([('l10n_uy_edi_ucfe_env', '=', False)]).l10n_uy_edi_ucfe_env = 'demo'
 
@@ -152,16 +141,3 @@ def migrate(env, version):
 
     cron_ucfe_notif.unlink() if cron_ucfe_notif else False
     cron_vendor_bills_received.unlink() if cron_vendor_bills_received else False
-
-    # Cambio el plan de cuentas en 16 era uy_account en el modulo l10n_uy_account. Ahora en 17 el plan de cuentas esta
-    # en l10n_uy y se llama 'uy'. Tenemos que actualizar este dato en la compañia porque si no cuando entramos al menu
-    # de Ajustes recibimos este traceback https://gist.github.com/zaoral/461d737b35601c74d05ca3054d2f6e9f . Decidimos
-    # pasarlo a vacio porque si le ponemeos "uy" como hay muchas diferencias entre los xml usados en una version y
-    # otra puede traernos problemas en el futuro de duplicacion de registros que no queremos porque los xml son
-    # distintos
-    openupgrade.logged_query(env.cr, """
-        UPDATE res_company
-        SET
-            chart_template = Null
-        WHERE chart_template = 'uy_account'
-    """)

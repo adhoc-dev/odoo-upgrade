@@ -23,9 +23,6 @@ _column_copy = {
         ('l10n_uy_additional_info', 'l10n_uy_additional_info_bu', None),
         ('l10n_uy_cfe_pdf', 'l10n_uy_cfe_pdf_bu', None),
     ],
-    'account_tax_group': [
-        ('l10n_uy_vat_code', 'l10n_uy_vat_code_bu', None),
-    ],
     'product_product' : [
         ('l10n_uy_additional_info', 'l10n_uy_additional_info_pro_bu', None),
     ],
