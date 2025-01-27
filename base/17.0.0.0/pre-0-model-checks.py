@@ -1,9 +1,9 @@
-from odoo import api, models
-
 from odoo.addons.base.models.ir_model import (
     IrModelSelection,
 )
 
+
+_original_method = IrModelSelection._process_ondelete
 
 def _process_ondelete(self):
     """Don't break on missing models when deleting their selection fields"""
@@ -14,10 +14,9 @@ def _process_ondelete(self):
             to_process += selection
         except KeyError:
             continue
-    return IrModelSelection._process_ondelete._original_method(to_process)
+    return _original_method(to_process)
 
 
-_process_ondelete._original_method = IrModelSelection._process_ondelete
 IrModelSelection._process_ondelete = _process_ondelete
 
 
