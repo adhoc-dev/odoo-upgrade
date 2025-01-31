@@ -1,4 +1,5 @@
 from openupgradelib import openupgrade
+from odoo import SUPERUSER_ID, api
 import logging
 _logger = logging.getLogger(__name__)
 
@@ -52,10 +53,10 @@ _field_renames = [
 ]
 
 
-@openupgrade.migrate()
-def migrate(env, version):
+def migrate(cr, version):
     # backup de columnas que nos interesan antes de que se borren
     _logger.info('Running migrate script for l10n_uy_edi')
+    env = api.Environment(cr, SUPERUSER_ID, {})
 
     openupgrade.rename_models(env.cr, _model_renames)
 

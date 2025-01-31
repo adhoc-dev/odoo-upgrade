@@ -1,4 +1,5 @@
 from openupgradelib import openupgrade
+from odoo import SUPERUSER_ID, api
 import logging
 _logger = logging.getLogger(__name__)
 
@@ -94,8 +95,8 @@ def migrate_withholdings(env):
     openupgrade.logged_query(env.cr, query)
 
 
-@openupgrade.migrate()
-def migrate(env, version):
+def migrate(cr, version):
     _logger.debug('Running migrate script for l10n_ar_withholding')
+    env = api.Environment(cr, SUPERUSER_ID, {})
     migrate_payment_grup_data(env)
     migrate_withholdings(env)

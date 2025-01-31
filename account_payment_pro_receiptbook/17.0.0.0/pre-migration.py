@@ -1,4 +1,5 @@
 from openupgradelib import openupgrade
+from odoo import SUPERUSER_ID, api
 
 
 _column_copy = {
@@ -15,8 +16,8 @@ _table_renames = [
 ]
 
 
-@openupgrade.migrate()
-def migrate(env, version):
+def migrate(cr, version):
+    env = api.Environment(cr, SUPERUSER_ID, {})
     # backup de columnas que nos interesan antes de que se borren
     openupgrade.copy_columns(env.cr, _column_copy)
     # backup de tables y checkbooks

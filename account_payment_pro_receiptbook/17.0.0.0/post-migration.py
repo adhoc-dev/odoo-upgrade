@@ -1,4 +1,5 @@
 from openupgradelib import openupgrade
+from odoo import SUPERUSER_ID, api
 import logging
 _logger = logging.getLogger(__name__)
 
@@ -8,7 +9,8 @@ def migrate_payment_grup_note(env):
     openupgrade.logged_query(env.cr, query)
     res = env.cr.fetchall()
     for payment_id, note in res:
-        env['account.payment'].browse(payment_id).message_post(body='Nota migrada desde payment group version anterior: %s' % note)
+        env['account.payment'].browse(payment_id).message_post(
+            body='Nota migrada desde payment group version anterior: %s' % note)
 
 
 def migrate_payment_grup_data(env):
@@ -46,11 +48,12 @@ def migrate_payment_grup_data(env):
         """
     openupgrade.logged_query(env.cr, query)
 
-    openupgrade.merge_models(env.cr, 'account.payment.group', 'account.payment', 'payment_group_id_bu')
+    openupgrade.merge_models(
+        env.cr, 'account.payment.group', 'account.payment', 'payment_group_id_bu')
 
 
-@openupgrade.migrate()
-def migrate(env, version):
+def migrate(cr, version):
     _logger.debug('Running migrate script for l10n_ar_withholding')
+    env = api.Environment(cr, SUPERUSER_ID, {})
     migrate_payment_grup_data(env)
     migrate_payment_grup_note(env)
