@@ -1,5 +1,5 @@
 from odoo.addons.base.models.ir_model import (
-    IrModelSelection,
+    IrModelFieldsSelection as IrModelSelection,
 )
 
 
