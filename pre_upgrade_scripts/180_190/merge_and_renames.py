@@ -6,7 +6,7 @@ from odoo.upgrade.util.modules import _trigger_auto_discovery
 
 _logger = logging.getLogger(__name__)
 
-MERGE_MODULES = []
+MERGE_MODULES = [("l10n_ar_tax_ratio", "l10n_ar_tax")]
 RENAMED_MODULES = []
 RENAMED_XMLIDS = []
 
