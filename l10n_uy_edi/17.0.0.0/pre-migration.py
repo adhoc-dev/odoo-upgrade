@@ -55,8 +55,6 @@ def migrate(cr, version):
     _logger.info('Running migrate script for l10n_uy_edi')
     env = api.Environment(cr, SUPERUSER_ID, {})
 
-    openupgrade.rename_models(env.cr, _model_renames)
-
     for old_table, new_table in _table_renames:
         if openupgrade.table_exists(env.cr, old_table):
             openupgrade.rename_tables(env.cr, [(old_table, new_table)])
