@@ -10,6 +10,7 @@ _logger = logging.getLogger(__name__)
 MERGE_MODULES = [
     ("l10n_ar_tax_ratio", "l10n_ar_tax"),
     ("sale_exceptions_ignore_approve", "sale_exception_ux"),
+    ("sale_three_discounts", "sale_triple_discount")
                  ]
 RENAMED_MODULES = []
 RENAMED_XMLIDS = []
