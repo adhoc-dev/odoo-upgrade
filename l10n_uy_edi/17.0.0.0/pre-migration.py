@@ -29,7 +29,7 @@ _column_copy = {
 
 _field_copy = [
     ('account_move', 'l10n_uy_cfe_state', 'l10n_uy_edi_cfe_state'),
-    ('account_move', 'l10n_uy_cfe_file', 'l10n_uy_edi_xml_attachment_id'),
+    # ('account_move', 'l10n_uy_cfe_file', 'l10n_uy_edi_xml_attachment_id'),
     ('account_move', 'l10n_uy_cfe_sale_mod', 'l10n_uy_edi_cfe_sale_mode'),
     ('account_move', 'l10n_uy_cfe_transport_route', 'l10n_uy_edi_cfe_transport_route'),
     ('account_journal', 'l10n_uy_type', 'l10n_uy_edi_type'),
@@ -38,8 +38,8 @@ _field_copy = [
     ('res_company', 'l10n_uy_ucfe_commerce_code', 'l10n_uy_edi_ucfe_commerce_code'),
     ('res_company', 'l10n_uy_ucfe_terminal_code', 'l10n_uy_edi_ucfe_terminal_code'),
     ('res_company', 'l10n_uy_dgi_house_code', 'l10n_uy_edi_branch_code'),
-    ('res_company', 'l10n_uy_adenda_ids', 'l10n_uy_edi_addenda_ids'),
-    ('l10n_uy_edi_addenda', 'legend_type', 'type'),
+    # ('res_company', 'l10n_uy_adenda_ids', 'l10n_uy_edi_addenda_ids'),
+    # ('l10n_uy_edi_addenda', 'legend_type', 'type'),
 ]
 
 def migrate(cr, version):
