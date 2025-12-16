@@ -63,7 +63,7 @@ def migrate(cr, version):
     )
     SELECT
       company_id, content, create_date, create_uid, id, name, legend_type, write_date, write_uid
-    FROM l10n_uy_addenda_bu""")
+    FROM l10n_uy_adenda""")
     for item in _field_copy:
         table_name, bu_name, new_field_name = item
         env.cr.execute("""
