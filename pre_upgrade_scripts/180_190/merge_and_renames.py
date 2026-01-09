@@ -10,8 +10,8 @@ _logger = logging.getLogger(__name__)
 MERGE_MODULES = [
     ("l10n_ar_tax_ratio", "l10n_ar_tax"),
     ("sale_exceptions_ignore_approve", "sale_exception_ux"),
-    ("sale_three_discounts", "sale_triple_discount")
-                 ]
+    ("sale_three_discounts", "sale_triple_discount"),
+]
 RENAMED_MODULES = []
 RENAMED_XMLIDS = []
 
@@ -40,6 +40,18 @@ def migrate(cr, version):
 
     for old, into in MERGE_MODULES:
         util.merge_module(cr, old, into, update_dependers=False)
+        # Ensure the target module is marked for upgrade
+        cr.execute(
+            SQL(
+                """
+                UPDATE ir_module_module
+                   SET state = 'to upgrade'
+                 WHERE name = %(name)s
+                   AND state NOT IN ('installed', 'to install', 'to upgrade')
+                """,
+                name=into,
+            )
+        )
     for old, into in RENAMED_MODULES:
         util.rename_module(cr, old, into)
     for old, into in RENAMED_XMLIDS:
