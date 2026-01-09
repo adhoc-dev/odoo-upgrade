@@ -39,17 +39,28 @@ def migrate(cr, version):
         util_modules.new_module = original_new_module
 
     for old, into in MERGE_MODULES:
+        cr.execute(
+            SQL(
+                """
+                SELECT state FROM ir_module_module
+                 WHERE name = %(name)s
+                """,
+                name=old,
+            )
+        )
+        old_state = cr.fetchone()
+        old_state = old_state and old_state[0] or "uninstalled"
         util.merge_module(cr, old, into, update_dependers=False)
         # Ensure the target module is marked for upgrade
         cr.execute(
             SQL(
                 """
                 UPDATE ir_module_module
-                   SET state = 'to upgrade'
-                 WHERE name = %(name)s
-                   AND state NOT IN ('installed', 'to install', 'to upgrade')
+                    SET state = %(upgrade_state)s
+                    WHERE name = %(name)s
                 """,
                 name=into,
+                upgrade_state=old_state,
             )
         )
     for old, into in RENAMED_MODULES:
@@ -58,7 +69,7 @@ def migrate(cr, version):
         util.rename_xmlid(cr, old, into)
 
     version = float(".".join(version.split(".")[0:2]))  # Version is str, ex. '18.0.1.3'
-    version_string = f"{version - 1}.0.0"
+    version_string = f"{version}.0.0"
     cr.execute(
         SQL(
             """
