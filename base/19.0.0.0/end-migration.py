@@ -1,0 +1,406 @@
+import logging
+import json
+from openupgradelib import openupgrade
+
+_logger = logging.getLogger(__name__)
+
+# OBTENER DATA DE FIELDS EN RUNBOT, ACCION DE SERVIDOR CON
+# field_targets = env['ir.model.fields'].search([
+#     ('relation', '=', 'res.company'),
+#     ('store', '=', True),
+#     ('ttype', 'in', ['many2one', 'many2many']),
+#     ('model_id.transient', '=', False),
+#     ('model_id.abstract', '=', False)
+# ])
+# field_targets = field_targets.filtered(lambda x: env[x.model]._auto)
+
+# res = []
+# for x in field_targets:
+#     res.append((x.name, x.model_id.model, x.ttype))
+
+# company_dependent_fields = env['ir.model.fields'].search([("company_dependent", "=", True)])
+# res2 = []
+# for x in company_dependent_fields:
+#     res2.append((x.name, x.model_id.model, x.ttype))
+
+# raise UserError('Listado de campos de compañías: %s\n\nListado de campos company dependant: %s' % (res, res2))
+
+# POR AHORA NO LO VEMOS NECESARIO
+# Modelos que requieren renombrado para evitar errores de Constraint UNIQUE
+MODELS_WITH_UNIQUE_NAMES = [
+    # 'sale.order', 'purchase.order', 'stock.picking',
+    # 'account.move', 'stock.warehouse', 'stock.location'
+]
+
+
+# Definimos criterios de equivalencia para el Merge
+MERGE_CRITERIA = {
+    'account.tax': ['name', 'amount', 'type_tax_use'],
+    'account.tax.group': ['name'],
+    'account.fiscal.position': ['name'],
+    'account.payment.term': ['name'],
+    'account.analytic.account': ['name'],
+    'account.group': ['code_prefix_start'],
+}
+
+############
+# STRATEGIES
+############
+# A. Acción MOVE_TO_PARENT (Operativo)
+# Qué hace: UPDATE table SET company_id = [ID_A] WHERE company_id = [ID_B]
+# Modelos: Ventas, Compras, Stock, Proyectos, Fabricación.
+# Check crítico: Antes del update, verificar colisiones de nombres (ej. si el SO-001 existe en ambas empresas, renombrar el de B a "B-SO-001").
+
+# B. Acción KEEP_AND_CHECK (Financiero)
+# Qué hace: No hace nada con el company_id, pero asegura que el parent_id de la compañía B sea A.
+# Modelos: Facturas (account.move), Apuntes (account.move.line), Pagos, Diarios.
+
+# C. Acción KEEP (Maestros)
+# Qué hace: No hace nada con el company_id y no chequea. Ya debería haber estado bien porque lo venían usando
+# Modelos: Partners (res.partner), Productos (product.template y product.product), etc.
+
+# D. Acción MERGE_OR_MOVE (Impuestos y Posiciones Fiscales)
+# Esta es la más compleja. Si ya existe un registro equivalente en A, se combinan los registros usando "merge"
+# Si no existe, se mueva a A
+# TODO validar si el "move" deberíamos dejarlo archivado en "a" (Creo que si)
+
+# POR AHORA NO UTILIZAMOS HASTA QUE NO SEA NECESARIO (ya debería haber estado bien compartido anteriormente cuando heran hermanas)
+# E. Acción SET_GLOBAL (Maestros)
+# Qué hace: UPDATE table SET company_id = NULL WHERE id IN (...)
+# Modelos: Contactos, Productos. Esto los hace "multi-company" por defecto.
+
+
+MODEL_STRATEGY = {
+    # --- VENTAS, COMPRAS Y CRM (MOVE TO PARENT) ---
+    'sale.order': 'MOVE_TO_PARENT',
+    'sale.order.line': 'MOVE_TO_PARENT',
+    'sale.order.template': 'MOVE_TO_PARENT',
+    'sale.order.type': 'MOVE_TO_PARENT',
+    'purchase.order': 'MOVE_TO_PARENT',
+    'purchase.order.line': 'MOVE_TO_PARENT',
+    'purchase.requisition': 'MOVE_TO_PARENT',
+    'purchase.subscription': 'MOVE_TO_PARENT',
+    'purchase.request': 'MOVE_TO_PARENT',
+    'purchase.request.line': 'MOVE_TO_PARENT',
+    'crm.lead': 'MOVE_TO_PARENT',
+    'crm.team': 'MOVE_TO_PARENT',
+    'utm.campaign': 'MOVE_TO_PARENT',
+
+    # --- STOCK E INVENTARIO (MOVE TO PARENT) ---
+    'stock.picking': 'MOVE_TO_PARENT',
+    'stock.move': 'MOVE_TO_PARENT',
+    'stock.move.line': 'MOVE_TO_PARENT',
+    'stock.quant': 'MOVE_TO_PARENT',
+    'stock.valuation.layer': 'MOVE_TO_PARENT',
+    'stock.lot': 'MOVE_TO_PARENT',
+    'stock.warehouse': 'MOVE_TO_PARENT',
+    'stock.location': 'MOVE_TO_PARENT',
+    'stock.scrap': 'MOVE_TO_PARENT',
+    'stock.landed.cost': 'MOVE_TO_PARENT',
+    'stock.warehouse.orderpoint': 'MOVE_TO_PARENT',
+    'stock.putaway.rule': 'MOVE_TO_PARENT',
+    'stock.route': 'MOVE_TO_PARENT',
+    'stock.rule': 'MOVE_TO_PARENT',
+    'stock.package': 'MOVE_TO_PARENT',
+
+    # --- MANUFACTURA Y PROYECTOS (MOVE TO PARENT) ---
+    'mrp.production': 'MOVE_TO_PARENT',
+    'mrp.bom': 'MOVE_TO_PARENT',
+    'mrp.bom.line': 'MOVE_TO_PARENT',
+    'mrp.workcenter': 'MOVE_TO_PARENT',
+    'mrp.unbuild': 'MOVE_TO_PARENT',
+    'project.project': 'MOVE_TO_PARENT',
+    'project.task': 'MOVE_TO_PARENT',
+    'helpdesk.team': 'MOVE_TO_PARENT',
+    'helpdesk.ticket': 'MOVE_TO_PARENT',
+    'repair.order': 'MOVE_TO_PARENT',
+    'quality.check': 'MOVE_TO_PARENT',
+    'quality.alert': 'MOVE_TO_PARENT',
+
+    # --- CONTABILIDAD OPERATIVA (KEEP AND CHECK - Se quedan en la sucursal B) ---
+    'account.move': 'KEEP_AND_CHECK',
+    'account.move.line': 'KEEP_AND_CHECK',
+    'account.payment': 'KEEP_AND_CHECK',
+    'account.bank.statement': 'KEEP_AND_CHECK',
+    'account.bank.statement.line': 'KEEP_AND_CHECK',
+    'account.batch.payment': 'KEEP_AND_CHECK',
+    'account.partial.reconcile': 'KEEP_AND_CHECK',
+    'account.asset': 'KEEP_AND_CHECK',
+    'account.loan': 'KEEP_AND_CHECK',
+    'l10n_latam.check': 'KEEP_AND_CHECK',
+    'account.cashbox.session': 'KEEP_AND_CHECK',
+    'account.payment.receiptbook': 'KEEP_AND_CHECK',
+    'account.journal': 'KEEP_AND_CHECK',
+
+    # --- CONFIGURACIÓN CONTABLE (MERGE OR MOVE) ---
+    # TODOS LOS MERGE_OR_MOVE son consistentes con que son compartidos de padre a hijos	[('company_id', 'parent_of', company_ids)]
+    # por lo cual unirlos o moverlos debería ser seguro.
+    'account.tax': 'MERGE_OR_MOVE',
+    'account.tax.group': 'MERGE_OR_MOVE',
+    'account.fiscal.position': 'MERGE_OR_MOVE',
+    'account.analytic.account': 'MERGE_OR_MOVE',
+    'account.group': 'MERGE_OR_MOVE',
+    'account.payment.term': 'MERGE_OR_MOVE',
+    'account.reconcile.model': 'MERGE_OR_MOVE',
+    'account.analytic.applicability': 'MERGE_OR_MOVE',
+    'account.analytic.distribution.model': 'MERGE_OR_MOVE',
+    'account.analytic.line': 'MERGE_OR_MOVE',
+    'account.journal.group': 'MERGE_OR_MOVE',
+    'account.fiscal.position.account': 'MERGE_OR_MOVE',
+    'account.tax.repartition.line': 'MERGE_OR_MOVE',
+
+
+
+    # --- MAESTROS (KEEP - No tocamos company_id porque ya funcionaban) ---
+    'res.partner': 'KEEP',
+    'res.company': 'KEEP',
+    'ir.default': 'KEEP',
+    'product.template': 'KEEP',
+    'product.product': 'KEEP',
+    'product.pricelist': 'KEEP',
+    'product.category': 'KEEP',
+    'res.users': 'KEEP',
+    'res.partner.bank': 'KEEP',
+    # res.currency HAY QUE VER. NO PUEDO CREAR MONEDA EN SUCURSALES! HAY VER SI LO PERMITIMOS A NIVEL PRODUCTO --> NOS FACILITA LA VIDA
+    'res.currency': 'KEEP',
+    'res.currency.rate': 'KEEP',
+    'onboarding.progress': 'KEEP',
+    'onboarding.progress.step': 'KEEP',
+    'resource.calendar': 'KEEP',
+    'resource.calendar.leaves': 'KEEP',
+    'resource.resource': 'KEEP',
+    'certificate.key': 'KEEP',
+    'certificate.certificate': 'KEEP',
+    'product.combo': 'KEEP',
+    'product.combo.item': 'KEEP',
+    'product.pricelist.item': 'KEEP',
+    'product.supplierinfo': 'KEEP',
+    'payment.transaction': 'KEEP',
+    'payment.token': 'KEEP',
+    'payment.provider': 'KEEP',
+    'digest.digest': 'KEEP',
+    'snailmail.letter': 'KEEP',
+    'account.lock_exception': 'KEEP',
+    'account.reconcile.model.line': 'KEEP',
+    'account.report.external.value': 'KEEP',
+    'account.invoice.report': 'KEEP',
+
+
+    # --- RRHH (KEEP AND CHECK) ---
+    'hr.employee': 'KEEP_AND_CHECK',
+    'hr.contract': 'KEEP_AND_CHECK',
+    'hr.job': 'KEEP_AND_CHECK',
+    'hr.department': 'KEEP_AND_CHECK',
+    'hr.leave': 'KEEP_AND_CHECK',
+    'hr.applicant': 'KEEP_AND_CHECK',
+
+    # --- OTROS (MOVE TO PARENT) ---
+    'account.account': 'MOVE_TO_PARENT',
+    'mail.activity.plan': 'MOVE_TO_PARENT',
+    'documents.document': 'MOVE_TO_PARENT',
+    'loyalty.program': 'MOVE_TO_PARENT',
+    'loyalty.card': 'MOVE_TO_PARENT',
+    'event.event': 'MOVE_TO_PARENT',
+    'website': 'MOVE_TO_PARENT',
+    'ir.sequence': 'MOVE_TO_PARENT',
+    'ir.attachment': 'KEEP_AND_CHECK', # As you can have attachments from a account move model than need to be kept in the same company 
+    # as originally they were. 
+}
+
+
+def handle_merge_or_move(env, model_name, id_a, id_b):
+    """
+    Intenta fusionar registros de B en A si son equivalentes.
+    Si no hay equivalente, mueve el registro a la compañía A.
+    """
+    Model = env[model_name]
+    
+    # Verificar si el modelo usa company_id o company_ids
+    if 'company_ids' in Model._fields:
+        records_b = Model.with_context(active_test=False).search([('company_ids', 'in', [id_b])])
+        company_domain = [('company_ids', 'in', [id_a])]
+    else:
+        records_b = Model.with_context(active_test=False).search([('company_id', '=', id_b)])
+        company_domain = [('company_id', '=', id_a)]
+    
+    criteria_fields = MERGE_CRITERIA.get(model_name, ['name']) # Por defecto, intentamos usar 'name' o 'display_name' como criterio de equivalencia
+
+    for rec_b in records_b:
+        # Construir dominio de búsqueda para el equivalente en A
+        domain = company_domain.copy()
+        for field in criteria_fields:
+            # Validar que el campo existe en el modelo antes de usarlo
+            search_field = field
+            if field not in rec_b._fields:
+                # Si 'name' no existe, intentar usar 'display_name' como fallback
+                # if field == 'name' and 'display_name' in rec_b._fields:
+                #     search_field = 'display_name'
+                # else:
+                #     _logger.warning(f"Campo '{field}' no existe en {model_name}, saltando criterio")
+                #     continue
+                rec_a = False
+            else:
+                field_value = getattr(rec_b, search_field, None)
+                if field_value is not None:
+                    domain.append((search_field, '=', field_value))
+
+                rec_a = Model.with_context(active_test=False).search(domain, limit=1)
+
+        if rec_a:
+            if 'active' in rec_b._fields and rec_a.active == False:
+                rec_a.active = True
+            _logger.info(f"FUSIONANDO: {model_name} '{rec_b.display_name}' (B) -> '{rec_a.display_name}' (A)")
+            # Aquí usamos el método de merge (si existe) o re-mapeamos manualmente
+            # En Odoo 19, si usas _data_merge sería:
+            # Model._data_merge(rec_b, rec_a)
+
+            # Si no tienes _data_merge, un re-mapping manual básico en SQL:
+            # UPDATE {rel_table} SET {tax_field} = rec_a.id WHERE {tax_field} = rec_b.id
+            # Para este ejemplo, simularemos que lo unimos:
+            # Marcar como deprecated antes de archivar (usar ID para evitar duplicados)
+            if 'name' in rec_b._fields:
+                rec_b.name = f"[DEPRECATED-{rec_b.id}] {rec_b.name}"
+            if 'active' in rec_b._fields:
+                rec_b.active = False # Archivamos el de B para que no moleste
+        else:
+            # No hay equivalente, simplemente lo movemos a la matriz
+            _logger.info(f"MOVIENDO: {model_name} '{rec_b.display_name}' a compañía A")
+            if 'company_ids' in Model._fields:
+                # Para many2many, reemplazar la compañía B por A
+                rec_b.write({'company_ids': [(3, id_b), (4, id_a)]})
+            else:
+                rec_b.write({'company_id': id_a})
+
+def check_consistency_keep(env, model_name, id_b):
+    """ Valida registros que se quedan en la sucursal """
+    Model = env[model_name]
+    # Buscamos registros en B que tengan campos Many2one apuntando a objetos 
+    # que Odoo 19 podría considerar inválidos (si no son parte de la jerarquía)
+    records = Model.search([('company_id', '=', id_b)])
+    if records:
+        _logger.info(f"CHECK: {len(records)} registros de {model_name} validados en sucursal {id_b}")
+        # Aquí se podría disparar un Model._check_company() si fuera necesario
+        # Por ahora logueamos la permanencia exitosa.
+
+def migrate_json_company_dependent(env, id_a, id_b):
+    """ Busca y migra campos JSONB company_dependent """
+    id_a_str = str(id_a)
+    id_b_str = str(id_b)
+
+    # 1. Buscar todos los campos company_dependent registrados
+    dependent_fields = env['ir.model.fields'].search([('company_dependent', '=', True), ('store', '=', True)])
+
+    # Agrupamos por modelo para hacer un solo UPDATE por tabla
+    model_map = {}
+    for f in dependent_fields:
+        model_map.setdefault(f.model, []).append(f.name)
+
+    for model_name, field_names in model_map.items():
+        table = model_name.replace('.', '_')
+
+        # Odoo 19 guarda estos campos como JSONB
+        for field_name in field_names:
+            _logger.info(f"Migrando JSONB: {model_name}.{field_name}")
+
+            # SQL:
+            # 1. Si existe clave B y NO existe clave A: Crear A con valor de B.
+            # 2. Eliminar clave B.
+            query = f"""
+                UPDATE {table}
+                SET {field_name} = (
+                    CASE
+                        WHEN ({field_name} ? '{id_b_str}') AND NOT ({field_name} ? '{id_a_str}') 
+                        THEN jsonb_set({field_name}, '{{{id_a_str}}}', {field_name}->'{id_b_str}')
+                        ELSE {field_name}
+                    END
+                ) - '{id_b_str}'
+                WHERE {field_name} ? '{id_b_str}';
+            """
+            env.cr.execute(query)
+
+def migrate_standard_fields(env, id_a, id_b):
+    """ Movimiento de campos Many2one/Many2many de compañía """
+    field_targets = env['ir.model.fields'].search([
+        ('relation', '=', 'res.company'),
+        ('store', '=', True),
+        ('model_id.transient', '=', False),
+        ('model_id.abstract', '=', False)
+    ])
+
+    for field in field_targets:
+        model_name = field.model
+        table = model_name.replace('.', '_')
+        strategy = MODEL_STRATEGY.get(model_name, 'CHECK')
+
+        # MERGE_OR_MOVE lo manejamos en método separado
+        if strategy in ['KEEP', 'MERGE_OR_MOVE']:
+            continue
+
+        elif strategy == 'KEEP_AND_CHECK':
+            check_consistency_keep(env, model_name, id_b)
+            continue
+
+        elif strategy == 'MOVE_TO_PARENT':
+            if field.ttype == 'many2one':
+                if field.name == 'company_id' and model_name in MODELS_WITH_UNIQUE_NAMES:
+                    env.cr.execute(f"UPDATE {table} SET name = name || '-B' WHERE company_id = %s", [id_b])
+                env.cr.execute(f"UPDATE {table} SET {field.name} = %s WHERE {field.name} = %s", (id_a, id_b))
+            elif field.ttype == 'many2many':
+                rel_table = field.relation_table
+                env.cr.execute(f"""
+                    UPDATE {rel_table} SET {field.column2} = %s WHERE {field.column2} = %s
+                    AND {field.column1} NOT IN (SELECT {field.column1} FROM {rel_table} WHERE {field.column1} = %s)
+                """, (id_a, id_b, id_a))
+                env.cr.execute(f"DELETE FROM {rel_table} WHERE {field.column1} = %s", (id_b,))
+        else:
+            continue
+            _logger.warning(f"Estrategia desconocida '{strategy}' para el modelo '{model_name}'")
+
+@openupgrade.migrate()
+def migrate(env, version):
+    query = """
+    SELECT COUNT(*) AS sales_with_country_mismatch
+    FROM sale_order so
+    JOIN res_company rc_so
+        ON rc_so.id = so.company_id
+    WHERE EXISTS (
+            SELECT 1
+            FROM sale_order_line sol
+            JOIN sale_order_line_invoice_rel rel
+                ON rel.order_line_id = sol.id
+            JOIN account_move_line aml
+                ON aml.id = rel.invoice_line_id
+            JOIN account_move inv
+                ON inv.id = aml.move_id
+            JOIN res_company rc_inv
+                ON rc_inv.id = inv.company_id
+            WHERE sol.order_id = so.id
+              AND inv.move_type IN ('out_invoice', 'out_refund')
+              AND sol.company_id
+                  <> aml.company_id
+      )"""
+    env.cr.execute(query)
+    result = env.cr.fetchone()
+    if result[0] > 0 and len(env['stock.warehouse'].search([('company_id', '!=', False)]).mapped('company_id')) == 1 and len(env['res.company'].search([])) == 2:
+        # Estos IDs deben ser parametrizables según el cliente
+        id_empresa_b = env['stock.warehouse'].search([('company_id', '!=', False)]).mapped('company_id')
+        id_empresa_a = env['res.company'].search([('id', '!=', id_empresa_b[0].id)])
+
+        # 0. Establecer Jerarquía Branch
+        env.cr.execute("UPDATE res_company SET parent_id = %s WHERE id = %s", (id_empresa_a.id, id_empresa_b.id))
+
+        # 1. Movimiento Operativo (SQL)
+        migrate_standard_fields(env, id_empresa_a.id, id_empresa_b.id)
+
+        # 2. Fusión de Configuración (ORM)
+        merge_models = [m for m, s in MODEL_STRATEGY.items() if s == 'MERGE_OR_MOVE']
+        for model_name in merge_models:
+            handle_merge_or_move(env, model_name, id_empresa_a.id, id_empresa_b.id)
+            env.cr.commit()
+
+        # 3. Propiedades JSONB (SQL)
+        migrate_json_company_dependent(env, id_empresa_a, id_empresa_b)
+
+        # 4. Limpieza: Archivar cuentas de la sucursal
+        _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
+        env['account.account'].search([('company_ids', '=', id_empresa_b)]).write({'active': False})
