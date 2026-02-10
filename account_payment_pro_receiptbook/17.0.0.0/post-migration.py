@@ -54,6 +54,17 @@ def migrate_payment_grup_data(env):
 
 def migrate(cr, version):
     _logger.debug('Running migrate script for l10n_ar_withholding')
+    
+    # Guardar el valor original de statement_timeout
+    cr.execute("SHOW statement_timeout")
+    original_timeout = cr.fetchone()[0]
+    
+    # Aumentar statement_timeout a 60 minutos
+    cr.execute("SET statement_timeout = '60min'")
+
     env = api.Environment(cr, SUPERUSER_ID, {})
     migrate_payment_grup_data(env)
     migrate_payment_grup_note(env)
+    
+    # Restaurar el valor original de statement_timeout
+    cr.execute("SET statement_timeout = %s", (original_timeout,))
