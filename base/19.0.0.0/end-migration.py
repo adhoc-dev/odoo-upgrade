@@ -1,6 +1,6 @@
 import logging
 import json
-from openupgradelib import openupgrade
+from odoo.upgrade import util
 
 _logger = logging.getLogger(__name__)
 
@@ -282,7 +282,7 @@ def check_consistency_keep(env, model_name, id_b):
         # Aquí se podría disparar un Model._check_company() si fuera necesario
         # Por ahora logueamos la permanencia exitosa.
 
-def migrate_json_company_dependent(env, id_a, id_b):
+def migrate_json_company_dependent(cr, env, id_a, id_b):
     """ Busca y migra campos JSONB company_dependent """
     id_a_str = str(id_a)
     id_b_str = str(id_b)
@@ -316,9 +316,9 @@ def migrate_json_company_dependent(env, id_a, id_b):
                 ) - '{id_b_str}'
                 WHERE {field_name} ? '{id_b_str}';
             """
-            env.cr.execute(query)
+            cr.execute(query)
 
-def migrate_standard_fields(env, id_a, id_b):
+def migrate_standard_fields(cr, env, id_a, id_b):
     """ Movimiento de campos Many2one/Many2many de compañía """
     field_targets = env['ir.model.fields'].search([
         ('relation', '=', 'res.company'),
@@ -343,21 +343,21 @@ def migrate_standard_fields(env, id_a, id_b):
         elif strategy == 'MOVE_TO_PARENT':
             if field.ttype == 'many2one':
                 if field.name == 'company_id' and model_name in MODELS_WITH_UNIQUE_NAMES:
-                    env.cr.execute(f"UPDATE {table} SET name = name || '-B' WHERE company_id = %s", [id_b])
-                env.cr.execute(f"UPDATE {table} SET {field.name} = %s WHERE {field.name} = %s", (id_a, id_b))
+                    cr.execute(f"UPDATE {table} SET name = name || '-B' WHERE company_id = %s", [id_b])
+                cr.execute(f"UPDATE {table} SET {field.name} = %s WHERE {field.name} = %s", (id_a, id_b))
             elif field.ttype == 'many2many':
                 rel_table = field.relation_table
-                env.cr.execute(f"""
+                cr.execute(f"""
                     UPDATE {rel_table} SET {field.column2} = %s WHERE {field.column2} = %s
                     AND {field.column1} NOT IN (SELECT {field.column1} FROM {rel_table} WHERE {field.column1} = %s)
                 """, (id_a, id_b, id_a))
-                env.cr.execute(f"DELETE FROM {rel_table} WHERE {field.column1} = %s", (id_b,))
+                cr.execute(f"DELETE FROM {rel_table} WHERE {field.column1} = %s", (id_b,))
         else:
             continue
             _logger.warning(f"Estrategia desconocida '{strategy}' para el modelo '{model_name}'")
 
-@openupgrade.migrate()
-def migrate(env, version):
+def migrate(cr, version):
+    env = util.env(cr)
     query = """
     SELECT COUNT(*) AS sales_with_country_mismatch
     FROM sale_order so
@@ -379,27 +379,26 @@ def migrate(env, version):
               AND sol.company_id
                   <> aml.company_id
       )"""
-    env.cr.execute(query)
-    result = env.cr.fetchone()
+    cr.execute(query)
+    result = cr.fetchone()
     if result[0] > 0 and len(env['stock.warehouse'].search([('company_id', '!=', False)]).mapped('company_id')) == 1 and len(env['res.company'].search([])) == 2:
         # Estos IDs deben ser parametrizables según el cliente
         id_empresa_b = env['stock.warehouse'].search([('company_id', '!=', False)]).mapped('company_id')
         id_empresa_a = env['res.company'].search([('id', '!=', id_empresa_b[0].id)])
 
         # 0. Establecer Jerarquía Branch
-        env.cr.execute("UPDATE res_company SET parent_id = %s WHERE id = %s", (id_empresa_a.id, id_empresa_b.id))
+        cr.execute("UPDATE res_company SET parent_id = %s WHERE id = %s", (id_empresa_a.id, id_empresa_b.id))
 
         # 1. Movimiento Operativo (SQL)
-        migrate_standard_fields(env, id_empresa_a.id, id_empresa_b.id)
+        migrate_standard_fields(cr, env, id_empresa_a.id, id_empresa_b.id)
 
         # 2. Fusión de Configuración (ORM)
         merge_models = [m for m, s in MODEL_STRATEGY.items() if s == 'MERGE_OR_MOVE']
         for model_name in merge_models:
             handle_merge_or_move(env, model_name, id_empresa_a.id, id_empresa_b.id)
-            env.cr.commit()
 
         # 3. Propiedades JSONB (SQL)
-        migrate_json_company_dependent(env, id_empresa_a, id_empresa_b)
+        migrate_json_company_dependent(cr, env, id_empresa_a.id, id_empresa_b.id)
 
         # 4. Limpieza: Archivar cuentas de la sucursal
         _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
