@@ -11,6 +11,8 @@ MERGE_MODULES = [
     ("l10n_ar_tax_ratio", "l10n_ar_tax"),
     ("sale_exceptions_ignore_approve", "sale_exception_ux"),
     ("sale_three_discounts", "sale_triple_discount"),
+    ("l10n_ar_stock_custom", "l10n_ar_stock"),
+    ("l10n_ar_stock_adhoc", "l10n_ar_stock"),
 ]
 RENAMED_MODULES = []
 RENAMED_XMLIDS = []
