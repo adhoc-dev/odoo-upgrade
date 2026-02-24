@@ -356,7 +356,8 @@ def migrate_standard_fields(cr, env, id_a, id_b):
             continue
             _logger.warning(f"Estrategia desconocida '{strategy}' para el modelo '{model_name}'")
 
-def migrate(cr, version):
+
+def create_mapping(cr, version):
     env = util.env(cr)
     query = """
     SELECT COUNT(*) AS sales_with_country_mismatch
@@ -381,25 +382,39 @@ def migrate(cr, version):
       )"""
     cr.execute(query)
     result = cr.fetchone()
-    if result[0] > 0 and len(env['stock.warehouse'].search([('company_id', '!=', False)]).mapped('company_id')) == 1 and len(env['res.company'].search([])) == 2:
+    if result[0] > 0 and len(env['stock.warehouse'].search([('company_id', '!=', False)]).mapped('company_id')) == 1:
+        if len(env['res.company'].search([])) != 2:
+            raise UserError('Hay más de dos companías y cruces, se debe configurar manualmente el mapeo de compañías con parametro "migration_19_end_multicompany".')
         # Estos IDs deben ser parametrizables según el cliente
         id_empresa_b = env['stock.warehouse'].search([('company_id', '!=', False)]).mapped('company_id')
         id_empresa_a = env['res.company'].search([('id', '!=', id_empresa_b[0].id)])
+        company_mapping = {id_empresa_a[0].id: id_empresa_b[0].id}
+        env['ir.config_parameter'].sudo().set_param('migration_19_end_multicompany', company_mapping)
+    return company_mapping
+
+
+def migrate(cr, version):
+    env = util.env(cr)
+    company_mapping = safe_eval(env['ir.config_parameter'].sudo().get_param('migration_19_end_multicompany', '{}'))
+    if not company_mapping:
+        company_mapping = create_mapping(cr, version)
+
+    for id_a, id_b in company_mapping.items():
 
         # 0. Establecer Jerarquía Branch
-        cr.execute("UPDATE res_company SET parent_id = %s WHERE id = %s", (id_empresa_a.id, id_empresa_b.id))
+        cr.execute("UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b))
 
         # 1. Movimiento Operativo (SQL)
-        migrate_standard_fields(cr, env, id_empresa_a.id, id_empresa_b.id)
+        migrate_standard_fields(cr, env, id_a, id_b)
 
         # 2. Fusión de Configuración (ORM)
         merge_models = [m for m, s in MODEL_STRATEGY.items() if s == 'MERGE_OR_MOVE']
         for model_name in merge_models:
-            handle_merge_or_move(env, model_name, id_empresa_a.id, id_empresa_b.id)
+            handle_merge_or_move(env, model_name, id_a, id_b)
 
         # 3. Propiedades JSONB (SQL)
-        migrate_json_company_dependent(cr, env, id_empresa_a.id, id_empresa_b.id)
+        migrate_json_company_dependent(cr, env, id_a, id_b)
 
         # 4. Limpieza: Archivar cuentas de la sucursal
         _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
-        env['account.account'].search([('company_ids', '=', id_empresa_b)]).write({'active': False})
+        env['account.account'].search([('company_ids', '=', id_b)]).write({'active': False})
