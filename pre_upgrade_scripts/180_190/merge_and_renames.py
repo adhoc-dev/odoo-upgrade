@@ -25,6 +25,7 @@ def migrate(cr, version):
     # Monkey patch new_module to avoid crashing on missing dependencies
     util_modules = sys.modules["odoo.upgrade.util.modules"]
     original_new_module = util_modules.new_module
+    original_new_module_dep = util_modules.new_module_dep
 
     def safe_new_module(cr, module, deps=(), *args, **kwargs):
         try:
@@ -33,13 +34,22 @@ def migrate(cr, version):
             _logger.warning("Skipping module %s due to missing dependencies: %s", module, e)
             return None
 
+    def safe_new_module_dep(cr, module, new_dep):
+        try:
+            return original_new_module_dep(cr, module, new_dep)
+        except util.UnknownModuleError as e:
+            _logger.warning("Skipping module %s due to missing dependencies: %s", module, e)
+            return None
+
     util_modules.new_module = safe_new_module
+    util_modules.new_module_dep = safe_new_module_dep
 
     try:
         _trigger_auto_discovery(cr)
     finally:
         # Restore original function just in case
         util_modules.new_module = original_new_module
+        util_modules.new_module_dep = original_new_module_dep
 
     for old, into in MERGE_MODULES:
         cr.execute(
