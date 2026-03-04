@@ -433,6 +433,7 @@ def migrate_standard_fields(cr, env, id_a, id_b):
 
 
 def create_mapping(cr):
+    company_mapping = {}
     env = util.env(cr)
     query = """
     SELECT COUNT(*) AS sales_with_country_mismatch
@@ -506,27 +507,25 @@ def migrate(cr, version):
     _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
     env["account.account"].search([("company_ids", "=", id_b)]).write({"active": False})
 
-
     # 5. Fusiona cuentas contables
     merge_accounts_by_code(env, id_a)
 
-
     # 6. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
-    env['res.company'].browse(id_b)._write({"parent_id": id_a})
+    env["res.company"].browse(id_b)._write({"parent_id": id_a})
     # 6.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
-    env['res.company']._parent_store_compute()
-    cr.commit() 
+    env["res.company"]._parent_store_compute()
+    cr.commit()
 
     # 6.2. Recomputa campos stored en journals que dependen de la jerarquía
-    journals = env['account.journal'].search([])
-    journals.invalidate_recordset(['branch_order'])
+    journals = env["account.journal"].search([])
+    journals.invalidate_recordset(["branch_order"])
     journals._compute_branch_order()
-    journals.flush_recordset(['branch_order'])
+    journals.flush_recordset(["branch_order"])
 
     # 6.3. Recomputa shared_to_branches en payment method lines (related stored)
-    pmls = env['account.payment.method.line'].search([])
-    if 'shared_to_branches' in pmls._fields:
-        pmls.invalidate_recordset(['shared_to_branches'])
-        pmls.flush_recordset(['shared_to_branches'])
+    pmls = env["account.payment.method.line"].search([])
+    if "shared_to_branches" in pmls._fields:
+        pmls.invalidate_recordset(["shared_to_branches"])
+        pmls.flush_recordset(["shared_to_branches"])
 
     cr.commit()
