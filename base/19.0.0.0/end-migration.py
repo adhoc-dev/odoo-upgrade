@@ -528,4 +528,7 @@ def migrate(cr, version):
         pmls.invalidate_recordset(["shared_to_branches"])
         pmls.flush_recordset(["shared_to_branches"])
 
+    for warehouse in env["stock.warehouse"].search([]):
+        warehouse.partner_id = warehouse.company_id.partner_id
+    env["account.journal"].search([]).write({"shared_to_branches": False})
     cr.commit()
