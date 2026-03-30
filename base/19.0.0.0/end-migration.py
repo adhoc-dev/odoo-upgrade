@@ -262,9 +262,9 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             _logger.info(f"MOVIENDO: {model_name} '{rec_b.display_name}' a compañía A")
             if "company_ids" in Model._fields:
                 # Para many2many, reemplazar la compañía B por A
-                rec_b.write({"company_ids": [(3, id_b), (4, id_a)]})
+                rec_b._write({"company_ids": [(3, id_b), (4, id_a)]})
             else:
-                rec_b.write({"company_id": id_a})
+                rec_b._write({"company_id": id_a})
 
 
 def check_consistency_keep(env, model_name, id_b):
