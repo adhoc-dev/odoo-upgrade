@@ -458,7 +458,7 @@ def create_mapping(cr):
       )"""
     cr.execute(query)
     result = cr.fetchone()
-    if result[0] > 0 and len(env["stock.warehouse"].search([("company_id", "!=", False)]).mapped("company_id")) == 1:
+    if result[0] > 0 and len(env["stock.warehouse"].search([("company_id", "!=", False)]).mapped("company_id").filtered("active")) == 1:
         if len(env["res.company"].search([])) != 2:
             raise UserError(
                 'Hay más de dos companías y cruces, se debe configurar manualmente el mapeo de compañías con parametro "migration_19_end_multicompany".'
