@@ -89,6 +89,7 @@ MODEL_STRATEGY = {
     "utm.campaign": "MOVE_TO_PARENT",
     # --- STOCK E INVENTARIO (MOVE TO PARENT) ---
     "stock.picking": "MOVE_TO_PARENT",
+    "stock.picking.type": "MOVE_TO_PARENT",
     "stock.move": "MOVE_TO_PARENT",
     "stock.move.line": "MOVE_TO_PARENT",
     "stock.quant": "MOVE_TO_PARENT",
