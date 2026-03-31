@@ -35,6 +35,24 @@ MODELS_WITH_UNIQUE_NAMES = [
 ]
 
 
+UNIQUE_MOVE_PREPROCESSORS = {
+        "stock.location": (
+                """
+                        UPDATE stock_location AS loc_b
+                             SET barcode = CONCAT(loc_b.barcode, '-B-', loc_b.id)
+                         WHERE loc_b.company_id = %s
+                             AND loc_b.barcode IS NOT NULL
+                             AND EXISTS (
+                                        SELECT 1
+                                            FROM stock_location AS loc_a
+                                         WHERE loc_a.company_id = %s
+                                             AND loc_a.barcode = loc_b.barcode
+                             )
+                """,
+        ),
+}
+
+
 # Definimos criterios de equivalencia para el Merge
 MERGE_CRITERIA = {
     "account.tax": ["name", "amount", "type_tax_use"],
@@ -359,6 +377,14 @@ def merge_accounts_by_code(env, id_a):
     _logger.info("Merge por código finalizado. Grupos fusionados: %s", merged_groups)
 
 
+def preprocess_unique_move_conflicts(cr, model_name, id_a, id_b):
+    """Resuelve colisiones conocidas antes de mover registros de compañía."""
+    queries = UNIQUE_MOVE_PREPROCESSORS.get(model_name, ())
+    for query in queries:
+        _logger.info("Preprocesando colisiones UNIQUE para %s", model_name)
+        cr.execute(query, (id_b, id_a))
+
+
 # def sync_account_codes_sql(cr, rel_table, rel_account_col, rel_company_col, id_a, id_b):
 #     """Sincroniza code_store de B hacia A para cuentas ligadas a la sucursal B."""
 #     cr.execute(
@@ -406,6 +432,8 @@ def migrate_standard_fields(cr, env, id_a, id_b):
 
         elif strategy == "MOVE_TO_PARENT":
             if field.ttype == "many2one":
+                if field.name == "company_id":
+                    preprocess_unique_move_conflicts(cr, model_name, id_a, id_b)
                 if field.name == "company_id" and model_name in MODELS_WITH_UNIQUE_NAMES:
                     cr.execute(f"UPDATE {table} SET name = name || '-B' WHERE company_id = %s", [id_b])
                 cr.execute(f"UPDATE {table} SET {field.name} = %s WHERE {field.name} = %s", (id_a, id_b))
@@ -508,22 +536,22 @@ def migrate(cr, version):
     _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
     env["account.account"].search([("company_ids", "=", id_b)]).write({"active": False})
 
-    # 5. Fusiona cuentas contables
-    merge_accounts_by_code(env, id_a)
-
-    # 6. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
+    # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
     env["res.company"].browse(id_b)._write({"parent_id": id_a})
-    # 6.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
+    # 5.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
     env["res.company"]._parent_store_compute()
     cr.commit()
 
-    # 6.2. Recomputa campos stored en journals que dependen de la jerarquía
+    # 6. Fusiona cuentas contables
+    merge_accounts_by_code(env, id_a)
+
+    # 7.1. Recomputa campos stored en journals que dependen de la jerarquía
     journals = env["account.journal"].search([])
     journals.invalidate_recordset(["branch_order"])
     journals._compute_branch_order()
     journals.flush_recordset(["branch_order"])
 
-    # 6.3. Recomputa shared_to_branches en payment method lines (related stored)
+    # 7.2. Recomputa shared_to_branches en payment method lines (related stored)
     pmls = env["account.payment.method.line"].search([])
     if "shared_to_branches" in pmls._fields:
         pmls.invalidate_recordset(["shared_to_branches"])
