@@ -340,6 +340,7 @@ def merge_accounts_by_code(env, id_a):
     accounts = Account.with_context(allowed_company_ids=[id_a]).search(
         [
             ("company_ids", "in", [id_a]),
+            ("company_ids.active", "=", True),
             ("code", "!=", False),
         ],
         order="code, id",
@@ -493,7 +494,7 @@ def create_mapping(cr):
                 'Hay más de dos companías y cruces, se debe configurar manualmente el mapeo de compañías con parametro "migration_19_end_multicompany".'
             )
         # Estos IDs deben ser parametrizables según el cliente
-        id_empresa_b = env["stock.warehouse"].search([("company_id", "!=", False)]).mapped("company_id")
+        id_empresa_b = env["stock.warehouse"].search([("company_id", "!=", False),("company_id.active", "=", True)]).mapped("company_id")
         id_empresa_a = env["res.company"].search([("id", "!=", id_empresa_b[0].id)])
         company_mapping = {"a": id_empresa_a[0].id, "b": id_empresa_b[0].id}
         env["ir.config_parameter"].sudo().set_param("migration_19_end_multicompany", company_mapping)
