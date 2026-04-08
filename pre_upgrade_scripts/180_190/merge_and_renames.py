@@ -14,6 +14,7 @@ MERGE_MODULES = [
     ("l10n_ar_stock_custom", "l10n_ar_stock"),
     ("l10n_ar_stock_adhoc", "l10n_ar_stock"),
     ("l10n_uy_reports_custom", "l10n_uy_reports"),
+    ("l10n_uy_edi_stock_custom", "l10n_uy_edi_stock"),
 ]
 RENAMED_MODULES = []
 RENAMED_XMLIDS = []
@@ -31,14 +32,18 @@ def migrate(cr, version):
         try:
             return original_new_module(cr, module, deps=deps, *args, **kwargs)
         except util.UnknownModuleError as e:
-            _logger.warning("Skipping module %s due to missing dependencies: %s", module, e)
+            _logger.warning(
+                "Skipping module %s due to missing dependencies: %s", module, e
+            )
             return None
 
     def safe_new_module_dep(cr, module, new_dep):
         try:
             return original_new_module_dep(cr, module, new_dep)
         except util.UnknownModuleError as e:
-            _logger.warning("Skipping module %s due to missing dependencies: %s", module, e)
+            _logger.warning(
+                "Skipping module %s due to missing dependencies: %s", module, e
+            )
             return None
 
     util_modules.new_module = safe_new_module
