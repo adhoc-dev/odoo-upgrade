@@ -135,6 +135,7 @@ MODEL_STRATEGY = {
     "repair.order": "MOVE_TO_PARENT",
     "quality.check": "MOVE_TO_PARENT",
     "quality.alert": "MOVE_TO_PARENT",
+    "product.supplierinfo": "MOVE_TO_PARENT",
     # --- CONTABILIDAD OPERATIVA (KEEP AND CHECK - Se quedan en la sucursal B) ---
     "account.move": "KEEP_AND_CHECK",
     "account.move.line": "KEEP_AND_CHECK",
@@ -188,7 +189,6 @@ MODEL_STRATEGY = {
     "product.combo": "KEEP",
     "product.combo.item": "KEEP",
     "product.pricelist.item": "KEEP",
-    "product.supplierinfo": "KEEP",
     "payment.transaction": "KEEP",
     "payment.token": "KEEP",
     "payment.provider": "KEEP",
