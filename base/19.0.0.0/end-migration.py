@@ -50,6 +50,25 @@ UNIQUE_MOVE_PREPROCESSORS = {
                              )
                 """,
         ),
+        "stock.warehouse": (
+                """
+                        UPDATE stock_warehouse AS wh_b
+                             SET name = CONCAT(wh_b.name, '-B-', wh_b.id),
+                                 code = SUBSTRING(CONCAT('B', wh_b.id::text), 1, 5)
+                         WHERE wh_b.company_id = %s
+                             AND (EXISTS (
+                                        SELECT 1
+                                            FROM stock_warehouse AS wh_a
+                                         WHERE wh_a.company_id = %s
+                                             AND wh_a.name = wh_b.name
+                             ) OR EXISTS (
+                                        SELECT 1
+                                            FROM stock_warehouse AS wh_a
+                                         WHERE wh_a.company_id = %s
+                                             AND wh_a.code = wh_b.code
+                             ))
+                """,
+        ),
 }
 
 
@@ -383,7 +402,16 @@ def preprocess_unique_move_conflicts(cr, model_name, id_a, id_b):
     queries = UNIQUE_MOVE_PREPROCESSORS.get(model_name, ())
     for query in queries:
         _logger.info("Preprocesando colisiones UNIQUE para %s", model_name)
-        cr.execute(query, (id_b, id_a))
+        # Contar cuántos placeholders %s tiene la query
+        param_count = query.count('%s')
+        # Pasar los parámetros correctos según la cantidad
+        if param_count == 2:
+            cr.execute(query, (id_b, id_a))
+        elif param_count == 3:
+            cr.execute(query, (id_b, id_a, id_a))
+        else:
+            _logger.warning(f"Query con {param_count} parámetros no soportada para {model_name}")
+
 
 
 # def sync_account_codes_sql(cr, rel_table, rel_account_col, rel_company_col, id_a, id_b):
