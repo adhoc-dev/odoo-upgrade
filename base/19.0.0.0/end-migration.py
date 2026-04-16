@@ -540,36 +540,37 @@ def migrate(cr, version):
         return
 
     id_a = company_mapping.get("a")
-    id_b = company_mapping.get("b")
+    ids_b = company_mapping.get("b")
 
-    if not id_a or not id_b:
+    if not id_a or not ids_b:
         _logger.warning("Invalid company mapping, skipping migration")
         return
 
-    # 0. Establecer Jerarquía Branch
-    cr.execute("UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b))
+    for id_b in ids_b:
+        # 0. Establecer Jerarquía Branch
+        cr.execute("UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b))
 
-    # 1. Movimiento Operativo (SQL)
-    migrate_standard_fields(cr, env, id_a, id_b)
+        # 1. Movimiento Operativo (SQL)
+        migrate_standard_fields(cr, env, id_a, id_b)
 
-    # 2. Fusión de Configuración (ORM)
-    merge_models = [m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"]
-    for model_name in merge_models:
-        handle_merge_or_move(env, model_name, id_a, id_b)
+        # 2. Fusión de Configuración (ORM)
+        merge_models = [m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"]
+        for model_name in merge_models:
+            handle_merge_or_move(env, model_name, id_a, id_b)
+            cr.commit()
+
+        # 3. Propiedades JSONB (SQL)
+        migrate_json_company_dependent(cr, env, id_a, id_b)
+
+        # 4. Limpieza: Archivar cuentas de la sucursal
+        _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
+        env["account.account"].search([("company_ids", "=", id_b)]).write({"active": False})
+
+        # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
+        env["res.company"].browse(id_b)._write({"parent_id": id_a})
+        # 5.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
+        env["res.company"]._parent_store_compute()
         cr.commit()
-
-    # 3. Propiedades JSONB (SQL)
-    migrate_json_company_dependent(cr, env, id_a, id_b)
-
-    # 4. Limpieza: Archivar cuentas de la sucursal
-    _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
-    env["account.account"].search([("company_ids", "=", id_b)]).write({"active": False})
-
-    # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
-    env["res.company"].browse(id_b)._write({"parent_id": id_a})
-    # 5.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
-    env["res.company"]._parent_store_compute()
-    cr.commit()
 
     # 6. Fusiona cuentas contables
     merge_accounts_by_code(env, id_a)
