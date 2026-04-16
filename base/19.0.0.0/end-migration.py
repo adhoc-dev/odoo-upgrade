@@ -353,6 +353,16 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
             cr.execute(query)
 
 
+def get_next_available_code(env, code, company_id):
+    """Devuelve el primer código disponible incrementando el último dígito del sufijo."""
+    if not env["account.account"].with_context(allowed_company_ids=[company_id]).search(
+        [("code", "=", code), ("company_ids", "=", company_id)]
+    ):
+        return code
+    code = code[:-1] + str(int(code[-1]) + 1)
+    return get_next_available_code(env, code, company_id)
+
+
 def merge_accounts_by_code(env, id_a):
     """Fusiona cuentas contables con mismo code dentro de la compañía destino."""
     Account = env["account.account"].with_context(active_test=False)
@@ -373,6 +383,22 @@ def merge_accounts_by_code(env, id_a):
     merged_groups = 0
     for code, duplicate_accounts in grouped_accounts.items():
         if len(duplicate_accounts) <= 1:
+            continue
+
+        # No mergear si hay discrepancia en currency_id (una tiene moneda y otra no, o tienen monedas distintas)
+        currencies = {acc.currency_id for acc in duplicate_accounts}
+        if len(currencies) > 1:
+            _logger.warning(
+                "SALTANDO MERGE de cuentas con code=%s (ids=%s): discrepancia en currency_id (%s), renombrando todas salvo la de menor id con sufijo .1",
+                code,
+                duplicate_accounts.ids,
+                [c.name or "sin moneda" for c in currencies],
+            )
+            keeper = duplicate_accounts.sorted("id")[0]
+            for acc in duplicate_accounts.filtered(lambda a: a.id != keeper.id):
+                new_code = get_next_available_code(env, acc.code, id_a)
+                _logger.info("Renombrando cuenta id=%s: code '%s' -> '%s'", acc.id, acc.code, new_code)
+                acc.write({"code": new_code})
             continue
 
         _logger.info(
