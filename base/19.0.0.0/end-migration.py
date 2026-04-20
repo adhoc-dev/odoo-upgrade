@@ -572,6 +572,9 @@ def migrate(cr, version):
         _logger.warning("Invalid company mapping, skipping migration")
         return
 
+    if not isinstance(ids_b, (list, tuple)):
+        ids_b = [ids_b]
+
     for id_b in ids_b:
         # 0. Establecer Jerarquía Branch
         cr.execute("UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b))
@@ -614,7 +617,8 @@ def migrate(cr, version):
         pmls.flush_recordset(["shared_to_branches"])
 
     for warehouse in env["stock.warehouse"].search([]):
-        if warehouse.partner_id.name  == env['res.company'].browse(id_b).name:
-            warehouse.partner_id = warehouse.company_id.partner_id
+        for id_b in ids_b:
+            if warehouse.partner_id.name  == env['res.company'].browse(id_b).name:
+                warehouse.partner_id = warehouse.company_id.partner_id
     env["account.journal"].search([]).write({"shared_to_branches": False})
     cr.commit()
