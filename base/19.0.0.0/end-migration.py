@@ -257,6 +257,13 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
         model_name, ["name"]
     )  # Por defecto, intentamos usar 'name' o 'display_name' como criterio de equivalencia
 
+    def _move_record_to_parent(record):
+        if "company_ids" in Model._fields:
+            # Para many2many, reemplazar la compañía B por A
+            record._write({"company_ids": [(3, id_b), (4, id_a)]})
+        else:
+            record._write({"company_id": id_a})
+
     for rec_b in records_b:
         # Construir dominio de búsqueda para el equivalente en A
         domain = company_domain.copy()
@@ -279,6 +286,16 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                 rec_a = Model.with_context(active_test=False).search(domain, limit=1)
 
         if rec_a:
+            # Para impuestos inactivos, priorizamos moverlos a la matriz para no dejarlos en la sucursal.
+            if model_name == "account.tax" and "active" in rec_b._fields and not rec_b.active:
+                _logger.info(
+                    "MOVIENDO INACTIVO: %s '%s' (B) -> compañía A",
+                    model_name,
+                    rec_b.display_name,
+                )
+                _move_record_to_parent(rec_b)
+                continue
+
             if "active" in rec_b._fields and rec_a.active == False:
                 rec_a.active = True
             _logger.info(f"FUSIONANDO: {model_name} '{rec_b.display_name}' (B) -> '{rec_a.display_name}' (A)")
@@ -297,11 +314,7 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
         else:
             # No hay equivalente, simplemente lo movemos a la matriz
             _logger.info(f"MOVIENDO: {model_name} '{rec_b.display_name}' a compañía A")
-            if "company_ids" in Model._fields:
-                # Para many2many, reemplazar la compañía B por A
-                rec_b._write({"company_ids": [(3, id_b), (4, id_a)]})
-            else:
-                rec_b._write({"company_id": id_a})
+            _move_record_to_parent(rec_b)
 
 
 def check_consistency_keep(env, model_name, id_b):
