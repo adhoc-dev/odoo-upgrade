@@ -6,6 +6,63 @@ from odoo.upgrade import util
 
 _logger = logging.getLogger(__name__)
 
+# ============================================================================
+# MIGRATION SCRIPT FOR ODOO 19 - MULTI-COMPANY/BRANCH CONSOLIDATION
+# ============================================================================
+#
+# Este script soporta DOS modos de migración:
+#
+# MODO 1: STORE TO BRANCH
+# -------------------------
+# De: Sistema con 1 compañía y múltiples stores (res.store - ingadhoc-multi-store)
+# A:  Sistema con múltiples companies en jerarquía (branches estilo Odoo 19)
+#
+# Características:
+# - Identifica la company parent (A) = la que NO tiene parent_id
+# - Cada res.store se convierte en una res.company branch
+# - Los campos store_id se migran a company_id
+# - Los apuntes contables se mantienen en su branch correspondiente
+# - Las cuentas contables se dejan en la company parent
+# - Los impuestos y configuración fiscal se fusionan/mueven a la parent
+#
+# MODO 2: COMPANY MERGE
+# ----------------------
+# De: Sistema con 2 compañías hermanas (A y B)
+# A:  Sistema con jerarquía donde B es branch de A
+#
+# Características:
+# - B se convierte en branch (hijo) de A
+# - Los datos operativos se mueven a A o se mantienen en B según estrategia
+# - Los datos financieros (facturas, pagos) se mantienen en B (KEEP_AND_CHECK)
+# - Los maestros (partners, productos) se mantienen compartidos (KEEP)
+# - La configuración contable se fusiona con la de A (MERGE_OR_MOVE)
+#
+# MODO 3: AUTO (DEFAULT)
+# -----------------------
+# Detecta automáticamente qué tipo de migración ejecutar:
+# - Si existe res.store con datos -> STORE TO BRANCH
+# - Si existe mapping de companies A/B -> COMPANY MERGE
+# - Si no detecta nada -> No hace nada
+#
+# ============================================================================
+# CONFIGURACIÓN
+# ============================================================================
+#
+# Para forzar un modo específico, crear parámetro de sistema:
+#   migration_19_end_mode = "store_to_branch" | "company_merge" | "auto"
+#
+# Para configurar el mapping manual (company_merge):
+#   migration_19_end_multicompany = "{'a': 1, 'b': 2}"
+#
+# Para configurar el mapping manual (store_to_branch):
+#   migration_19_end_store_to_branch = "{store_id: company_id, ...}"
+#
+# ============================================================================
+
+# MIGRATION MODES:
+# - 'company_merge': Migrates from 2 companies (A and B) to branches (B becomes child of A)
+# - 'store_to_branch': Migrates from single company with multi-store to multi-company branches
+
 # OBTENER DATA DE FIELDS EN RUNBOT, ACCION DE SERVIDOR CON
 # field_targets = env['ir.model.fields'].search([
 #     ('relation', '=', 'res.company'),
@@ -435,6 +492,17 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
     id_a_str = str(id_a)
     id_b_str = str(id_b)
 
+    # Campos que se copian de B a A pero NO se limpian de B
+    # (necesarios en ambas compañías)
+    COPY_ONLY_FIELDS = {
+        "product.template": [
+            "property_cost_method",
+            "property_valuation",
+            "standard_price",
+        ],
+        "product.product": ["standard_price"],
+    }
+
     # 1. Buscar todos los campos company_dependent registrados
     dependent_fields = env["ir.model.fields"].search(
         [("company_dependent", "=", True), ("store", "=", True)]
@@ -442,31 +510,55 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
 
     # Agrupamos por modelo para hacer un solo UPDATE por tabla
     model_map = {}
+    field_type_map = {}
     for f in dependent_fields:
         model_map.setdefault(f.model, []).append(f.name)
+        field_type_map[(f.model, f.name)] = f.ttype
 
     for model_name, field_names in model_map.items():
         table = model_name.replace(".", "_")
 
         # Odoo 19 guarda estos campos como JSONB
         for field_name in field_names:
-            _logger.info(f"Migrando JSONB: {model_name}.{field_name}")
+            field_type = field_type_map.get((model_name, field_name))
 
-            # SQL:
-            # 1. Si existe clave B y NO existe clave A: Crear A con valor de B.
-            # 2. Eliminar clave B.
-            query = f"""
-                UPDATE {table}
-                SET {field_name} = (
-                    CASE
-                        WHEN ({field_name} ? '{id_b_str}') AND NOT ({field_name} ? '{id_a_str}')
-                        THEN jsonb_set({field_name}, '{{{id_a_str}}}', {field_name}->'{id_b_str}')
-                        ELSE {field_name}
-                    END
-                ) - '{id_b_str}'
-                WHERE {field_name} ? '{id_b_str}';
-            """
-            cr.execute(query)
+            # Determinar si este campo debe ser copiado sin limpiar
+            copy_only = field_name in COPY_ONLY_FIELDS.get(model_name, [])
+
+            if copy_only:
+                # Solo copiar de B a A (sin eliminar B)
+                _logger.info(f"Copiando JSONB (sin limpiar): {model_name}.{field_name}")
+                query = f"""
+                    UPDATE {table}
+                    SET {field_name} = jsonb_set(
+                        COALESCE({field_name}, '{{}}'::jsonb),
+                        '{{{id_a_str}}}',
+                        {field_name}->'{id_b_str}'
+                    )
+                    WHERE ({field_name} ? '{id_b_str}')
+                      AND NOT ({field_name} ? '{id_a_str}');
+                """
+                cr.execute(query)
+            elif field_type == "many2one":
+                # Many2one: copiar de B a A y eliminar B
+                _logger.info(f"Migrando JSONB many2one: {model_name}.{field_name}")
+                query = f"""
+                    UPDATE {table}
+                    SET {field_name} = (
+                        CASE
+                            WHEN ({field_name} ? '{id_b_str}') AND NOT ({field_name} ? '{id_a_str}')
+                            THEN jsonb_set({field_name}, '{{{id_a_str}}}', {field_name}->'{id_b_str}')
+                            ELSE {field_name}
+                        END
+                    ) - '{id_b_str}'
+                    WHERE {field_name} ? '{id_b_str}';
+                """
+                cr.execute(query)
+            else:
+                # Otros tipos de campo: no hacer nada
+                _logger.info(
+                    f"Saltando JSONB ({field_type}): {model_name}.{field_name}"
+                )
 
 
 def get_next_available_code(env, code, exclude_account_id=None):
@@ -555,6 +647,492 @@ def merge_accounts_by_code(env, id_a):
     _logger.info("Merge por código finalizado. Grupos fusionados: %s", merged_groups)
 
 
+# ============================================================================
+# STORE TO BRANCH MIGRATION FUNCTIONS
+# ============================================================================
+
+
+def table_exists(cr, table_name):
+    """Check if a table exists in the database."""
+    cr.execute(
+        """
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_name = %s
+        )
+    """,
+        (table_name,),
+    )
+    return cr.fetchone()[0]
+
+
+# def rebuild_store_mapping_from_backup(cr, env, parent_company_id, branch_company_ids):
+#     """
+#     Reconstruye el mapeo {store_id: company_id} desde la tabla de backup res_store_bu.
+
+#     Se usa en vez de guardar este mapeo en el parámetro de sistema.
+#     La tabla res_store_bu fue creada por el pre-migration script antes de que
+#     el módulo base_multi_store fuera deprecado.
+
+#     Returns:
+#         dict: {store_id: company_id}
+#     """
+#     if not table_exists(cr, "res_store_bu"):
+#         _logger.warning(
+#             "Table res_store_bu not found. Run pre-migration script first."
+#         )
+#         return {}
+
+#     Company = env["res.company"]
+#     store_to_company = {}
+
+#     # Leer todos los stores desde el backup, empezando por los que no tienen parent
+#     cr.execute(
+#         "SELECT id, name, parent_id, company_id FROM res_store_bu ORDER BY parent_id NULLS FIRST"
+#     )
+#     stores_data = cr.fetchall()  # [(id, name, parent_id, company_id), ...]
+
+#     if not stores_data:
+#         return {}
+
+#     # El store parent es el primero sin parent_id
+#     parent_store = next((s for s in stores_data if s[2] is None), stores_data[0])
+#     store_to_company[parent_store[0]] = parent_company_id
+
+#     for store_id, store_name, store_parent_id, store_original_company_id in stores_data:
+#         if store_id in store_to_company:
+#             continue
+
+#         # Si el store tenía company_id y esa company es una de las branches, usarla
+#         if store_original_company_id and store_original_company_id in branch_company_ids:
+#             store_to_company[store_id] = store_original_company_id
+#             _logger.info(
+#                 "Mapping store %s ('%s') -> company %s (from original company_id)",
+#                 store_id, store_name, store_original_company_id,
+#             )
+#             continue
+
+#         # Buscar company por nombre entre las branches
+#         company = Company.search(
+#             [("name", "=", store_name), ("id", "in", branch_company_ids)], limit=1
+#         )
+#         if company:
+#             store_to_company[store_id] = company.id
+#             _logger.info(
+#                 "Mapping store %s ('%s') -> company %s '%s' (by name)",
+#                 store_id, store_name, company.id, company.name,
+#             )
+#         else:
+#             # Fallback: usar parent company
+#             store_to_company[store_id] = parent_company_id
+#             _logger.warning(
+#                 "Could not find matching company for store '%s', mapping to parent company",
+#                 store_name,
+#             )
+
+#     return store_to_company
+
+
+def get_store_to_company_mapping(env):
+    """
+    Crea o encuentra el mapeo entre stores y companies.
+
+    El parámetro guardado solo contiene {'a': parent_id, 'b': [branch_ids]}.
+    El store_mapping ({store_id: company_id}) se reconstruye en runtime desde
+    res_store_bu para no almacenar datos derivados en el parámetro.
+
+    Reglas:
+    - La company parent (A) es la que NO tiene parent_id
+    - Cada store de res_store_bu genera o reutiliza una res.company branch
+
+    Returns:
+        dict: {'a': parent_id, 'b': [branch_ids], 'store_mapping': {store_id: company_id}}
+    """
+    cr = env.cr
+
+    # La tabla de origen puede ser res_store_bu (si aún existe) o res_store_bu (backup)
+    source_table = None
+    if table_exists(cr, "res_store_bu"):
+        source_table = "res_store_bu"
+    else:
+        return {}
+
+    Company = env["res.company"]
+
+    # Intentar obtener el mapeo base guardado (solo 'a' y 'b')
+    saved_mapping = safe_eval(
+        env["ir.config_parameter"]
+        .sudo()
+        .get_param("migration_19_end_store_to_branch", "{}")
+    )
+
+    if saved_mapping:
+        return saved_mapping
+
+    # ---- Primera ejecución: construir el mapping ----
+
+    # Leer stores desde la tabla fuente via SQL (funciona aunque el modelo ya no exista)
+    cr.execute(
+        f"SELECT id, name, parent_id, company_id FROM {source_table} ORDER BY parent_id NULLS FIRST"
+    )
+    stores_data = cr.fetchall()  # [(id, name, parent_id, company_id), ...]
+
+    if not stores_data:
+        return {}
+
+    # Identificar la company parent (la que no tiene parent_id)
+    parent_company = Company.search(
+        [("parent_id", "=", False), ("active", "=", True)], limit=1
+    )
+    if not parent_company:
+        parent_company = Company.search([("active", "=", True)], limit=1)
+    if not parent_company:
+        raise UserError("No se encontró una compañía activa para usar como parent")
+
+    _logger.info(
+        "Parent company identified: %s (ID: %s)", parent_company.name, parent_company.id
+    )
+
+    store_to_company = {}
+    branch_company_ids = []
+
+    # El store parent es el primero sin parent_id
+    parent_store = next((s for s in stores_data if s[2] is None), stores_data[0])
+    store_to_company[parent_store[0]] = parent_company.id
+    _logger.info(
+        "Mapping parent store '%s' (ID: %s) -> parent company '%s' (ID: %s)",
+        parent_store[1],
+        parent_store[0],
+        parent_company.name,
+        parent_company.id,
+    )
+
+    for store_id, store_name, store_parent_id, store_original_company_id in stores_data:
+        if store_id in store_to_company:
+            continue
+
+        # Buscar company existente por nombre
+        existing_company = Company.search([("name", "=", store_name)], limit=1)
+
+        if existing_company:
+            store_to_company[store_id] = existing_company.id
+            branch_company_ids.append(existing_company.id)
+            _logger.info(
+                "Found existing company '%s' for store '%s'",
+                existing_company.name,
+                store_name,
+            )
+        else:
+            # Determinar parent de la nueva branch
+            company_parent_id = parent_company.id
+            if store_parent_id and store_parent_id in store_to_company:
+                company_parent_id = store_to_company[store_parent_id]
+
+            new_company = Company.with_context(no_chart_of_accounts=True).create(
+                {
+                    "name": store_name,
+                    "parent_id": company_parent_id,
+                    "currency_id": parent_company.currency_id.id,
+                    'l10n_ar_afip_responsibility_type_id': parent_company.l10n_ar_afip_responsibility_type_id.id,
+                }
+            )
+            store_to_company[store_id] = new_company.id
+            branch_company_ids.append(new_company.id)
+            _logger.info(
+                "Created new branch company '%s' (ID: %s) for store '%s' (ID: %s)",
+                new_company.name,
+                new_company.id,
+                store_name,
+                store_id,
+            )
+
+    # Guardar SOLO 'a' y 'b' en el parámetro (store_mapping se reconstruye desde res_store_bu)
+    base_mapping = {"a": parent_company.id, "b": branch_company_ids}
+    env["ir.config_parameter"].sudo().set_param(
+        "migration_19_end_store_to_branch", str(base_mapping)
+    )
+    _logger.info("Saved base mapping to parameter: %s", base_mapping)
+
+    # Incluir store_mapping en retorno (solo para esta ejecución)
+    return base_mapping
+
+
+def migrate_store_fields_to_company(cr, env, mapping):
+    """
+    Migra todos los campos store_id a company_id según el mapeo.
+
+    Args:
+        mapping: dict {'a': parent_id, 'b': [branch_ids], 'store_mapping': {store_id: company_id}}
+                 store_mapping se reconstruye en runtime desde res_store_bu, no se persiste.
+    """
+
+    # Buscar todos los campos que apuntan a res.store
+    store_fields = env["ir.model.fields"].search(
+        [
+            ("relation", "=", "res.store"),
+            ("store", "=", True),
+            ("model_id.transient", "=", False),
+            ("model_id.abstract", "=", False),
+        ]
+    )
+
+    # Modelos procesados para no duplicar esfuerzos
+    processed_models = set()
+
+    for field in store_fields:
+        model_name = field.model
+        table = model_name.replace(".", "_")
+        field_name = field.name
+
+        if model_name in processed_models:
+            continue
+
+        # Verificar que el modelo existe
+        try:
+            Model = env[model_name]
+            if not Model._auto:
+                continue
+        except KeyError:
+            _logger.warning(f"Model {model_name} not found, skipping")
+            continue
+
+        # Verificar si el modelo tiene company_id
+        if "company_id" not in Model._fields:
+            _logger.info(f"Model {model_name} has {field_name} but no company_id field")
+            continue
+
+        # Para cada store, actualizar los registros
+        for store_id in mapping["b"]:
+            store_id =  env['res.company'].browse(store_id)
+            company_id = env['res.company'].browse(mapping["a"])
+            if field.ttype == "many2one":
+                # Verificar si el campo es related o computed
+                field_obj = Model._fields.get(field_name)
+
+                # Si es un campo related, no lo tocamos en SQL (se recomputará)
+                if field_obj and field_obj.related:
+                    _logger.info(
+                        f"  Skipping related field {field_name}, will be recomputed"
+                    )
+                    continue
+
+                # Actualizar company_id basado en store_id
+                # Solo actualizamos si:
+                # 1. El store_id coincide
+                # 2. El company_id está vacío o es diferente al target
+                query = f"""
+                    UPDATE {table}
+                    SET company_id = %s
+                    WHERE store_id in ( SELECT id FROM res_store_bu WHERE name ilike %s)
+                    AND (company_id IS NULL OR company_id != %s)
+                """
+                cr.execute(query, (store_id.id, store_id.name, store_id.id))
+
+                if cr.rowcount > 0:
+                    _logger.info(
+                        f"  Updated {cr.rowcount} records for store {store_id.name} -> company {company_id.name}"
+                    )
+
+            elif field.ttype == "many2many":
+                # Para many2many, esto es más complejo
+                # Por ahora lo saltamos ya que store_id suele ser many2one
+                _logger.info(
+                    f"  Skipping many2many field {field_name} (not commonly used for stores)"
+                )
+
+        processed_models.add(model_name)
+
+    # Invalidar y recomputar campos related que dependen de store_id
+    _logger.info("Invalidating and recomputing related store fields")
+
+    # Modelos comunes con campos related de store
+    models_to_recompute = [
+        "sale.order",  # store_id related to warehouse_id.store_id
+        "purchase.order",  # store_id related to picking_type_id.store_id
+        "account.move",  # store_id related to journal_id.store_id
+        "account.payment",  # store_id related to journal_id.store_id
+    ]
+
+    for model_name in models_to_recompute:
+        if model_name not in env:
+            continue
+
+        Model = env[model_name]
+        if "store_id" in Model._fields:
+            _logger.info(f"  Recomputing store_id for {model_name}")
+            records = Model.search([])
+            if records:
+                records.invalidate_recordset(["store_id"])
+                # No forzamos el compute aquí, se hará cuando se acceda
+
+
+def migrate_store_to_branch(cr, env):
+    """
+    Función principal para migrar de multi-store a multi-company branches.
+
+    Esta migración es para casos donde:
+    - Se tenía 1 compañía con múltiples stores (res.store)
+    - Se quiere migrar a múltiples companies en jerarquía (branches)
+
+    Pasos:
+    1. Mapear stores a companies (crear si es necesario)
+    2. Establecer jerarquía de companies
+    3. Migrar campos store_id a company_id
+    4. Fusionar configuración contable (impuestos, cuentas) en parent
+    5. Mantener apuntes contables en sus branches
+    """
+    mapping = safe_eval(
+        env["ir.config_parameter"]
+        .sudo()
+        .get_param("migration_19_end_store_to_branch", "{}")
+    )
+
+    parent_company_id = mapping["a"]
+    branch_company_ids = mapping["b"]
+
+
+    Company = env["res.company"]
+    parent_company = Company.browse(parent_company_id)
+
+    _logger.info("Parent company: %s (ID: %s)", parent_company.name, parent_company_id)
+    _logger.info("Branch companies: %s", branch_company_ids)
+
+    for store_id in branch_company_ids:
+        store_id = Company.browse(store_id)
+        company = Company.browse(parent_company_id)
+
+        # Establecer parent_id basado en la jerarquía de stores
+        if not store_id.parent_id and company.id != store_id.company_id:
+            store_id._write({"parent_id": parent_company_id})
+
+    # 3. Migrar campos store_id a company_id
+    _logger.info("Migrating store_id fields to company_id")
+    migrate_store_fields_to_company(cr, env, mapping)
+    cr.commit()
+
+    # 4. Recalcular parent_path para todas las companies
+    _logger.info("Recalculating company parent_path")
+    Company._parent_store_compute()
+    cr.commit()
+
+    # 5. Fusionar/mover configuración contable a la parent company
+    # Para stores, queremos que los impuestos, cuentas, etc. queden en la parent
+    _logger.info(
+        "Processing accounting configuration (taxes, accounts, fiscal positions)"
+    )
+
+    # Procesar MERGE_OR_MOVE para cada branch
+    for branch_company_id in branch_company_ids:
+        branch_company = Company.browse(branch_company_id)
+        _logger.info(
+            f"Processing configuration from branch '{branch_company.name}' to parent"
+        )
+
+        # Fusionar impuestos, posiciones fiscales, etc.
+        merge_models = [m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"]
+
+        for model_name in merge_models:
+            try:
+                handle_merge_or_move(
+                    env, model_name, parent_company_id, branch_company.id
+                )
+            except Exception as e:
+                _logger.warning(
+                    f"Could not merge {model_name} from {branch_company.name}: {e}"
+                )
+
+        cr.commit()
+
+    # 6. Archivar cuentas de las branches (opcional, dependiendo de la estrategia)
+    # Por ahora no archivamos, las dejamos activas en sus branches
+
+    # 7. Dar acceso a los usuarios a las branches que antes tenían vía store_ids
+    _logger.info("Migrating user company access from store_ids to branch companies")
+    migrate_store_user_access_to_company(cr, env, mapping)
+    cr.commit()
+
+    return parent_company.id
+
+
+def migrate_store_user_access_to_company(cr, env, mapping):
+    """
+    Asigna a cada usuario acceso (company_ids) a las branches que antes
+    tenía disponibles mediante el campo store_ids.
+
+    Lee la tabla res_store_user_rel_bu creada por el pre-migration script,
+    obtiene el store_mapping del mapping reconstruido en runtime y agrega
+    las companies correspondientes al campo company_ids de cada usuario.
+    """
+
+    if not table_exists(cr, "res_store_bu"):
+        _logger.warning(
+            "Backup table res_store_bu not found. "
+            "Skipping user access migration because store mapping cannot be rebuilt."
+        )
+        return
+
+    cr.execute(
+        """
+        SELECT
+            rsu.user_id as user_id,
+            rc.id as company_id
+        FROM res_store_users_rel_bu rsu
+        JOIN res_store_bu rs
+            ON rs.id = rsu.cid
+        JOIN res_company rc
+            ON rs.name = rc.name;
+        """
+    )
+    user_company_rows = cr.fetchall()  # [(user_id, company_id), ...]
+    if not user_company_rows:
+        _logger.info("No stores found in backup, skipping user access migration")
+        return
+
+    # Agrupar company_ids por usuario a partir de la query (user_id, company_id)
+    user_to_new_companies = {}
+    for user_id, company_id in user_company_rows:
+        if not user_id or not company_id:
+            continue
+        user_to_new_companies.setdefault(int(user_id), set()).add(int(company_id))
+
+    Users = env["res.users"]
+    migrated = 0
+    for user_id, company_ids_to_add in user_to_new_companies.items():
+        user = Users.browse(user_id).exists()
+        if not user:
+            _logger.warning("User ID %s not found, skipping", user_id)
+            continue
+
+        current_company_ids = set(user.company_ids.ids)
+        new_company_ids = company_ids_to_add - current_company_ids
+
+        if new_company_ids:
+            _logger.info(
+                "Granting user '%s' (ID: %s) access to companies: %s",
+                user.name,
+                user_id,
+                list(new_company_ids),
+            )
+            user.write({"company_ids": [(4, cid) for cid in new_company_ids]})
+            migrated += 1
+        else:
+            _logger.info(
+                "User '%s' already has access to all their stores' companies, skipping",
+                user.name,
+            )
+
+    _logger.info(
+        "User access migration complete: %s users updated out of %s",
+        migrated,
+        len(user_to_new_companies),
+    )
+
+
+# ============================================================================
+# ORIGINAL COMPANY MERGE MIGRATION FUNCTIONS
+# ============================================================================
+
+
 def preprocess_unique_move_conflicts(cr, model_name, id_a, id_b):
     """Resuelve colisiones conocidas antes de mover registros de compañía."""
     queries = UNIQUE_MOVE_PREPROCESSORS.get(model_name, ())
@@ -603,7 +1181,6 @@ def migrate_standard_fields(cr, env, id_a, id_b):
             ("model_id.abstract", "=", False),
         ]
     )
-    merge_accounts_needed = False
 
     for field in field_targets:
         model_name = field.model
@@ -718,74 +1295,111 @@ def create_mapping(cr):
 
 def migrate(cr, version):
     env = util.env(cr)
-    company_mapping = safe_eval(
-        env["ir.config_parameter"]
-        .sudo()
-        .get_param("migration_19_end_multicompany", "{}")
+    # Determinar el modo de migración
+    store_mapping = (
+        env["ir.config_parameter"].sudo().get_param("migration_19_end_store_to_branch")
     )
-    if not company_mapping:
-        company_mapping = create_mapping(cr)
+    company_mapping = safe_eval(env["ir.config_parameter"].sudo().get_param("migration_19_end_multicompany", "{}"))
+    # ========================================================================
+    # MODE 1: COMPANY MERGE (Two companies A and B -> B becomes branch of A)
+    # ========================================================================
+    if not store_mapping:
+        if not company_mapping:
+            company_mapping = create_mapping(cr)
 
-    if not company_mapping:
-        _logger.warning("No company mapping found, skipping migration")
-        return
+        if not company_mapping:
+            _logger.warning("No company mapping found, skipping migration")
+            return
 
-    id_a = company_mapping.get("a")
-    ids_b = company_mapping.get("b")
+        id_a = company_mapping.get("a")
+        ids_b = company_mapping.get("b")
 
-    if not id_a or not ids_b:
-        _logger.warning("Invalid company mapping, skipping migration")
-        return
+        if not id_a or not ids_b:
+            _logger.warning("Invalid company mapping, skipping migration")
+            return
 
-    if not isinstance(ids_b, (list, tuple)):
-        ids_b = [ids_b]
+        if not isinstance(ids_b, (list, tuple)):
+            ids_b = [ids_b]
 
-    for id_b in ids_b:
-        # 0. Establecer Jerarquía Branch
-        cr.execute("UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b))
-
-        # 1. Movimiento Operativo (SQL)
-        migrate_standard_fields(cr, env, id_a, id_b)
-
-        # 2. Fusión de Configuración (ORM)
-        merge_models = [m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"]
-        for model_name in merge_models:
-            handle_merge_or_move(env, model_name, id_a, id_b)
-            cr.commit()
-
-        # 3. Propiedades JSONB (SQL)
-        migrate_json_company_dependent(cr, env, id_a, id_b)
-
-        # 4. Limpieza: Archivar cuentas de la sucursal
-        _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
-        env["account.account"].search([("company_ids", "=", id_b)]).write(
-            {"active": False}
-        )
-
-        # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
-        env["res.company"].browse(id_b)._write({"parent_id": id_a})
-        # 5.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
-        env["res.company"]._parent_store_compute()
-        cr.commit()
-
-    # 6. Fusiona cuentas contables
-    merge_accounts_by_code(env, id_a)
-
-    # 7.1. Recomputa campos stored en journals que dependen de la jerarquía
-    journals = env["account.journal"].search([])
-    journals.invalidate_recordset(["branch_order"])
-    journals._compute_branch_order()
-    journals.flush_recordset(["branch_order"])
-
-    # 7.2. Recomputa shared_to_branches en payment method lines (related stored)
-    pmls = env["account.payment.method.line"].search([])
-    if "shared_to_branches" in pmls._fields:
-        pmls.invalidate_recordset(["shared_to_branches"])
-        pmls.flush_recordset(["shared_to_branches"])
-
-    for warehouse in env["stock.warehouse"].search([]):
         for id_b in ids_b:
-            if warehouse.partner_id.name == env["res.company"].browse(id_b).name:
-                warehouse.partner_id = warehouse.company_id.partner_id
-    env["account.journal"].search([]).write({"shared_to_branches": False})
-    cr.commit()
+            # 0. Establecer Jerarquía Branch
+            cr.execute("UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b))
+            for id_b in ids_b:
+                # 0. Establecer Jerarquía Branch
+                cr.execute("UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b))
+
+                # 1. Movimiento Operativo (SQL)
+                migrate_standard_fields(cr, env, id_a, id_b)
+
+                # 2. Fusión de Configuración (ORM)
+                merge_models = [m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"]
+                for model_name in merge_models:
+                    handle_merge_or_move(env, model_name, id_a, id_b)
+                    cr.commit()
+
+                # 3. Propiedades JSONB (SQL)
+                migrate_json_company_dependent(cr, env, id_a, id_b)
+
+                # 4. Limpieza: Archivar cuentas de la sucursal
+                _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
+                env["account.account"].search([("company_ids", "=", id_b)]).write({"active": False})
+
+                # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
+                env["res.company"].browse(id_b)._write({"parent_id": id_a})
+                # 5.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
+                env["res.company"]._parent_store_compute()
+                cr.commit()
+
+            # 6. Fusiona cuentas contables
+            merge_accounts_by_code(env, id_a)
+
+            # 7.1. Recomputa campos stored en journals que dependen de la jerarquía
+            journals = env["account.journal"].search([])
+            journals.invalidate_recordset(["branch_order"])
+            journals._compute_branch_order()
+            journals.flush_recordset(["branch_order"])
+
+            # 7.2. Recomputa shared_to_branches en payment method lines (related stored)
+            pmls = env["account.payment.method.line"].search([])
+            if "shared_to_branches" in pmls._fields:
+                pmls.invalidate_recordset(["shared_to_branches"])
+                pmls.flush_recordset(["shared_to_branches"])
+
+        for warehouse in env["stock.warehouse"].search([]):
+            for id_b in ids_b:
+                if warehouse.partner_id.name  == env['res.company'].browse(id_b).name:
+                    warehouse.partner_id = warehouse.company_id.partner_id
+        env["account.journal"].search([]).write({"shared_to_branches": False})
+        cr.commit()
+    # ========================================================================
+    # MODE 1: STORE TO BRANCH (Single company with multi-store -> Multi-company branches)
+    # ========================================================================
+    if not company_mapping:
+        if not store_mapping or store_mapping == "{}":
+            store_mapping = get_store_to_company_mapping(env)
+            env.cr.commit()
+
+        if not store_mapping:
+            _logger.info("No store mapping found, skipping store-to-branch migration")
+            return None
+
+        _logger.info("Running STORE TO BRANCH migration")
+        parent_company_id = migrate_store_to_branch(cr, env)
+
+        if parent_company_id:
+            # Después de migrar stores a branches, aplicar merge de cuentas
+            merge_accounts_by_code(env, parent_company_id)
+
+            # Recomputar campos relacionados con la jerarquía
+            journals = env["account.journal"].search([])
+            journals.invalidate_recordset(["branch_order"])
+            journals._compute_branch_order()
+            journals.flush_recordset(["branch_order"])
+
+            pmls = env["account.payment.method.line"].search([])
+            if "shared_to_branches" in pmls._fields:
+                pmls.invalidate_recordset(["shared_to_branches"])
+                pmls.flush_recordset(["shared_to_branches"])
+
+            env["account.journal"].search([('company_id', '=', parent_company_id)]).write({"shared_to_branches": True})
+            cr.commit()
