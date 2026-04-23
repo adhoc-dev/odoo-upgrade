@@ -366,14 +366,23 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
             cr.execute(query)
 
 
-def get_next_available_code(env, code, company_id):
-    """Devuelve el primer código disponible incrementando el último dígito del sufijo."""
-    if not env["account.account"].with_context(allowed_company_ids=[company_id]).search(
-        [("code", "=", code), ("company_ids", "=", company_id)]
-    ):
-        return code
-    code = code[:-1] + str(int(code[-1]) + 1)
-    return get_next_available_code(env, code, company_id)
+def get_next_available_code(env, code, exclude_account_id=None):
+    """Devuelve un código libre validando contra todas las cuentas visibles por sudo."""
+    Account = env["account.account"].sudo().with_context(active_test=False)
+    base_code = code
+    candidate = base_code
+    suffix = 1
+
+    while True:
+        domain = [("code", "=", candidate)]
+        if exclude_account_id:
+            domain.append(("id", "!=", exclude_account_id))
+
+        if not Account.search_count(domain):
+            return candidate
+
+        candidate = f"{base_code}.{suffix}"
+        suffix += 1
 
 
 def merge_accounts_by_code(env, id_a):
@@ -409,7 +418,7 @@ def merge_accounts_by_code(env, id_a):
             )
             keeper = duplicate_accounts.sorted("id")[0]
             for acc in duplicate_accounts.filtered(lambda a: a.id != keeper.id):
-                new_code = get_next_available_code(env, acc.code, id_a)
+                new_code = get_next_available_code(env, acc.code, exclude_account_id=acc.id)
                 _logger.info("Renombrando cuenta id=%s: code '%s' -> '%s'", acc.id, acc.code, new_code)
                 acc.write({"code": new_code})
             continue
