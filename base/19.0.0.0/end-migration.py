@@ -244,7 +244,7 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
     Si no hay equivalente, mueve el registro a la compañía A.
     """
     Model = env[model_name]
-
+    cr = env.cr
     # Verificar si el modelo usa company_id o company_ids
     if "company_ids" in Model._fields:
         records_b = Model.with_context(active_test=False).search([("company_ids", "in", [id_b])])
@@ -299,6 +299,23 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             if "active" in rec_b._fields and rec_a.active == False:
                 rec_a.active = True
             _logger.info(f"FUSIONANDO: {model_name} '{rec_b.display_name}' (B) -> '{rec_a.display_name}' (A)")
+            
+            #Re-mapear FK antes de archivar
+            fk_fields = env["ir.model.fields"].search([
+                ("relation", "=", model_name),
+                ("ttype", "=", "many2one"),
+                ("store", "=", True),
+                ("model_id.transient", "=", False),
+                ("model_id.abstract", "=", False),
+            ])
+            for fk in fk_fields:
+                fk_table = fk.model.replace(".", "_")
+                _logger.info("Re-mapeando FK: %s.%s id=%s -> id=%s", fk.model, fk.name, rec_b.id, rec_a.id)
+                cr.execute(
+                    f"UPDATE {fk_table} SET {fk.name} = %s WHERE {fk.name} = %s",
+                    (rec_a.id, rec_b.id),
+                )
+            
             # Aquí usamos el método de merge (si existe) o re-mapeamos manualmente
             # En Odoo 19, si usas _data_merge sería:
             # Model._data_merge(rec_b, rec_a)
