@@ -238,6 +238,27 @@ MODEL_STRATEGY = {
 }
 
 
+def is_integer_column(cr, table_name, column_name):
+    """Check if a column is of integer or bigint type (not JSONB, etc)."""
+    cr.execute("""
+        SELECT data_type
+        FROM information_schema.columns
+        WHERE table_name=%s AND column_name=%s
+    """, (table_name, column_name))
+    result = cr.fetchone()
+    return result and result[0] in ('integer', 'bigint')
+
+def table_exists(cr, table_name):
+    """Check if a table exists in the database."""
+    cr.execute("""
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_name=%s
+        )
+    """, (table_name,))
+    return cr.fetchone()[0]
+
 def handle_merge_or_move(env, model_name, id_a, id_b):
     """
     Intenta fusionar registros de B en A si son equivalentes.
@@ -306,11 +327,17 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             ])
             for fk in fk_fields:
                 fk_table = fk.model.replace(".", "_")
-                _logger.info("Re-mapeando FK: %s.%s id=%s -> id=%s", fk.model, fk.name, rec_b.id, rec_a.id)
-                cr.execute(
-                    f"UPDATE {fk_table} SET {fk.name} = %s WHERE {fk.name} = %s",
-                    (rec_a.id, rec_b.id),
-                )
+                if table_exists(cr, fk_table):
+                    if is_integer_column(cr, fk_table, fk.name):
+                        _logger.info("Re-mapeando FK: %s.%s id=%s -> id=%s", fk.model, fk.name, rec_b.id, rec_a.id)
+                        cr.execute(
+                            f"UPDATE {fk_table} SET {fk.name} = %s WHERE {fk.name} = %s",
+                            (rec_a.id, rec_b.id),
+                        )
+                    else:
+                        _logger.info("Saltando FK: %s.%s porque la columna no es integer", fk.model, fk.name)
+                else:
+                    _logger.info("Saltando FK: %s.%s porque la tabla %s no existe", fk.model, fk.name, fk_table)
             
             if "name" in rec_b._fields:
                 rec_b.name = f"[DEPRECATED-{rec_b.id}] {rec_b.name}"
