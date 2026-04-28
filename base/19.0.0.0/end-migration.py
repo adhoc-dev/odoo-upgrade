@@ -36,8 +36,8 @@ MODELS_WITH_UNIQUE_NAMES = [
 
 
 UNIQUE_MOVE_PREPROCESSORS = {
-        "stock.location": (
-                """
+    "stock.location": (
+        """
                         UPDATE stock_location AS loc_b
                              SET barcode = CONCAT(loc_b.barcode, '-B-', loc_b.id)
                          WHERE loc_b.company_id = %s
@@ -49,9 +49,9 @@ UNIQUE_MOVE_PREPROCESSORS = {
                                              AND loc_a.barcode = loc_b.barcode
                              )
                 """,
-        ),
-        "stock.warehouse": (
-                """
+    ),
+    "stock.warehouse": (
+        """
                         UPDATE stock_warehouse AS wh_b
                              SET name = CONCAT(wh_b.name, '-B-', wh_b.id),
                                  code = SUBSTRING(CONCAT('B', wh_b.id::text), 1, 5)
@@ -68,7 +68,7 @@ UNIQUE_MOVE_PREPROCESSORS = {
                                              AND wh_a.code = wh_b.code
                              ))
                 """,
-        ),
+    ),
 }
 
 
@@ -240,24 +240,32 @@ MODEL_STRATEGY = {
 
 def is_integer_column(cr, table_name, column_name):
     """Check if a column is of integer or bigint type (not JSONB, etc)."""
-    cr.execute("""
+    cr.execute(
+        """
         SELECT data_type
         FROM information_schema.columns
         WHERE table_name=%s AND column_name=%s
-    """, (table_name, column_name))
+    """,
+        (table_name, column_name),
+    )
     result = cr.fetchone()
-    return result and result[0] in ('integer', 'bigint')
+    return result and result[0] in ("integer", "bigint")
+
 
 def table_exists(cr, table_name):
     """Check if a table exists in the database."""
-    cr.execute("""
+    cr.execute(
+        """
         SELECT EXISTS (
             SELECT 1
             FROM information_schema.tables
             WHERE table_name=%s
         )
-    """, (table_name,))
+    """,
+        (table_name,),
+    )
     return cr.fetchone()[0]
+
 
 def handle_merge_or_move(env, model_name, id_a, id_b):
     """
@@ -268,10 +276,14 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
     cr = env.cr
     # Verificar si el modelo usa company_id o company_ids
     if "company_ids" in Model._fields:
-        records_b = Model.with_context(active_test=False).search([("company_ids", "in", [id_b])])
+        records_b = Model.with_context(active_test=False).search(
+            [("company_ids", "in", [id_b])]
+        )
         company_domain = [("company_ids", "in", [id_a])]
     else:
-        records_b = Model.with_context(active_test=False).search([("company_id", "=", id_b)])
+        records_b = Model.with_context(active_test=False).search(
+            [("company_id", "=", id_b)]
+        )
         company_domain = [("company_id", "=", id_a)]
 
     criteria_fields = MERGE_CRITERIA.get(
@@ -286,9 +298,35 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             record._write({"company_id": id_a})
 
     for rec_b in records_b:
-        # Construir dominio de búsqueda para el equivalente en A
+        # --- CASO account.tax.group: eliminar si no tiene impuestos asociados y no tiene campo active ---
+        if model_name == "account.tax.group":
+            # Si no tiene campo active y no tiene impuestos asociados, eliminar
+            has_active = "active" in rec_b._fields
+            taxes = (
+                env["account.tax"]
+                .with_context(active_test=False)
+                .search([("tax_group_id", "=", rec_b.id)])
+            )
+            if not has_active and not taxes:
+                _logger.info(
+                    f"ELIMINANDO account.tax.group '{rec_b.display_name}' (B) sin impuestos asociados y sin campo active"
+                )
+                rec_b.unlink()
+                continue
+
+        # --- Construir dominio de búsqueda para el equivalente en A ---
         domain = company_domain.copy()
         valid_criteria = True
+
+        # Para account.tax, buscar por tax_group además de los criterios
+        if model_name == "account.tax":
+            # Buscar por tax_group primero si existe
+            if rec_b.tax_group_id:
+                domain.extend([
+                    "|",
+                    ("tax_group_id.name", "=", rec_b.tax_group_id.name),
+                    ("name", "=", rec_b.name),
+                ])
 
         for field in criteria_fields:
             if field not in rec_b._fields:
@@ -301,10 +339,13 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
 
         # Search UNA sola vez, fuera del loop, con el dominio completo
         rec_a = Model.with_context(active_test=False).search(domain, limit=1) if valid_criteria else False
-
         if rec_a:
             # Para impuestos inactivos, priorizamos moverlos a la matriz para no dejarlos en la sucursal.
-            if model_name == "account.tax" and "active" in rec_b._fields and not rec_b.active:
+            if (
+                model_name == "account.tax"
+                and "active" in rec_b._fields
+                and not rec_b.active
+            ):
                 _logger.info(
                     "MOVIENDO INACTIVO: %s '%s' (B) -> compañía A",
                     model_name,
@@ -313,29 +354,43 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                 _move_record_to_parent(rec_b)
                 continue
 
-            if "active" in rec_b._fields and rec_a.active == False:
+            if "active" in rec_b._fields and not rec_a.active:
                 rec_a.active = True
-            _logger.info(f"FUSIONANDO: {model_name} '{rec_b.display_name}' (B) -> '{rec_a.display_name}' (A)")
-            
-            #Re-mapear FK antes de archivar
-            fk_fields = env["ir.model.fields"].search([
-                ("relation", "=", model_name),
-                ("ttype", "=", "many2one"),
-                ("store", "=", True),
-                ("model_id.transient", "=", False),
-                ("model_id.abstract", "=", False),
-            ])
+            _logger.info(
+                f"FUSIONANDO: {model_name} '{rec_b.display_name}' (B) -> '{rec_a.display_name}' (A)"
+            )
+
+            # Re-mapear FK antes de archivar
+            fk_fields = env["ir.model.fields"].search(
+                [
+                    ("relation", "=", model_name),
+                    ("ttype", "=", "many2one"),
+                    ("store", "=", True),
+                    ("model_id.transient", "=", False),
+                    ("model_id.abstract", "=", False),
+                ]
+            )
             for fk in fk_fields:
                 fk_table = fk.model.replace(".", "_")
                 if table_exists(cr, fk_table):
                     if is_integer_column(cr, fk_table, fk.name):
-                        _logger.info("Re-mapeando FK: %s.%s id=%s -> id=%s", fk.model, fk.name, rec_b.id, rec_a.id)
+                        _logger.info(
+                            "Re-mapeando FK: %s.%s id=%s -> id=%s",
+                            fk.model,
+                            fk.name,
+                            rec_b.id,
+                            rec_a.id,
+                        )
                         cr.execute(
                             f"UPDATE {fk_table} SET {fk.name} = %s WHERE {fk.name} = %s",
                             (rec_a.id, rec_b.id),
                         )
                     else:
-                        _logger.info("Saltando FK: %s.%s porque la columna no es integer", fk.model, fk.name)
+                        _logger.info(
+                            "Saltando FK: %s.%s porque la columna no es integer",
+                            fk.model,
+                            fk.name,
+                        )
                 else:
                     _logger.info("Saltando FK: %s.%s porque la tabla %s no existe", fk.model, fk.name, fk_table)
             
@@ -356,7 +411,9 @@ def check_consistency_keep(env, model_name, id_b):
     # que Odoo 19 podría considerar inválidos (si no son parte de la jerarquía)
     records = Model.search([("company_id", "=", id_b)])
     if records:
-        _logger.info(f"CHECK: {len(records)} registros de {model_name} validados en sucursal {id_b}")
+        _logger.info(
+            f"CHECK: {len(records)} registros de {model_name} validados en sucursal {id_b}"
+        )
         # Aquí se podría disparar un Model._check_company() si fuera necesario
         # Por ahora logueamos la permanencia exitosa.
 
@@ -367,7 +424,9 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
     id_b_str = str(id_b)
 
     # 1. Buscar todos los campos company_dependent registrados
-    dependent_fields = env["ir.model.fields"].search([("company_dependent", "=", True), ("store", "=", True)])
+    dependent_fields = env["ir.model.fields"].search(
+        [("company_dependent", "=", True), ("store", "=", True)]
+    )
 
     # Agrupamos por modelo para hacer un solo UPDATE por tabla
     model_map = {}
@@ -450,8 +509,15 @@ def merge_accounts_by_code(env, id_a):
             )
             keeper = duplicate_accounts.sorted("id")[0]
             for acc in duplicate_accounts.filtered(lambda a: a.id != keeper.id):
-                new_code = get_next_available_code(env, acc.code, exclude_account_id=acc.id)
-                _logger.info("Renombrando cuenta id=%s: code '%s' -> '%s'", acc.id, acc.code, new_code)
+                new_code = get_next_available_code(
+                    env, acc.code, exclude_account_id=acc.id
+                )
+                _logger.info(
+                    "Renombrando cuenta id=%s: code '%s' -> '%s'",
+                    acc.id,
+                    acc.code,
+                    new_code,
+                )
                 acc.write({"code": new_code})
             continue
 
@@ -483,15 +549,16 @@ def preprocess_unique_move_conflicts(cr, model_name, id_a, id_b):
     for query in queries:
         _logger.info("Preprocesando colisiones UNIQUE para %s", model_name)
         # Contar cuántos placeholders %s tiene la query
-        param_count = query.count('%s')
+        param_count = query.count("%s")
         # Pasar los parámetros correctos según la cantidad
         if param_count == 2:
             cr.execute(query, (id_b, id_a))
         elif param_count == 3:
             cr.execute(query, (id_b, id_a, id_a))
         else:
-            _logger.warning(f"Query con {param_count} parámetros no soportada para {model_name}")
-
+            _logger.warning(
+                f"Query con {param_count} parámetros no soportada para {model_name}"
+            )
 
 
 # def sync_account_codes_sql(cr, rel_table, rel_account_col, rel_company_col, id_a, id_b):
@@ -543,9 +610,18 @@ def migrate_standard_fields(cr, env, id_a, id_b):
             if field.ttype == "many2one":
                 if field.name == "company_id":
                     preprocess_unique_move_conflicts(cr, model_name, id_a, id_b)
-                if field.name == "company_id" and model_name in MODELS_WITH_UNIQUE_NAMES:
-                    cr.execute(f"UPDATE {table} SET name = name || '-B' WHERE company_id = %s", [id_b])
-                cr.execute(f"UPDATE {table} SET {field.name} = %s WHERE {field.name} = %s", (id_a, id_b))
+                if (
+                    field.name == "company_id"
+                    and model_name in MODELS_WITH_UNIQUE_NAMES
+                ):
+                    cr.execute(
+                        f"UPDATE {table} SET name = name || '-B' WHERE company_id = %s",
+                        [id_b],
+                    )
+                cr.execute(
+                    f"UPDATE {table} SET {field.name} = %s WHERE {field.name} = %s",
+                    (id_a, id_b),
+                )
             elif field.ttype == "many2many":
                 rel_table = field.relation_table
                 # if field.model == "account.account":
@@ -564,10 +640,14 @@ def migrate_standard_fields(cr, env, id_a, id_b):
                 """,
                     (id_a, id_b, id_a),
                 )
-                cr.execute(f"DELETE FROM {rel_table} WHERE {field.column2} = %s", (id_b,))
+                cr.execute(
+                    f"DELETE FROM {rel_table} WHERE {field.column2} = %s", (id_b,)
+                )
         else:
             continue
-            _logger.warning(f"Estrategia desconocida '{strategy}' para el modelo '{model_name}'")
+            _logger.warning(
+                f"Estrategia desconocida '{strategy}' para el modelo '{model_name}'"
+            )
 
 
 def create_mapping(cr):
@@ -596,22 +676,41 @@ def create_mapping(cr):
       )"""
     cr.execute(query)
     result = cr.fetchone()
-    if result[0] > 0 and len(env["stock.warehouse"].search([("company_id", "!=", False)]).mapped("company_id").filtered("active")) == 1:
+    if (
+        result[0] > 0
+        and len(
+            env["stock.warehouse"]
+            .search([("company_id", "!=", False)])
+            .mapped("company_id")
+            .filtered("active")
+        )
+        == 1
+    ):
         if len(env["res.company"].search([])) != 2:
             raise UserError(
                 'Hay más de dos companías y cruces, se debe configurar manualmente el mapeo de compañías con parametro "migration_19_end_multicompany".'
             )
         # Estos IDs deben ser parametrizables según el cliente
-        id_empresa_b = env["stock.warehouse"].search([("company_id", "!=", False),("company_id.active", "=", True)]).mapped("company_id")
+        id_empresa_b = (
+            env["stock.warehouse"]
+            .search([("company_id", "!=", False), ("company_id.active", "=", True)])
+            .mapped("company_id")
+        )
         id_empresa_a = env["res.company"].search([("id", "!=", id_empresa_b[0].id)])
         company_mapping = {"a": id_empresa_a[0].id, "b": id_empresa_b[0].id}
-        env["ir.config_parameter"].sudo().set_param("migration_19_end_multicompany", company_mapping)
+        env["ir.config_parameter"].sudo().set_param(
+            "migration_19_end_multicompany", company_mapping
+        )
     return company_mapping
 
 
 def migrate(cr, version):
     env = util.env(cr)
-    company_mapping = safe_eval(env["ir.config_parameter"].sudo().get_param("migration_19_end_multicompany", "{}"))
+    company_mapping = safe_eval(
+        env["ir.config_parameter"]
+        .sudo()
+        .get_param("migration_19_end_multicompany", "{}")
+    )
     if not company_mapping:
         company_mapping = create_mapping(cr)
 
@@ -647,7 +746,9 @@ def migrate(cr, version):
 
         # 4. Limpieza: Archivar cuentas de la sucursal
         _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
-        env["account.account"].search([("company_ids", "=", id_b)]).write({"active": False})
+        env["account.account"].search([("company_ids", "=", id_b)]).write(
+            {"active": False}
+        )
 
         # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
         env["res.company"].browse(id_b)._write({"parent_id": id_a})
@@ -672,7 +773,7 @@ def migrate(cr, version):
 
     for warehouse in env["stock.warehouse"].search([]):
         for id_b in ids_b:
-            if warehouse.partner_id.name  == env['res.company'].browse(id_b).name:
+            if warehouse.partner_id.name == env["res.company"].browse(id_b).name:
                 warehouse.partner_id = warehouse.company_id.partner_id
     env["account.journal"].search([]).write({"shared_to_branches": False})
     cr.commit()
