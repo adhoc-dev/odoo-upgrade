@@ -267,23 +267,19 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
     for rec_b in records_b:
         # Construir dominio de búsqueda para el equivalente en A
         domain = company_domain.copy()
-        for field in criteria_fields:
-            # Validar que el campo existe en el modelo antes de usarlo
-            search_field = field
-            if field not in rec_b._fields:
-                # Si 'name' no existe, intentar usar 'display_name' como fallback
-                # if field == 'name' and 'display_name' in rec_b._fields:
-                #     search_field = 'display_name'
-                # else:
-                #     _logger.warning(f"Campo '{field}' no existe en {model_name}, saltando criterio")
-                #     continue
-                rec_a = False
-            else:
-                field_value = getattr(rec_b, search_field, None)
-                if field_value is not None:
-                    domain.append((search_field, "=", field_value))
+        valid_criteria = True
 
-                rec_a = Model.with_context(active_test=False).search(domain, limit=1)
+        for field in criteria_fields:
+            if field not in rec_b._fields:
+                valid_criteria = False
+                break
+
+            field_value = getattr(rec_b, field, None)
+            if field_value is not None:
+                domain.append((field, "=", field_value))
+
+        # Search UNA sola vez, fuera del loop, con el dominio completo
+        rec_a = Model.with_context(active_test=False).search(domain, limit=1) if valid_criteria else False
 
         if rec_a:
             # Para impuestos inactivos, priorizamos moverlos a la matriz para no dejarlos en la sucursal.
@@ -316,14 +312,6 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                     (rec_a.id, rec_b.id),
                 )
             
-            # Aquí usamos el método de merge (si existe) o re-mapeamos manualmente
-            # En Odoo 19, si usas _data_merge sería:
-            # Model._data_merge(rec_b, rec_a)
-
-            # Si no tienes _data_merge, un re-mapping manual básico en SQL:
-            # UPDATE {rel_table} SET {tax_field} = rec_a.id WHERE {tax_field} = rec_b.id
-            # Para este ejemplo, simularemos que lo unimos:
-            # Marcar como deprecated antes de archivar (usar ID para evitar duplicados)
             if "name" in rec_b._fields:
                 rec_b.name = f"[DEPRECATED-{rec_b.id}] {rec_b.name}"
             if "active" in rec_b._fields:
