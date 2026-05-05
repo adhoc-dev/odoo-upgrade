@@ -260,6 +260,7 @@ def table_exists(cr, table_name):
             SELECT 1
             FROM information_schema.tables
             WHERE table_name=%s
+              AND table_type = 'BASE TABLE'
         )
     """,
         (table_name,),
@@ -322,11 +323,13 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
         if model_name == "account.tax":
             # Buscar por tax_group primero si existe
             if rec_b.tax_group_id:
-                domain.extend([
-                    "|",
-                    ("tax_group_id.name", "=", rec_b.tax_group_id.name),
-                    ("name", "=", rec_b.name),
-                ])
+                domain.extend(
+                    [
+                        "|",
+                        ("tax_group_id.name", "=", rec_b.tax_group_id.name),
+                        ("name", "=", rec_b.name),
+                    ]
+                )
 
         for field in criteria_fields:
             if field not in rec_b._fields:
@@ -338,7 +341,11 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                 domain.append((field, "=", field_value))
 
         # Search UNA sola vez, fuera del loop, con el dominio completo
-        rec_a = Model.with_context(active_test=False).search(domain, limit=1) if valid_criteria else False
+        rec_a = (
+            Model.with_context(active_test=False).search(domain, limit=1)
+            if valid_criteria
+            else False
+        )
         if rec_a:
             # Para impuestos inactivos, priorizamos moverlos a la matriz para no dejarlos en la sucursal.
             if (
@@ -392,8 +399,13 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                             fk.name,
                         )
                 else:
-                    _logger.info("Saltando FK: %s.%s porque la tabla %s no existe", fk.model, fk.name, fk_table)
-            
+                    _logger.info(
+                        "Saltando FK: %s.%s porque la tabla %s no existe",
+                        fk.model,
+                        fk.name,
+                        fk_table,
+                    )
+
             if "name" in rec_b._fields:
                 rec_b.name = f"[DEPRECATED-{rec_b.id}] {rec_b.name}"
             if "active" in rec_b._fields:
