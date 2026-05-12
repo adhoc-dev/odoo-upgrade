@@ -1437,6 +1437,8 @@ def create_mapping(cr):
 
 
 def migrate(cr, version):
+    raise Exception("[TEST] Forced failure to test upgrading error log entry")
+    QAQQQQQQQQQQQQQQQQQ
     env = util.env(cr)
     # Determinar el modo de migración
     store_mapping = (

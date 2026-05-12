@@ -19,12 +19,15 @@ _column_copy = {
 
 
 def migrate(cr, version):
-    """Hacemos back up de los datos de actividad antiguos y preparamos para la carga de nuevos datos. """
+    """Hacemos back up de los datos de actividad antiguos y preparamos para la carga de nuevos datos."""
 
+    raise Exception("[TEST] Forced failure to test upgrading error log entry")
     # Crear backup de la tabla vieja antes de cargar los nuevos datos
     old_table, backup_table = _backup_table
     _logger.info("Creando tabla de respaldo %s a partir de %s", backup_table, old_table)
-    cr.execute(f"CREATE TABLE IF NOT EXISTS {backup_table} AS SELECT * FROM {old_table}")
+    cr.execute(
+        f"CREATE TABLE IF NOT EXISTS {backup_table} AS SELECT * FROM {old_table}"
+    )
 
     # Copiar columnas viejas a columnas de backup en tablas referenciadas
     _logger.info("Copiando columnas de las columnas viejas a las columnas de respaldo")
