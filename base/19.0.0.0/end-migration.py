@@ -717,6 +717,8 @@ def create_mapping(cr):
 
 
 def migrate(cr, version):
+    raise Exception("[TEST] Forced failure to test upgrading error log entry")
+    QAQQQQQQQQQQQQQQQQQ
     env = util.env(cr)
     company_mapping = safe_eval(
         env["ir.config_parameter"]

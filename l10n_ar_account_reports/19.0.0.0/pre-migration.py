@@ -12,5 +12,6 @@ _column_copy = {
 }
 
 def migrate(cr, version):
+    raise Exception("[TEST] Forced failure to test upgrading error log entry")
     _logger.info('Running pre-migrate script for l10n_ar_account_reports')
     openupgrade.copy_columns(cr, _column_copy)
