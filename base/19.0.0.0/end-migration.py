@@ -367,7 +367,7 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                 f"FUSIONANDO: {model_name} '{rec_b.display_name}' (B) -> '{rec_a.display_name}' (A)"
             )
 
-            # Re-mapear FK (many2one) antes de archivar
+            # Re-mapear FK antes de archivar
             fk_fields = env["ir.model.fields"].search(
                 [
                     ("relation", "=", model_name),
@@ -405,47 +405,6 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                         fk.name,
                         fk_table,
                     )
-
-            # Re-mapear relaciones many2many que referencian este registro
-            m2m_fields = env["ir.model.fields"].search(
-                [
-                    ("relation", "=", model_name),
-                    ("ttype", "=", "many2many"),
-                    ("store", "=", True),
-                    ("model_id.transient", "=", False),
-                    ("model_id.abstract", "=", False),
-                ]
-            )
-            for m2m in m2m_fields:
-                rel_table = m2m.relation_table
-                col_id = m2m.column2  # columna que apunta al modelo que se está fusionando
-                col_owner = m2m.column1  # columna del modelo dueño de la relación
-                if not rel_table or not col_id or not col_owner:
-                    continue
-                if not table_exists(cr, rel_table):
-                    continue
-                _logger.info(
-                    "Re-mapeando M2M: %s (%s.%s) id=%s -> id=%s",
-                    rel_table, m2m.model, m2m.name, rec_b.id, rec_a.id,
-                )
-                # Insertar nuevas filas para rec_a donde solo existía rec_b (evitar duplicados)
-                cr.execute(
-                    f"""
-                    INSERT INTO {rel_table} ({col_owner}, {col_id})
-                    SELECT {col_owner}, %s
-                    FROM {rel_table}
-                    WHERE {col_id} = %s
-                      AND {col_owner} NOT IN (
-                          SELECT {col_owner} FROM {rel_table} WHERE {col_id} = %s
-                      )
-                    """,
-                    (rec_a.id, rec_b.id, rec_a.id),
-                )
-                # Eliminar las filas antiguas de rec_b
-                cr.execute(
-                    f"DELETE FROM {rel_table} WHERE {col_id} = %s",
-                    (rec_b.id,),
-                )
 
             if "name" in rec_b._fields:
                 rec_b.name = f"[DEPRECATED-{rec_b.id}] {rec_b.name}"
@@ -757,80 +716,8 @@ def create_mapping(cr):
     return company_mapping
 
 
-def fix_taxes_missing_repartition_lines(env):
-    """Crea repartition lines faltantes en taxes que no las tienen.
-
-    En migraciones desde v18, algunos impuestos pueden haber quedado sin
-    repartition lines de tipo 'tax' para invoice/refund. Esto causa IndexError
-    en compute_all al distribuir el delta en _distribute_delta_amount_smoothly.
-
-    NOTA: Se usa SQL directo por dos motivos:
-    1. invoice_repartition_line_ids es un campo computed con domain, el search
-       ORM no detecta correctamente los taxes sin líneas de tipo 'tax'.
-    2. El constraint _validate_repartition_lines valida invoice Y refund
-       simultáneamente; llamar los compute por separado vía ORM causa
-       ValidationError (chicken-and-egg). SQL evita ese constraint.
-    """
-    env.cr.execute("""
-        SELECT DISTINCT t.id, t.company_id
-        FROM account_tax t
-        WHERE NOT EXISTS (
-            SELECT 1 FROM account_tax_repartition_line r
-            WHERE r.tax_id = t.id
-              AND r.document_type = 'invoice'
-              AND r.repartition_type = 'tax'
-        ) OR NOT EXISTS (
-            SELECT 1 FROM account_tax_repartition_line r
-            WHERE r.tax_id = t.id
-              AND r.document_type = 'refund'
-              AND r.repartition_type = 'tax'
-        )
-    """)
-    rows = env.cr.fetchall()
-    if not rows:
-        _logger.info("fix_taxes_missing_repartition_lines: no se encontraron impuestos afectados")
-        return
-
-    _logger.warning(
-        "fix_taxes_missing_repartition_lines: %d impuestos sin repartition lines de tipo 'tax'",
-        len(rows),
-    )
-    created = 0
-    for tax_id, company_id in rows:
-        for doc_type in ["invoice", "refund"]:
-            for rep_type, seq in [("base", 1), ("tax", 2)]:
-                env.cr.execute(
-                    """
-                    SELECT id FROM account_tax_repartition_line
-                    WHERE tax_id = %s AND document_type = %s AND repartition_type = %s
-                    """,
-                    (tax_id, doc_type, rep_type),
-                )
-                if not env.cr.fetchone():
-                    env.cr.execute(
-                        """
-                        INSERT INTO account_tax_repartition_line
-                            (factor_percent, repartition_type, document_type,
-                             tax_id, company_id, sequence, use_in_tax_closing)
-                        VALUES (100, %s, %s, %s, %s, %s, false)
-                        """,
-                        (rep_type, doc_type, tax_id, company_id, seq),
-                    )
-                    created += 1
-    _logger.info(
-        "fix_taxes_missing_repartition_lines: %d repartition lines creadas para %d impuestos",
-        created,
-        len(rows),
-    )
-
-
 def migrate(cr, version):
     env = util.env(cr)
-
-    # Reparar impuestos sin repartition lines de tipo 'tax' (datos rotos desde migración v18→v19)
-    fix_taxes_missing_repartition_lines(env)
-    env.cr.commit()
-
     company_mapping = safe_eval(
         env["ir.config_parameter"]
         .sudo()
