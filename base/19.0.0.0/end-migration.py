@@ -189,8 +189,8 @@ MODEL_STRATEGY = {
     "res.partner": "KEEP",
     "res.company": "KEEP",
     "ir.default": "KEEP",
-    "product.template": "KEEP",
-    "product.product": "KEEP",
+    "product.template": "MOVE_TO_PARENT",
+    "product.product": "MOVE_TO_PARENT",
     "product.pricelist": "KEEP",
     "product.category": "KEEP",
     "res.users": "KEEP",
@@ -410,6 +410,7 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                 rec_b.name = f"[DEPRECATED-{rec_b.id}] {rec_b.name}"
             if "active" in rec_b._fields:
                 rec_b.active = False  # Archivamos el de B para que no moleste
+                _move_record_to_parent(rec_b)
         else:
             # No hay equivalente, simplemente lo movemos a la matriz
             _logger.info(f"MOVIENDO: {model_name} '{rec_b.display_name}' a compañía A")
