@@ -623,23 +623,37 @@ def migrate_standard_fields(cr, env, id_a, id_b):
             if field.ttype == "many2one":
                 if field.name == "company_id":
                     preprocess_unique_move_conflicts(cr, model_name, id_a, id_b)
-                if (
-                    field.name == "company_id"
-                    and model_name in MODELS_WITH_UNIQUE_NAMES
-                ):
+                    if model_name in MODELS_WITH_UNIQUE_NAMES:
+                        # Renombrar registros de sucursales para evitar colisiones UNIQUE
+                        cr.execute(
+                            f"""
+                            UPDATE {table} SET name = name || '-B'
+                             WHERE {field.name} IN (
+                                   SELECT id FROM res_company WHERE parent_id = %s
+                             )
+                            """,
+                            [id_a],
+                        )
+                    # Mover TODOS los registros de cualquier sucursal directa de id_a.
+                    # Cubre empresas auxiliares no mapeadas explícitamente porque
+                    # en el paso 0 ya se les seteó parent_id = id_a.
                     cr.execute(
-                        f"UPDATE {table} SET name = name || '-B' WHERE company_id = %s",
-                        [id_b],
+                        f"""
+                        UPDATE {table} SET {field.name} = %s
+                         WHERE {field.name} IN (
+                               SELECT id FROM res_company WHERE parent_id = %s
+                         )
+                        """,
+                        (id_a, id_a),
                     )
-                cr.execute(
-                    f"UPDATE {table} SET {field.name} = %s WHERE {field.name} = %s",
-                    (id_a, id_b),
-                )
+                else:
+                    # Otros many2one que apuntan a res.company (no company_id)
+                    cr.execute(
+                        f"UPDATE {table} SET {field.name} = %s WHERE {field.name} = %s",
+                        (id_a, id_b),
+                    )
             elif field.ttype == "many2many":
                 rel_table = field.relation_table
-                # if field.model == "account.account":
-                #     sync_account_codes_sql(cr, rel_table, field.column1, field.column2, id_a, id_b)
-
                 cr.execute(
                     f"""
                     UPDATE {rel_table}
@@ -650,7 +664,7 @@ def migrate_standard_fields(cr, env, id_a, id_b):
                               FROM {rel_table}
                              WHERE {field.column2} = %s
                        )
-                """,
+                    """,
                     (id_a, id_b, id_a),
                 )
                 cr.execute(
