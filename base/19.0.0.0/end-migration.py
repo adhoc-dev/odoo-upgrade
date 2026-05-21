@@ -184,7 +184,7 @@ MODEL_STRATEGY = {
     "account.analytic.line": "MERGE_OR_MOVE",
     "account.journal.group": "MERGE_OR_MOVE",
     "account.fiscal.position.account": "MERGE_OR_MOVE",
-    "account.tax.repartition.line": "KEEP",
+    "account.tax.repartition.line": "MOVE_TO_PARENT",
     # --- MAESTROS (KEEP - No tocamos company_id porque ya funcionaban) ---
     "res.partner": "KEEP",
     "res.company": "KEEP",
