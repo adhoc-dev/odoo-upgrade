@@ -131,7 +131,7 @@ UNIQUE_MOVE_PREPROCESSORS = {
 
 # Definimos criterios de equivalencia para el Merge
 MERGE_CRITERIA = {
-    "account.tax": ["name", "amount", "type_tax_use"],
+    "account.tax": ["tax_group_id.name", "amount", "type_tax_use"],
     "account.tax.group": ["name"],
     "account.fiscal.position": ["name"],
     "account.payment.term": ["name"],
@@ -389,11 +389,18 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                 )
 
         for field in criteria_fields:
-            if field not in rec_b._fields:
+            root_field = field.split(".")[0]
+            if root_field not in rec_b._fields:
                 valid_criteria = False
                 break
 
-            field_value = getattr(rec_b, field, None)
+            # Navegar rutas con punto (ej. 'tax_group_id.name')
+            field_value = rec_b
+            for part in field.split("."):
+                field_value = getattr(field_value, part, None)
+                if field_value is None:
+                    break
+
             if field_value is not None:
                 domain.append((field, "=", field_value))
 
