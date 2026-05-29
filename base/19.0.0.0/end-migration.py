@@ -1389,6 +1389,12 @@ def migrate(cr, version):
                 if warehouse.partner_id.name  == env['res.company'].browse(id_b).name:
                     warehouse.partner_id = warehouse.company_id.partner_id
         env["account.journal"].search([]).write({"shared_to_branches": False})
+        env["ir.model.data"].search([
+            ("model", "=", "res.company"),
+            ("name", "=", "main_company"),
+            ("res_id","!=",id_a)],
+            ("res_id","in",ids_b)
+        ).write({"res_id": id_a})
         cr.commit()
     # ========================================================================
     # MODE 1: STORE TO BRANCH (Single company with multi-store -> Multi-company branches)
