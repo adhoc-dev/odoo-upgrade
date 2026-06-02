@@ -1259,6 +1259,25 @@ def migrate_standard_fields(cr, env, id_a, id_b):
             _logger.warning(
                 f"Estrategia desconocida '{strategy}' para el modelo '{model_name}'"
             )
+    # ---- NUEVO: limpiar journal_id inconsistente en sale.order.type ----
+    # Después de mover sale.order.type a la parent (company_id e invoice_company_id -> id_a),
+    # el journal_id puede seguir apuntando a un diario de la sucursal (id_b).
+    # Odoo valida que journal.company_id sea compatible con invoice_company_id al facturar,
+    # por eso lo ponemos en NULL para que Odoo elija el diario correcto automáticamente.
+    cr.execute(
+        """
+        UPDATE sale_order_type sot
+           SET journal_id = NULL
+         WHERE sot.journal_id IS NOT NULL
+           AND EXISTS (
+               SELECT 1
+                 FROM account_journal aj
+                WHERE aj.id = sot.journal_id
+                  AND aj.company_id = %s
+           )
+        """,
+        (id_b,),
+    )
 
 
 def create_mapping(cr):
