@@ -470,6 +470,45 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                         fk_table,
                     )
 
+            # Re-mapear many2many antes de archivar
+            m2m_fields = env["ir.model.fields"].search(
+                [
+                    ("relation", "=", model_name),
+                    ("ttype", "=", "many2many"),
+                    ("store", "=", True),
+                    ("model_id.transient", "=", False),
+                    ("model_id.abstract", "=", False),
+                ]
+            )
+            for m2m in m2m_fields:
+                rel_table = m2m.relation_table
+                col2 = m2m.column2
+                if rel_table and col2 and table_exists(cr, rel_table):
+                    _logger.info(
+                        "Re-mapeando M2M: %s (tabla=%s col=%s) id=%s -> id=%s",
+                        m2m.model,
+                        rel_table,
+                        col2,
+                        rec_b.id,
+                        rec_a.id,
+                    )
+                    # Evitar duplicados antes de actualizar
+                    col1 = m2m.column1
+                    cr.execute(
+                        f"""
+                        DELETE FROM {rel_table} t
+                        USING {rel_table} existing
+                        WHERE t.{col2} = %s
+                          AND existing.{col1} = t.{col1}
+                          AND existing.{col2} = %s
+                        """,
+                        (rec_b.id, rec_a.id),
+                    )
+                    cr.execute(
+                        f"UPDATE {rel_table} SET {col2} = %s WHERE {col2} = %s",
+                        (rec_a.id, rec_b.id),
+                    )
+
             if "name" in rec_b._fields:
                 rec_b.name = f"[DEPRECATED-{rec_b.id}] {rec_b.name}"
             if "active" in rec_b._fields:
