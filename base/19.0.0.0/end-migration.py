@@ -1331,8 +1331,53 @@ def create_mapping(cr):
         env["ir.config_parameter"].sudo().set_param(
             "migration_19_end_multicompany", company_mapping
         )
+    elif (
+        result[0] > 0
+        and len(
+            env["stock.warehouse"]
+            .search([("company_id", "!=", False)])
+            .mapped("company_id")
+            .filtered("active")
+        )
+        == 2
+    ):
+        if len(env["res.company"].search([])) != 2:
+            raise UserError(
+                'Hay más de dos companías y cruces, se debe configurar manualmente el mapeo de compañías con parametro "migration_19_end_multicompany".'
+            )
+        # B = la company cuyos diarios de venta NO usan documentos LATAM.
+        # Si tiene al menos uno con use_documents=True, no puede ser B.
+        # Si ambas tienen diarios con use_documents=True, no se puede auto-detectar.
+        companies_with_warehouses = (
+            env["stock.warehouse"]
+            .search([("company_id", "!=", False), ("company_id.active", "=", True)])
+            .mapped("company_id")
+        )
+        id_empresa_b = env["res.company"]
+        for company in companies_with_warehouses:
+            has_docs_journal = env["account.journal"].search(
+                [
+                    ("company_id", "=", company.id),
+                    ("type", "=", "sale"),
+                    ("l10n_latam_use_documents", "=", True),
+                ],
+                limit=1,
+            )
+            if not has_docs_journal:
+                id_empresa_b = company
+                break
+        if not id_empresa_b:
+            raise UserError(
+                "No se pudo detectar automáticamente cuál es la sucursal (B): ambas compañías "
+                "tienen diarios de venta con documentos LATAM. Configurar manualmente el "
+                'parámetro "migration_19_end_multicompany".'
+            )
+        id_empresa_a = companies_with_warehouses.filtered(lambda c: c.id != id_empresa_b.id)
+        company_mapping = {"a": id_empresa_a.id, "b": id_empresa_b.id}
+        env["ir.config_parameter"].sudo().set_param(
+            "migration_19_end_multicompany", company_mapping
+        )
     return company_mapping
-
 
 def migrate(cr, version):
     env = util.env(cr)
