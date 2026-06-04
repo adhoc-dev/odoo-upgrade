@@ -241,14 +241,14 @@ MODEL_STRATEGY = {
     "account.analytic.line": "MERGE_OR_MOVE",
     "account.journal.group": "MERGE_OR_MOVE",
     "account.fiscal.position.account": "MERGE_OR_MOVE",
-    "account.tax.repartition.line": "MOVE_TO_PARENT",
+    "account.tax.repartition.line": "KEEP",
     # --- MAESTROS (KEEP - No tocamos company_id porque ya funcionaban) ---
     "res.partner": "KEEP",
     "res.company": "KEEP",
     "ir.default": "KEEP",
     "product.template": "MOVE_TO_PARENT",
     "product.product": "MOVE_TO_PARENT",
-    "product.pricelist": "KEEP",
+    "product.pricelist": "MOVE_TO_PARENT",
     "product.category": "KEEP",
     "res.users": "KEEP",
     "res.partner.bank": "KEEP",
@@ -432,6 +432,16 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             )
 
             # Re-mapear FK antes de archivar
+            # Modelos cuyas FKs NO deben remapearse porque son "hijos propios"
+            # del registro y deben seguir apuntando a él (no al equivalente en A).
+            # Ej: account.tax.repartition.line.tax_id debe quedarse en el impuesto
+            # original de B (que luego se archiva y se mueve a A), no moverse a
+            # los repartition lines del impuesto A.
+            SKIP_FK_REMAP_MODELS = {
+                "account.tax": {"account.tax.repartition.line"},
+            }
+            skip_models = SKIP_FK_REMAP_MODELS.get(model_name, set())
+
             fk_fields = env["ir.model.fields"].search(
                 [
                     ("relation", "=", model_name),
@@ -442,6 +452,13 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                 ]
             )
             for fk in fk_fields:
+                if fk.model in skip_models:
+                    _logger.info(
+                        "Saltando FK: %s.%s (modelo hijo propio, no se redirige al equivalente en A)",
+                        fk.model,
+                        fk.name,
+                    )
+                    continue
                 fk_table = fk.model.replace(".", "_")
                 if table_exists(cr, fk_table):
                     if is_integer_column(cr, fk_table, fk.name):
@@ -841,7 +858,7 @@ def get_store_to_company_mapping(env):
                     "name": store_name,
                     "parent_id": company_parent_id,
                     "currency_id": parent_company.currency_id.id,
-                    'l10n_ar_afip_responsibility_type_id': parent_company.l10n_ar_afip_responsibility_type_id.id,
+                    "l10n_ar_afip_responsibility_type_id": parent_company.l10n_ar_afip_responsibility_type_id.id,
                 }
             )
             store_to_company[store_id] = new_company.id
@@ -911,8 +928,8 @@ def migrate_store_fields_to_company(cr, env, mapping):
 
         # Para cada store, actualizar los registros
         for store_id in mapping["b"]:
-            store_id =  env['res.company'].browse(store_id)
-            company_id = env['res.company'].browse(mapping["a"])
+            store_id = env["res.company"].browse(store_id)
+            company_id = env["res.company"].browse(mapping["a"])
             if field.ttype == "many2one":
                 # Verificar si el campo es related o computed
                 field_obj = Model._fields.get(field_name)
@@ -997,7 +1014,6 @@ def migrate_store_to_branch(cr, env):
 
     parent_company_id = mapping["a"]
     branch_company_ids = mapping["b"]
-
 
     Company = env["res.company"]
     parent_company = Company.browse(parent_company_id)
@@ -1264,20 +1280,33 @@ def migrate_standard_fields(cr, env, id_a, id_b):
     # el journal_id puede seguir apuntando a un diario de la sucursal (id_b).
     # Odoo valida que journal.company_id sea compatible con invoice_company_id al facturar,
     # por eso lo ponemos en NULL para que Odoo elija el diario correcto automáticamente.
+
     cr.execute(
         """
-        UPDATE sale_order_type sot
-           SET journal_id = NULL
-         WHERE sot.journal_id IS NOT NULL
-           AND EXISTS (
-               SELECT 1
-                 FROM account_journal aj
-                WHERE aj.id = sot.journal_id
-                  AND aj.company_id = %s
-           )
-        """,
-        (id_b,),
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_name = 'sale_order_type'
+        )
+    """,
     )
+
+    sale_order_type_table = cr.fetchone()[0]
+
+    if sale_order_type_table:
+        cr.execute(
+            """
+            UPDATE sale_order_type sot
+            SET journal_id = NULL
+            WHERE sot.journal_id IS NOT NULL
+            AND EXISTS (
+                SELECT 1
+                    FROM account_journal aj
+                    WHERE aj.id = sot.journal_id
+                    AND aj.company_id = %s
+            )
+            """,
+            (id_b,),
+        )
 
 
 def create_mapping(cr):
@@ -1340,7 +1369,11 @@ def migrate(cr, version):
     store_mapping = (
         env["ir.config_parameter"].sudo().get_param("migration_19_end_store_to_branch")
     )
-    company_mapping = safe_eval(env["ir.config_parameter"].sudo().get_param("migration_19_end_multicompany", "{}"))
+    company_mapping = safe_eval(
+        env["ir.config_parameter"]
+        .sudo()
+        .get_param("migration_19_end_multicompany", "{}")
+    )
     # ========================================================================
     # MODE 1: COMPANY MERGE (Two companies A and B -> B becomes branch of A)
     # ========================================================================
@@ -1364,13 +1397,17 @@ def migrate(cr, version):
 
         for id_b in ids_b:
             # 0. Establecer Jerarquía Branch
-            cr.execute("UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b))
+            cr.execute(
+                "UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b)
+            )
 
             # 1. Movimiento Operativo (SQL)
             migrate_standard_fields(cr, env, id_a, id_b)
 
             # 2. Fusión de Configuración (ORM)
-            merge_models = [m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"]
+            merge_models = [
+                m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"
+            ]
             for model_name in merge_models:
                 handle_merge_or_move(env, model_name, id_a, id_b)
                 cr.commit()
@@ -1380,7 +1417,9 @@ def migrate(cr, version):
 
             # 4. Limpieza: Archivar cuentas de la sucursal
             _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
-            env["account.account"].search([("company_ids", "=", id_b)]).write({"active": False})
+            env["account.account"].search([("company_ids", "=", id_b)]).write(
+                {"active": False}
+            )
 
             # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
             env["res.company"].browse(id_b)._write({"parent_id": id_a})
@@ -1405,7 +1444,7 @@ def migrate(cr, version):
 
         for warehouse in env["stock.warehouse"].search([]):
             for id_b in ids_b:
-                if warehouse.partner_id.name  == env['res.company'].browse(id_b).name:
+                if warehouse.partner_id.name == env["res.company"].browse(id_b).name:
                     warehouse.partner_id = warehouse.company_id.partner_id
         env["account.journal"].search([]).write({"shared_to_branches": False})
         cr.commit()
@@ -1439,5 +1478,7 @@ def migrate(cr, version):
                 pmls.invalidate_recordset(["shared_to_branches"])
                 pmls.flush_recordset(["shared_to_branches"])
 
-            env["account.journal"].search([('company_id', '=', parent_company_id)]).write({"shared_to_branches": True})
+            env["account.journal"].search(
+                [("company_id", "=", parent_company_id)]
+            ).write({"shared_to_branches": True})
             cr.commit()
