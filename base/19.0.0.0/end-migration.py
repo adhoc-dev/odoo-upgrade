@@ -1422,7 +1422,7 @@ def migrate(cr, version):
     # ========================================================================
     # MODE 1: COMPANY MERGE (Two companies A and B -> B becomes branch of A)
     # ========================================================================
-    if not store_mapping:
+    if not store_mapping or store_mapping == '{}':
         if not company_mapping:
             company_mapping = create_mapping(cr)
 
@@ -1496,7 +1496,7 @@ def migrate(cr, version):
     # ========================================================================
     # MODE 1: STORE TO BRANCH (Single company with multi-store -> Multi-company branches)
     # ========================================================================
-    if not company_mapping:
+    if not company_mapping or company_mapping == '{}':
         if not store_mapping or store_mapping == "{}":
             store_mapping = get_store_to_company_mapping(env)
             env.cr.commit()
