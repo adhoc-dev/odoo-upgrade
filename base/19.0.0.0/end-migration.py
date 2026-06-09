@@ -1457,70 +1457,74 @@ def migrate(cr, version):
         if not company_mapping:
             _logger.warning("No company mapping found, skipping migration")
             return
+        
+        if not isinstance(company_mapping, (list, tuple)):
+            company_mapping = [company_mapping]
 
-        id_a = company_mapping.get("a")
-        ids_b = company_mapping.get("b")
+        for mapping in company_mapping:
+            id_a = mapping.get("a")
+            ids_b = mapping.get("b")
 
-        if not id_a or not ids_b:
-            _logger.warning("Invalid company mapping, skipping migration")
-            return
+            if not id_a or not ids_b:
+                _logger.warning("Invalid company mapping, skipping migration")
+                return
 
-        if not isinstance(ids_b, (list, tuple)):
-            ids_b = [ids_b]
+            if not isinstance(ids_b, (list, tuple)):
+                ids_b = [ids_b]
 
-        for id_b in ids_b:
-            # 0. Establecer Jerarquía Branch
-            cr.execute(
-                "UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b)
-            )
+            for id_b in ids_b:
+                # 0. Establecer Jerarquía Branch
+                cr.execute(
+                    "UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b)
+                )
 
-            # 1. Movimiento Operativo (SQL)
-            migrate_standard_fields(cr, env, id_a, id_b)
+                # 1. Movimiento Operativo (SQL)
+                migrate_standard_fields(cr, env, id_a, id_b)
 
-            # 2. Fusión de Configuración (ORM)
-            merge_models = [
-                m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"
-            ]
-            for model_name in merge_models:
-                handle_merge_or_move(env, model_name, id_a, id_b)
+                # 2. Fusión de Configuración (ORM)
+                merge_models = [
+                    m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"
+                ]
+                for model_name in merge_models:
+                    handle_merge_or_move(env, model_name, id_a, id_b)
+                    cr.commit()
+
+                # 3. Propiedades JSONB (SQL)
+                migrate_json_company_dependent(cr, env, id_a, id_b)
+
+                # 4. Limpieza: Archivar cuentas de la sucursal
+                _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
+                env["account.account"].search([("company_ids", "=", id_b)]).write(
+                    {"active": False}
+                )
+
+                # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
+                env["res.company"].browse(id_b)._write({"parent_id": id_a})
+                # 5.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
+                env["res.company"]._parent_store_compute()
                 cr.commit()
 
-            # 3. Propiedades JSONB (SQL)
-            migrate_json_company_dependent(cr, env, id_a, id_b)
+                # 6. Fusiona cuentas contables
+                merge_accounts_by_code(env, id_a)
 
-            # 4. Limpieza: Archivar cuentas de la sucursal
-            _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
-            env["account.account"].search([("company_ids", "=", id_b)]).write(
-                {"active": False}
-            )
+                # 7.1. Recomputa campos stored en journals que dependen de la jerarquía
+                journals = env["account.journal"].search([])
+                journals.invalidate_recordset(["branch_order"])
+                journals._compute_branch_order()
+                journals.flush_recordset(["branch_order"])
 
-            # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
-            env["res.company"].browse(id_b)._write({"parent_id": id_a})
-            # 5.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
-            env["res.company"]._parent_store_compute()
+                # 7.2. Recomputa shared_to_branches en payment method lines (related stored)
+                pmls = env["account.payment.method.line"].search([])
+                if "shared_to_branches" in pmls._fields:
+                    pmls.invalidate_recordset(["shared_to_branches"])
+                    pmls.flush_recordset(["shared_to_branches"])
+
+            for warehouse in env["stock.warehouse"].search([]):
+                for id_b in ids_b:
+                    if warehouse.partner_id.name == env["res.company"].browse(id_b).name:
+                        warehouse.partner_id = warehouse.company_id.partner_id
+            env["account.journal"].search([]).write({"shared_to_branches": False})
             cr.commit()
-
-            # 6. Fusiona cuentas contables
-            merge_accounts_by_code(env, id_a)
-
-            # 7.1. Recomputa campos stored en journals que dependen de la jerarquía
-            journals = env["account.journal"].search([])
-            journals.invalidate_recordset(["branch_order"])
-            journals._compute_branch_order()
-            journals.flush_recordset(["branch_order"])
-
-            # 7.2. Recomputa shared_to_branches en payment method lines (related stored)
-            pmls = env["account.payment.method.line"].search([])
-            if "shared_to_branches" in pmls._fields:
-                pmls.invalidate_recordset(["shared_to_branches"])
-                pmls.flush_recordset(["shared_to_branches"])
-
-        for warehouse in env["stock.warehouse"].search([]):
-            for id_b in ids_b:
-                if warehouse.partner_id.name == env["res.company"].browse(id_b).name:
-                    warehouse.partner_id = warehouse.company_id.partner_id
-        env["account.journal"].search([]).write({"shared_to_branches": False})
-        cr.commit()
     # ========================================================================
     # MODE 1: STORE TO BRANCH (Single company with multi-store -> Multi-company branches)
     # ========================================================================
