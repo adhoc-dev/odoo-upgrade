@@ -380,14 +380,19 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
         if model_name == "account.tax":
             # Buscar por tax_group primero si existe
             if rec_b.tax_group_id:
-                domain.extend(
-                    [
-                        "|",
-                        ("tax_group_id.name", "=", rec_b.tax_group_id.name),
-                        ("name", "=", rec_b.name),
-                    ]
-                )
-
+                domain.extend([
+                    ("type_tax_use", "=", rec_b.type_tax_use),
+                    ("amount", "=", rec_b.amount),
+                    ("price_include_override", "=", rec_b.price_include_override),
+                    "|",
+                    ("name", "=", rec_b.name),
+                    ("tax_group_id.name", "=", rec_b.tax_group_id.name),
+                ])
+            if rec_b.tax_type == "withholding" and "l10n_ar_withholding_payment_type" in rec_b._fields:
+                domain.extend([
+                    ("tax_type","=", rec_b.tax_type),
+                    ("l10n_ar_withholding_payment_type", "=", "supplier")
+                ])
         for field in criteria_fields:
             root_field = field.split(".")[0]
             if root_field not in rec_b._fields:
