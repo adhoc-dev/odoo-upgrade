@@ -369,7 +369,13 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                 _logger.info(
                     f"ELIMINANDO account.tax.group '{rec_b.display_name}' (B) sin impuestos asociados y sin campo active"
                 )
-                rec_b.unlink()
+                try:
+                    rec_b.unlink()
+                except Exception as e:
+                    _logger.error(
+                        f"Error al eliminar account.tax.group '{rec_b.display_name}' (B): {e}"
+                    )
+                    continue
                 continue
 
         # --- Construir dominio de búsqueda para el equivalente en A ---
@@ -438,7 +444,10 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             # original de B (que luego se archiva y se mueve a A), no moverse a
             # los repartition lines del impuesto A.
             SKIP_FK_REMAP_MODELS = {
-                "account.tax": {"account.tax.repartition.line"},
+                "account.tax": {
+                    "account.tax.repartition.line",
+                    "l10n_ar.payment.withholding",
+                },
             }
             skip_models = SKIP_FK_REMAP_MODELS.get(model_name, set())
 
@@ -1413,12 +1422,15 @@ def create_mapping(cr):
                 "tienen diarios de venta con documentos LATAM. Configurar manualmente el "
                 'parámetro "migration_19_end_multicompany".'
             )
-        id_empresa_a = companies_with_warehouses.filtered(lambda c: c.id != id_empresa_b.id)
+        id_empresa_a = companies_with_warehouses.filtered(
+            lambda c: c.id != id_empresa_b.id
+        )
         company_mapping = {"a": id_empresa_a.id, "b": id_empresa_b.id}
         env["ir.config_parameter"].sudo().set_param(
             "migration_19_end_multicompany", company_mapping
         )
     return company_mapping
+
 
 def migrate(cr, version):
     env = util.env(cr)
@@ -1434,7 +1446,7 @@ def migrate(cr, version):
     # ========================================================================
     # MODE 1: COMPANY MERGE (Two companies A and B -> B becomes branch of A)
     # ========================================================================
-    if not store_mapping or store_mapping == '{}':
+    if not store_mapping or store_mapping == "{}":
         if not company_mapping:
             company_mapping = create_mapping(cr)
 
@@ -1508,7 +1520,7 @@ def migrate(cr, version):
     # ========================================================================
     # MODE 1: STORE TO BRANCH (Single company with multi-store -> Multi-company branches)
     # ========================================================================
-    if not company_mapping or company_mapping == '{}':
+    if not company_mapping or company_mapping == "{}":
         if not store_mapping or store_mapping == "{}":
             store_mapping = get_store_to_company_mapping(env)
             env.cr.commit()
