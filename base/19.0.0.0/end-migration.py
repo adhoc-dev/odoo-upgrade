@@ -442,11 +442,18 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             }
             skip_models = SKIP_FK_REMAP_MODELS.get(model_name, set())
 
+            # Excluimos campos custom / Studio (state='manual'): no remapeamos FKs
+            # sobre ellos. Sus columnas pueden tener el nombre con mayúsculas
+            # (ej. x_studio_related_field_lCHOL), y el UPDATE sin comillas que
+            # arma este script pliega el identificador a minúsculas, rompiendo
+            # con "column does not exist". Además, no es responsabilidad de la
+            # migración base reconciliar relaciones definidas por el cliente.
             fk_fields = env["ir.model.fields"].search(
                 [
                     ("relation", "=", model_name),
                     ("ttype", "=", "many2one"),
                     ("store", "=", True),
+                    ("state", "=", "base"),
                     ("model_id.transient", "=", False),
                     ("model_id.abstract", "=", False),
                 ]
@@ -896,6 +903,7 @@ def migrate_store_fields_to_company(cr, env, mapping):
         [
             ("relation", "=", "res.store"),
             ("store", "=", True),
+            ("state", "=", "base"),
             ("model_id.transient", "=", False),
             ("model_id.abstract", "=", False),
         ]
@@ -1197,10 +1205,14 @@ def preprocess_unique_move_conflicts(cr, model_name, id_a, id_b):
 
 def migrate_standard_fields(cr, env, id_a, id_b):
     """Movimiento de campos Many2one/Many2many de compañía"""
+    # Igual que en handle_merge_or_move: excluimos campos custom / Studio
+    # (state='manual'). No movemos relaciones definidas por el cliente y
+    # evitamos el UPDATE sin comillas sobre columnas con mayúsculas.
     field_targets = env["ir.model.fields"].search(
         [
             ("relation", "=", "res.company"),
             ("store", "=", True),
+            ("state", "=", "base"),
             ("model_id.transient", "=", False),
             ("model_id.abstract", "=", False),
         ]
