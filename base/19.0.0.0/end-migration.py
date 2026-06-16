@@ -1456,9 +1456,8 @@ def migrate(cr, version):
 
         if not company_mapping:
             _logger.warning("No company mapping found, skipping migration")
-            return
         
-        if not isinstance(company_mapping, (list, tuple)):
+        if company_mapping and not isinstance(company_mapping, (list, tuple)):
             company_mapping = [company_mapping]
 
         for mapping in company_mapping:
