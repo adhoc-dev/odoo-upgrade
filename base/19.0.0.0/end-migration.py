@@ -395,9 +395,10 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                     ("tax_group_id.name", "=", rec_b.tax_group_id.name),
                 ])
             if rec_b._fields.get("l10n_ar_withholding_payment_type") and rec_b.l10n_ar_withholding_payment_type:
-                domain.append(
+                domain.extend([
                     ("l10n_ar_withholding_payment_type", "=", rec_b.l10n_ar_withholding_payment_type),
-                )
+                    ("name", "=", rec_b.name),
+                ])
         for field in criteria_fields:
             root_field = field.split(".")[0]
             if root_field not in rec_b._fields:
