@@ -13,8 +13,6 @@ MERGE_MODULES = [
     ("sale_three_discounts", "sale_triple_discount"),
     ("l10n_ar_stock_custom", "l10n_ar_stock"),
     ("l10n_ar_stock_adhoc", "l10n_ar_stock"),
-    ("l10n_uy_reports_custom", "l10n_uy_reports"),
-    ("l10n_uy_edi_stock_custom", "l10n_uy_edi_stock"),
 ]
 RENAMED_MODULES = []
 RENAMED_XMLIDS = []
@@ -67,7 +65,12 @@ def migrate(cr, version):
             )
         )
         old_state = cr.fetchone()
-        old_state = old_state and old_state[0] or "uninstalled"
+        # Skip if the old module is not in the database: there is nothing to merge and
+        # we must not touch the target module's state (it is already correctly named).
+        if not old_state:
+            _logger.info("Module %s not found, skipping merge into %s", old, into)
+            continue
+        old_state = old_state[0]
         util.merge_module(cr, old, into, update_dependers=False)
         # Ensure the target module is marked for upgrade
         cr.execute(
