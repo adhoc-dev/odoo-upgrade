@@ -607,6 +607,46 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
                 )
 
 
+def force_product_category_company_override(env, id_a, id_b):
+    """Pisa SIEMPRE en la compañía A el valor efectivo de B para los campos
+    company_dependent de product.category — tenga A valor propio o caiga al
+    default, lo sobreescribe.
+
+    En Odoo 17+ los campos company_dependent se guardan como JSONB {company_id:
+    valor} en la tabla. Si una compañía no tiene su clave, Odoo cae al default
+    de ir.default; por eso un UPDATE SQL con jsonb_set no alcanza (no hay clave
+    de origen que copiar). with_company(B) resuelve la clave explícita o el
+    default, y with_company(A).write inyecta la clave de A en el JSONB pisando
+    el fallback.
+    """
+    company_dependent_fields = [
+        "property_account_income_categ_id",
+        "property_account_expense_categ_id",
+        "property_stock_valuation_account_id",
+        "property_stock_account_input_categ_id",
+        "property_stock_account_output_categ_id",
+        "property_cost_method",
+        "property_valuation",
+    ]
+    Category = env["product.category"].with_context(active_test=False)
+    # Solo los campos que realmente existen en esta base (dependen de módulos instalados)
+    field_names = [f for f in company_dependent_fields if f in Category._fields]
+
+    for category in Category.search([]):
+        for field_name in field_names:
+            value_b = category.with_company(id_b)[field_name]
+            value = value_b.id if hasattr(value_b, "_name") else value_b
+            category.with_company(id_a)[field_name] = value
+            _logger.info(
+                "product.category id=%s: pisando %s de compañía A (%s) con valor de B (%s) = %s",
+                category.id,
+                field_name,
+                id_a,
+                id_b,
+                value,
+            )
+
+
 def get_next_available_code(env, code, exclude_account_id=None):
     """Devuelve un código libre validando contra todas las cuentas visibles por sudo."""
     Account = env["account.account"].sudo().with_context(active_test=False)
@@ -1491,6 +1531,11 @@ def migrate(cr, version):
 
                 # 3. Propiedades JSONB (SQL)
                 migrate_json_company_dependent(cr, env, id_a, id_b)
+
+                # 3.b Pisar incondicionalmente los company_dependent de
+                # product.category con el valor efectivo de B (tenga A valor
+                # propio o caiga al default).
+                force_product_category_company_override(env, id_a, id_b)
 
                 # 4. Limpieza: Archivar cuentas de la sucursal
                 _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
