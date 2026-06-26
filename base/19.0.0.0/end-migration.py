@@ -1092,12 +1092,67 @@ def migrate_store_to_branch(cr, env):
     # 6. Archivar cuentas de las branches (opcional, dependiendo de la estrategia)
     # Por ahora no archivamos, las dejamos activas en sus branches
 
+    # 6.b Limpiar diarios de tax returns que el alta de la company haya creado
+    # por branch: el cierre fiscal vive solo en el root.
+    cleanup_branch_tax_return_journals(env, parent_company_id, branch_company_ids)
+    cr.commit()
+
     # 7. Dar acceso a los usuarios a las branches que antes tenían vía store_ids
     _logger.info("Migrating user company access from store_ids to branch companies")
     migrate_store_user_access_to_company(cr, env, mapping)
     cr.commit()
 
     return parent_company.id
+
+
+def cleanup_branch_tax_return_journals(env, parent_company_id, branch_company_ids):
+    """Deja el diario de tax returns únicamente en el root.
+
+    Al crear cada branch como company, el override de res.company.create + la
+    cadena de generación de returns puede disparar _get_tax_closing_journal()
+    sobre la branch (account_reports/models/res_company.py). Ese método SIEMPRE
+    escribe company.account_tax_return_journal_id y, si no encuentra un diario
+    TAX accesible en el momento, recarga el chart template con with_company(self)
+    y crea un 'tax_returns' propio de la branch.
+
+    Esta función revierte eso: vacía el campo en las branches y borra los diarios
+    TAX que hayan quedado con company_id = branch (solo si no tienen asientos).
+    """
+    Company = env["res.company"]
+    Move = env["account.move"]
+
+    for branch_id in branch_company_ids:
+        branch = Company.browse(branch_id)
+
+        # 1) Resolver el diario que quedó asignado a la branch. Leemos el campo
+        # directamente (es lo que devuelve _get_tax_closing_journal cuando ya
+        # está resuelto); NO llamamos al método para no re-crearlo si está vacío.
+        journal = branch.sudo().account_tax_return_journal_id
+        if not journal:
+            continue
+
+        # Solo nos interesa si el diario es PROPIO de la branch; si apunta al del
+        # root (u otro ancestro) lo dejamos como está, solo vaciamos el campo.
+        own_journal = journal if journal.company_id.id == branch.id else False
+
+        # 2) Vaciar el campo en la branch — el cierre se hace en el root.
+        branch.sudo().account_tax_return_journal_id = False
+
+        # 3) Borrar el diario propio de la branch (solo si no tiene asientos).
+        if own_journal:
+            move_count = Move.sudo().search_count([("journal_id", "=", own_journal.id)])
+            if move_count:
+                _logger.warning(
+                    "Branch '%s' (ID: %s): el diario tax returns '%s' (ID: %s) "
+                    "tiene %s asientos; no se borra. Revisar manualmente.",
+                    branch.name, branch.id, own_journal.code, own_journal.id, move_count,
+                )
+            else:
+                _logger.info(
+                    "Branch '%s' (ID: %s): borrando diario tax returns '%s' (ID: %s)",
+                    branch.name, branch.id, own_journal.code, own_journal.id,
+                )
+                own_journal.sudo().unlink()
 
 
 def migrate_store_user_access_to_company(cr, env, mapping):
