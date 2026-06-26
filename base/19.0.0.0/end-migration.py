@@ -386,19 +386,30 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
         if model_name == "account.tax":
             # Buscar por tax_group primero si existe
             if rec_b.tax_group_id:
-                domain.extend([
-                    ("type_tax_use", "=", rec_b.type_tax_use),
-                    ("amount", "=", rec_b.amount),
-                    ("price_include_override", "=", rec_b.price_include_override),
-                    "|",
-                    ("name", "=", rec_b.name),
-                    ("tax_group_id.name", "=", rec_b.tax_group_id.name),
-                ])
-            if rec_b._fields.get("l10n_ar_withholding_payment_type") and rec_b.l10n_ar_withholding_payment_type:
-                domain.extend([
-                    ("l10n_ar_withholding_payment_type", "=", rec_b.l10n_ar_withholding_payment_type),
-                    ("name", "=", rec_b.name),
-                ])
+                domain.extend(
+                    [
+                        ("type_tax_use", "=", rec_b.type_tax_use),
+                        ("amount", "=", rec_b.amount),
+                        ("price_include_override", "=", rec_b.price_include_override),
+                        "|",
+                        ("name", "=", rec_b.name),
+                        ("tax_group_id.name", "=", rec_b.tax_group_id.name),
+                    ]
+                )
+            if (
+                rec_b._fields.get("l10n_ar_withholding_payment_type")
+                and rec_b.l10n_ar_withholding_payment_type
+            ):
+                domain.extend(
+                    [
+                        (
+                            "l10n_ar_withholding_payment_type",
+                            "=",
+                            rec_b.l10n_ar_withholding_payment_type,
+                        ),
+                        ("name", "=", rec_b.name),
+                    ]
+                )
         for field in criteria_fields:
             root_field = field.split(".")[0]
             if root_field not in rec_b._fields:
@@ -827,9 +838,24 @@ def get_store_to_company_mapping(env):
         return {}
 
     # Identificar la company parent (la que no tiene parent_id)
-    parent_company = Company.search(
-        [("parent_id", "=", False), ("active", "=", True)], limit=1
+
+    cr.execute(
+        """
+            SELECT DISTINCT(so.company_id) 
+            FROM sale_order so 
+            JOIN res_store_bu rsb 
+                ON rsb.id=so.store_id_bu 
+            JOIN stock_warehouse sw 
+                ON sw.company_id=so.company_id
+            JOIN res_company rc
+                ON rc.id=sw.company_id
+            WHERE rc.parent_id IS NULL AND rc.active = TRUE
+        """
     )
+    parent_company_query = cr.fetchall()
+    if parent_company_query and len(parent_company_query) == 1:
+        parent_company = Company.browse(parent_company_query[0][0])
+
     if not parent_company:
         parent_company = Company.search([("active", "=", True)], limit=1)
     if not parent_company:
@@ -874,14 +900,26 @@ def get_store_to_company_mapping(env):
             if store_parent_id and store_parent_id in store_to_company:
                 company_parent_id = store_to_company[store_parent_id]
 
+            # OJO: NO seteamos parent_id en el create. El override de
+            # res.company.create (addon payment) duplica en la company nueva los
+            # payment.provider instalados del usuario actual, y el copy() de
+            # website_payment copia el website_id del provider del ancestro cuando
+            # la nueva company ya cuelga del parent
+            # (src.company_id in copy.company_id.parent_ids). Como
+            # website._check_company_domain es EXACTO (no parent_of), esa web del
+            # parent en un provider de la branch dispara _check_company
+            # ("Transferencia bancaria"/Obera vs Website/TOP NEUMATICOS) y rompe
+            # el create. Creamos sin parent y asignamos la jerarquía con _write
+            # después (write no re-dispara la duplicación de providers).
             new_company = Company.with_context(no_chart_of_accounts=True).create(
                 {
                     "name": store_name,
-                    "parent_id": company_parent_id,
                     "currency_id": parent_company.currency_id.id,
                     "l10n_ar_afip_responsibility_type_id": parent_company.l10n_ar_afip_responsibility_type_id.id,
                 }
             )
+            if company_parent_id:
+                new_company._write({"parent_id": company_parent_id})
             store_to_company[store_id] = new_company.id
             branch_company_ids.append(new_company.id)
             _logger.info(
@@ -901,6 +939,93 @@ def get_store_to_company_mapping(env):
 
     # Incluir store_mapping en retorno (solo para esta ejecución)
     return base_mapping
+
+
+def _free_journal_code(cr, base_code):
+    """Devuelve un code de diario de <=5 chars que no exista en NINGUNA company.
+
+    El campo account.journal.code es size=5 y tiene UNIQUE(company_id, code).
+    Buscamos un code globalmente libre (más estricto que lo necesario, pero
+    evita cualquier colisión tanto en la company origen como en la destino
+    mientras movemos el diario).
+    """
+    base = (base_code or "J")[:5]
+    cr.execute("SELECT code FROM account_journal")
+    taken = {r[0] for r in cr.fetchall()}
+    if base not in taken:
+        return base
+    n = 1
+    while True:
+        suffix = str(n)
+        candidate = base[: 5 - len(suffix)] + suffix
+        if candidate not in taken:
+            return candidate
+        n += 1
+
+
+def _resolve_journal_code_collisions(cr, target_company_id, store_name):
+    """Libera colisiones de UNIQUE(company_id, code) antes de mover diarios.
+
+    Al mover los diarios de un store a su branch (UPDATE company_id), la branch
+    destino puede terminar con dos diarios del mismo code:
+      - uno que ya estaba ahí (re-run, company preexistente, o diario
+        auto-creado al dar de alta la branch), y/o
+      - dos entrantes con el mismo code provenientes de companies distintas
+        (colisión dentro del mismo batch del UPDATE).
+    Cualquiera de los dos viola account_journal_code_company_uniq.
+
+    Calculamos el CONJUNTO FINAL de diarios que quedará en target_company_id
+    (los que ya están + todos los entrantes del store) y, por cada code
+    duplicado, dejamos el code original al diario con MÁS asientos y renombramos
+    el resto a un code libre. Así preservamos la continuidad del operativo.
+    """
+    # Conjunto final que vivirá en target_company_id tras el UPDATE:
+    #  - los que ya están en target
+    #  - los que se moverán (store coincide y company != target)
+    cr.execute(
+        """
+        SELECT j.id, j.code,
+               (SELECT count(*) FROM account_move m WHERE m.journal_id = j.id)
+          FROM account_journal j
+         WHERE j.company_id = %s
+            OR (j.company_id IS DISTINCT FROM %s
+                AND j.store_id IN (
+                    SELECT id FROM res_store_bu WHERE name ILIKE %s
+                ))
+        """,
+        (target_company_id, target_company_id, store_name),
+    )
+    rows = cr.fetchall()  # [(id, code, moves), ...]
+
+    by_code = {}
+    for jid, code, moves in rows:
+        by_code.setdefault(code, []).append((moves, jid))
+
+    for code, journals in by_code.items():
+        if len(journals) < 2:
+            continue
+        # Mayor cantidad de asientos primero (desempate por id); ese conserva
+        # el code, el resto se renombran.
+        journals.sort(reverse=True)
+        keeper_moves, keeper_id = journals[0]
+        for moves, jid in journals[1:]:
+            new_code = _free_journal_code(cr, code)
+            cr.execute(
+                "UPDATE account_journal SET code = %s WHERE id = %s",
+                (new_code, jid),
+            )
+            _logger.warning(
+                "Colisión de code '%s' al consolidar en company %s: diario id=%s "
+                "(%s asientos) renombrado a '%s'. Conserva el code id=%s "
+                "(%s asientos). Revisar si deben fusionarse.",
+                code,
+                target_company_id,
+                jid,
+                moves,
+                new_code,
+                keeper_id,
+                keeper_moves,
+            )
 
 
 def migrate_store_fields_to_company(cr, env, mapping):
@@ -962,6 +1087,14 @@ def migrate_store_fields_to_company(cr, env, mapping):
                         f"  Skipping related field {field_name}, will be recomputed"
                     )
                     continue
+
+                # account.journal tiene UNIQUE(company_id, code). Si la branch
+                # destino ya tiene un diario con el mismo code que uno entrante,
+                # el UPDATE de company_id viola la constraint. Liberamos las
+                # colisiones (renombrando el diario con menos asientos) antes.
+                if model_name == "account.journal":
+                    _resolve_journal_code_collisions(cr, store_id.id, store_id.name)
+                    env.cr.commit()
 
                 # Actualizar company_id basado en store_id
                 # Solo actualizamos si:
@@ -1051,6 +1184,13 @@ def migrate_store_to_branch(cr, env):
         if not store_id.parent_id and company.id != store_id.company_id:
             store_id._write({"parent_id": parent_company_id})
 
+    # 2.b Defensa para builds re-corridos / companies reutilizadas: si quedó
+    # algún payment.provider de una branch apuntando a una website de otra
+    # company, lo limpiamos antes de tocar nada por ORM (website tiene check
+    # de company EXACTO y haría saltar _check_company más adelante).
+    cleanup_branch_provider_websites(env, branch_company_ids)
+    cr.commit()
+
     # 3. Migrar campos store_id a company_id
     _logger.info("Migrating store_id fields to company_id")
     migrate_store_fields_to_company(cr, env, mapping)
@@ -1105,6 +1245,40 @@ def migrate_store_to_branch(cr, env):
     return parent_company.id
 
 
+def cleanup_branch_provider_websites(env, branch_company_ids):
+    """Limpia website_id en payment.provider de las branches cuando la website
+    pertenece a otra company.
+
+    El override de res.company.create (addon payment) duplica los providers del
+    usuario actual en cada company nueva, y el copy() de website_payment copia el
+    website_id del provider del ancestro. Como website._check_company_domain es
+    EXACTO (no parent_of), un provider de la branch apuntando a la web del parent
+    rompe _check_company. El alta nueva ya se evita creando la company sin
+    parent_id; esto cubre companies preexistentes / re-runs. Se hace por SQL para
+    no disparar _check_company durante la limpieza.
+    """
+    if not branch_company_ids:
+        return
+
+    env.cr.execute(
+        """
+        UPDATE payment_provider AS pp
+           SET website_id = NULL
+          FROM website AS w
+         WHERE pp.website_id = w.id
+           AND pp.company_id = ANY(%s)
+           AND w.company_id != pp.company_id
+        """,
+        (list(branch_company_ids),),
+    )
+    if env.cr.rowcount:
+        _logger.info(
+            "Limpiados %s payment.provider de branches con website cross-company",
+            env.cr.rowcount,
+        )
+        env["payment.provider"].invalidate_model(["website_id"])
+
+
 def cleanup_branch_tax_return_journals(env, parent_company_id, branch_company_ids):
     """Deja el diario de tax returns únicamente en el root.
 
@@ -1145,12 +1319,19 @@ def cleanup_branch_tax_return_journals(env, parent_company_id, branch_company_id
                 _logger.warning(
                     "Branch '%s' (ID: %s): el diario tax returns '%s' (ID: %s) "
                     "tiene %s asientos; no se borra. Revisar manualmente.",
-                    branch.name, branch.id, own_journal.code, own_journal.id, move_count,
+                    branch.name,
+                    branch.id,
+                    own_journal.code,
+                    own_journal.id,
+                    move_count,
                 )
             else:
                 _logger.info(
                     "Branch '%s' (ID: %s): borrando diario tax returns '%s' (ID: %s)",
-                    branch.name, branch.id, own_journal.code, own_journal.id,
+                    branch.name,
+                    branch.id,
+                    own_journal.code,
+                    own_journal.id,
                 )
                 own_journal.sudo().unlink()
 
@@ -1506,111 +1687,110 @@ def migrate(cr, version):
     # ========================================================================
     # MODE 1: COMPANY MERGE (Two companies A and B -> B becomes branch of A)
     # ========================================================================
-    if not store_mapping or store_mapping == "{}":
-        if not company_mapping:
-            company_mapping = create_mapping(cr)
+    if not company_mapping:
+        company_mapping = create_mapping(cr)
 
-        if not company_mapping:
-            _logger.warning("No company mapping found, skipping migration")
-        
-        if company_mapping and not isinstance(company_mapping, (list, tuple)):
-            company_mapping = [company_mapping]
+    if not company_mapping:
+        _logger.warning("No company mapping found, skipping migration")
 
-        for mapping in company_mapping:
-            id_a = mapping.get("a")
-            ids_b = mapping.get("b")
+    if company_mapping and not isinstance(company_mapping, (list, tuple)):
+        company_mapping = [company_mapping]
 
-            if not id_a or not ids_b:
-                _logger.warning("Invalid company mapping, skipping migration")
-                return
+    for mapping in company_mapping:
+        id_a = mapping.get("a")
+        ids_b = mapping.get("b")
 
-            if not isinstance(ids_b, (list, tuple)):
-                ids_b = [ids_b]
+        if not id_a or not ids_b:
+            _logger.warning("Invalid company mapping, skipping migration")
+            continue
 
-            for id_b in ids_b:
-                # 0. Establecer Jerarquía Branch
-                cr.execute(
-                    "UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b)
-                )
+        if not isinstance(ids_b, (list, tuple)):
+            ids_b = [ids_b]
 
-                # 1. Movimiento Operativo (SQL)
-                migrate_standard_fields(cr, env, id_a, id_b)
+        for id_b in ids_b:
+            # 0. Establecer Jerarquía Branch
+            cr.execute(
+                "UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b)
+            )
 
-                # 2. Fusión de Configuración (ORM)
-                merge_models = [
-                    m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"
-                ]
-                for model_name in merge_models:
-                    handle_merge_or_move(env, model_name, id_a, id_b)
-                    cr.commit()
+            # 1. Movimiento Operativo (SQL)
+            migrate_standard_fields(cr, env, id_a, id_b)
 
-                # 3. Propiedades JSONB (SQL)
-                migrate_json_company_dependent(cr, env, id_a, id_b)
-
-                # 4. Limpieza: Archivar cuentas de la sucursal
-                _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
-                env["account.account"].search([("company_ids", "=", id_b)]).write(
-                    {"active": False}
-                )
-
-                # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
-                env["res.company"].browse(id_b)._write({"parent_id": id_a})
-                # 5.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
-                env["res.company"]._parent_store_compute()
+            # 2. Fusión de Configuración (ORM)
+            merge_models = [
+                m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"
+            ]
+            for model_name in merge_models:
+                handle_merge_or_move(env, model_name, id_a, id_b)
                 cr.commit()
 
-                # 6. Fusiona cuentas contables
-                merge_accounts_by_code(env, id_a)
+            # 3. Propiedades JSONB (SQL)
+            migrate_json_company_dependent(cr, env, id_a, id_b)
 
-                # 7.1. Recomputa campos stored en journals que dependen de la jerarquía
-                journals = env["account.journal"].search([])
-                journals.invalidate_recordset(["branch_order"])
-                journals._compute_branch_order()
-                journals.flush_recordset(["branch_order"])
+            # 4. Limpieza: Archivar cuentas de la sucursal
+            _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
+            env["account.account"].search([("company_ids", "=", id_b)]).write(
+                {"active": False}
+            )
 
-                # 7.2. Recomputa shared_to_branches en payment method lines (related stored)
-                pmls = env["account.payment.method.line"].search([])
-                if "shared_to_branches" in pmls._fields:
-                    pmls.invalidate_recordset(["shared_to_branches"])
-                    pmls.flush_recordset(["shared_to_branches"])
-
-            for warehouse in env["stock.warehouse"].search([]):
-                for id_b in ids_b:
-                    if warehouse.partner_id.name == env["res.company"].browse(id_b).name:
-                        warehouse.partner_id = warehouse.company_id.partner_id
-            env["account.journal"].search([]).write({"shared_to_branches": False})
+            # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
+            env["res.company"].browse(id_b)._write({"parent_id": id_a})
+            # 5.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
+            env["res.company"]._parent_store_compute()
             cr.commit()
-    # ========================================================================
-    # MODE 1: STORE TO BRANCH (Single company with multi-store -> Multi-company branches)
-    # ========================================================================
-    if not company_mapping or company_mapping == "{}":
-        if not store_mapping or store_mapping == "{}":
-            store_mapping = get_store_to_company_mapping(env)
-            env.cr.commit()
 
-        if not store_mapping:
-            _logger.info("No store mapping found, skipping store-to-branch migration")
-            return None
+            # 6. Fusiona cuentas contables
+            merge_accounts_by_code(env, id_a)
 
-        _logger.info("Running STORE TO BRANCH migration")
-        parent_company_id = migrate_store_to_branch(cr, env)
-
-        if parent_company_id:
-            # Después de migrar stores a branches, aplicar merge de cuentas
-            merge_accounts_by_code(env, parent_company_id)
-
-            # Recomputar campos relacionados con la jerarquía
+            # 7.1. Recomputa campos stored en journals que dependen de la jerarquía
             journals = env["account.journal"].search([])
             journals.invalidate_recordset(["branch_order"])
             journals._compute_branch_order()
             journals.flush_recordset(["branch_order"])
 
+            # 7.2. Recomputa shared_to_branches en payment method lines (related stored)
             pmls = env["account.payment.method.line"].search([])
             if "shared_to_branches" in pmls._fields:
                 pmls.invalidate_recordset(["shared_to_branches"])
                 pmls.flush_recordset(["shared_to_branches"])
 
-            env["account.journal"].search(
-                [("company_id", "=", parent_company_id)]
-            ).write({"shared_to_branches": True})
-            cr.commit()
+        for warehouse in env["stock.warehouse"].search([]):
+            for id_b in ids_b:
+                if warehouse.partner_id.name == env["res.company"].browse(id_b).name:
+                    warehouse.partner_id = warehouse.company_id.partner_id
+        env["account.journal"].search([]).write({"shared_to_branches": False})
+        cr.commit()
+    # ========================================================================
+    # MODE 1: STORE TO BRANCH (Single company with multi-store -> Multi-company branches)
+    # ========================================================================
+
+    if not store_mapping or store_mapping == "{}":
+        store_mapping = get_store_to_company_mapping(env)
+        env.cr.commit()
+
+    if not store_mapping:
+        _logger.info("No store mapping found, skipping store-to-branch migration")
+        return None
+
+    _logger.info("Running STORE TO BRANCH migration")
+    parent_company_id = migrate_store_to_branch(cr, env)
+
+    if parent_company_id:
+        # Después de migrar stores a branches, aplicar merge de cuentas
+        merge_accounts_by_code(env, parent_company_id)
+
+        # Recomputar campos relacionados con la jerarquía
+        journals = env["account.journal"].search([])
+        journals.invalidate_recordset(["branch_order"])
+        journals._compute_branch_order()
+        journals.flush_recordset(["branch_order"])
+
+        pmls = env["account.payment.method.line"].search([])
+        if "shared_to_branches" in pmls._fields:
+            pmls.invalidate_recordset(["shared_to_branches"])
+            pmls.flush_recordset(["shared_to_branches"])
+
+        env["account.journal"].search([("company_id", "=", parent_company_id)]).write(
+            {"shared_to_branches": True}
+        )
+        cr.commit()
