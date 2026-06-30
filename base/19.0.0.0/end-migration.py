@@ -1679,6 +1679,20 @@ def create_mapping(cr):
     return company_mapping
 
 
+def set_users_default_company(env, parent_company_id):
+    """Deja la compania padre como predeterminada para los usuarios internos."""
+    parent = env["res.company"].browse(parent_company_id)
+    if not parent.exists():
+        return
+    users = env["res.users"].with_context(active_test=False).search([("share", "=", False)])
+    missing_access = users.filtered(lambda u: parent_company_id not in u.company_ids.ids)
+    if missing_access:
+        missing_access.write({"company_ids": [(4, parent_company_id)]})
+    to_default = users.filtered(lambda u: u.company_id.id != parent_company_id)
+    if to_default:
+        to_default.write({"company_id": parent_company_id})
+
+
 def migrate(cr, version):
     env = util.env(cr)
     # Determinar el modo de migración
@@ -1765,6 +1779,9 @@ def migrate(cr, version):
                 if warehouse.partner_id.name == env["res.company"].browse(id_b).name:
                     warehouse.partner_id = warehouse.company_id.partner_id
         env["account.journal"].search([]).write({"shared_to_branches": False})
+        parent_id = mapping.get("a")
+        if parent_id:
+            set_users_default_company(env, parent_id)
         cr.commit()
     # ========================================================================
     # MODE 1: STORE TO BRANCH (Single company with multi-store -> Multi-company branches)
@@ -1799,4 +1816,5 @@ def migrate(cr, version):
         env["account.journal"].search([("company_id", "=", parent_company_id)]).write(
             {"shared_to_branches": True}
         )
+        set_users_default_company(env, parent_company_id)
         cr.commit()
