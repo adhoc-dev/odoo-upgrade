@@ -1260,6 +1260,12 @@ def cleanup_branch_provider_websites(env, branch_company_ids):
     if not branch_company_ids:
         return
 
+    # Si website no está instalado no existe ni la tabla website ni la columna
+    # payment_provider.website_id (la aporta website_payment), así que no hay
+    # nada que limpiar.
+    if not util.module_installed(env.cr, "website"):
+        return
+
     env.cr.execute(
         """
         UPDATE payment_provider AS pp
