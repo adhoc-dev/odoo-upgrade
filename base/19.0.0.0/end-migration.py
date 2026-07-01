@@ -1618,11 +1618,39 @@ def create_mapping(cr):
                 'Hay más de dos companías y cruces, se debe configurar manualmente el mapeo de compañías con parametro "migration_19_end_multicompany".'
             )
         # Estos IDs deben ser parametrizables según el cliente
-        id_empresa_b = (
+        id_empresa_stock = (
             env["stock.warehouse"]
             .search([("company_id", "!=", False), ("company_id.active", "=", True)])
             .mapped("company_id")
         )
+
+        companies = env["res.company"].search([])
+
+        company_without_documents = (
+            companies.filtered(
+                lambda c: (
+                    not env["account.journal"].search_count(
+                        [
+                            ("company_id", "=", c.id),
+                            ("type", "in", ["sale", "purchase"]),
+                            ("l10n_latam_use_documents", "=", True),
+                        ]
+                    )
+                )
+            )
+            or False
+        )
+
+        if (
+            id_empresa_stock
+            and company_without_documents
+            and company_without_documents.id == id_empresa_stock.id
+        ):
+            id_empresa_b = id_empresa_stock
+        else:
+            raise UserError(
+                "la compañia que tiene el stock, parecer no ser la b ya que tiene diarios de venta/compra que usan documentos. Ver con Nico Col"
+            )
         id_empresa_a = env["res.company"].search([("id", "!=", id_empresa_b[0].id)])
         company_mapping = {"a": id_empresa_a[0].id, "b": id_empresa_b[0].id}
         env["ir.config_parameter"].sudo().set_param(
