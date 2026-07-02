@@ -838,12 +838,12 @@ def get_store_to_company_mapping(env):
         return {}
 
     # Identificar la company parent (la que no tiene parent_id)
-
+    parent_company = False
     cr.execute(
         """
             SELECT DISTINCT(so.company_id) 
             FROM sale_order so 
-            JOIN res_store_bu rsb 
+            LEFT JOIN res_store_bu rsb 
                 ON rsb.id=so.store_id_bu 
             JOIN stock_warehouse sw 
                 ON sw.company_id=so.company_id
@@ -857,7 +857,20 @@ def get_store_to_company_mapping(env):
         parent_company = Company.browse(parent_company_query[0][0])
 
     if not parent_company:
-        parent_company = Company.search([("active", "=", True)], limit=1)
+        cr.execute(
+            """
+                SELECT DISTINCT(rsb.parent_id) 
+                FROM res_store_bu rsb 
+                JOIN res_company rc
+                    ON rc.id=rsb.parent_id
+                WHERE rc.parent_id IS not NULL AND rc.active = TRUE
+            """
+        )
+        parent_company_query = cr.fetchall()
+        if parent_company_query and len(parent_company_query) == 1:
+            parent_company = Company.browse(parent_company_query[0][0])
+        else:
+            parent_company = Company.search([("active", "=", True)], limit=1)
     if not parent_company:
         raise UserError("No se encontró una compañía activa para usar como parent")
 
