@@ -1651,13 +1651,12 @@ def create_mapping(cr):
                     )
                 )
             )
-            or False
+            or True
         )
 
         if (
             id_empresa_stock
-            and company_without_documents
-            and company_without_documents.id == id_empresa_stock.id
+            and (company_without_documents or company_without_documents.id == id_empresa_stock.id)
         ):
             id_empresa_b = id_empresa_stock
         else:
