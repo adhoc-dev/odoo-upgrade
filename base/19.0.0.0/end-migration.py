@@ -173,6 +173,7 @@ MODEL_STRATEGY = {
     "sale.order.template": "MOVE_TO_PARENT",
     "sale.order.type": "MOVE_TO_PARENT",
     "purchase.order": "MOVE_TO_PARENT",
+    "purchase.order.type": "MOVE_TO_PARENT",
     "purchase.order.line": "MOVE_TO_PARENT",
     "purchase.requisition": "MOVE_TO_PARENT",
     "purchase.subscription": "MOVE_TO_PARENT",
@@ -1487,10 +1488,40 @@ def migrate_standard_fields(cr, env, id_a, id_b):
         ]
     )
 
+    # --- sale.order.type / purchase.order.type: invoice_company_id -> sucursal (B) ---
+    # Estos order types se comparten en la parent al hacer MOVE_TO_PARENT
+    # (company_id -> A), pero la facturación debe seguir emitiéndose en la
+    # sucursal. Por eso, ANTES de mover company_id, fijamos invoice_company_id al
+    # id de la company B en los registros de la sucursal; y más abajo excluimos
+    # invoice_company_id del movimiento genérico a la parent para no pisarlo.
+    for order_type_table in ("sale_order_type", "purchase_order_type"):
+        if util.column_exists(
+            cr, order_type_table, "invoice_company_id"
+        ) and util.column_exists(cr, order_type_table, "company_id"):
+            cr.execute(
+                f"UPDATE {order_type_table} SET invoice_company_id = %s WHERE company_id = %s",
+                (id_b, id_b),
+            )
+            if cr.rowcount:
+                _logger.info(
+                    "Seteado invoice_company_id=%s (sucursal B) en %s registros de %s",
+                    id_b,
+                    cr.rowcount,
+                    order_type_table,
+                )
+
     for field in field_targets:
         model_name = field.model
         table = model_name.replace(".", "_")
         strategy = MODEL_STRATEGY.get(model_name, "CHECK")
+
+        # invoice_company_id de sale.order.type / purchase.order.type NO se mueve
+        # a la parent: se fija a la sucursal (B) en el preprocesamiento de arriba.
+        if field.name == "invoice_company_id" and model_name in (
+            "sale.order.type",
+            "purchase.order.type",
+        ):
+            continue
 
         # MERGE_OR_MOVE lo manejamos en método separado
         if strategy in ["KEEP", "MERGE_OR_MOVE"]:
@@ -1556,37 +1587,28 @@ def migrate_standard_fields(cr, env, id_a, id_b):
             _logger.warning(
                 f"Estrategia desconocida '{strategy}' para el modelo '{model_name}'"
             )
-    # ---- NUEVO: limpiar journal_id inconsistente en sale.order.type ----
-    # Después de mover sale.order.type a la parent (company_id e invoice_company_id -> id_a),
-    # el journal_id puede seguir apuntando a un diario de la sucursal (id_b).
-    # Odoo valida que journal.company_id sea compatible con invoice_company_id al facturar,
-    # por eso lo ponemos en NULL para que Odoo elija el diario correcto automáticamente.
-
-    cr.execute(
-        """
-        SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_name = 'sale_order_type'
-        )
-    """,
-    )
-
-    sale_order_type_table = cr.fetchone()[0]
-
-    if sale_order_type_table:
+    # ---- limpiar journal_id inconsistente en sale.order.type ----
+    # Al mover sale.order.type a la parent, company_id -> A pero invoice_company_id
+    # quedó fijado en la sucursal (B, ver preprocesamiento arriba). El journal_id
+    # solo es problemático si apunta a un diario cuya company NO coincide con
+    # invoice_company_id: en ese caso Odoo fallaría la validación al facturar, así
+    # que lo ponemos en NULL para que elija el diario correcto automáticamente. Un
+    # diario de la sucursal (B) ahora ES consistente con invoice_company_id, por lo
+    # que se conserva.
+    if table_exists(cr, "sale_order_type"):
         cr.execute(
             """
             UPDATE sale_order_type sot
             SET journal_id = NULL
             WHERE sot.journal_id IS NOT NULL
+            AND sot.invoice_company_id IS NOT NULL
             AND EXISTS (
                 SELECT 1
                     FROM account_journal aj
                     WHERE aj.id = sot.journal_id
-                    AND aj.company_id = %s
+                    AND aj.company_id != sot.invoice_company_id
             )
             """,
-            (id_b,),
         )
 
 
@@ -1654,9 +1676,9 @@ def create_mapping(cr):
             or True
         )
 
-        if (
-            id_empresa_stock
-            and (company_without_documents or company_without_documents.id == id_empresa_stock.id)
+        if id_empresa_stock and (
+            company_without_documents
+            or company_without_documents.id == id_empresa_stock.id
         ):
             id_empresa_b = id_empresa_stock
         else:
