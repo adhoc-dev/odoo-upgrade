@@ -126,6 +126,19 @@ UNIQUE_MOVE_PREPROCESSORS = {
                              ))
                 """,
     ),
+    "stock.picking": (
+        """
+                        UPDATE stock_picking AS pick_b
+                             SET name = CONCAT(pick_b.name, '-B-', pick_b.id)
+                         WHERE pick_b.company_id = %s
+                             AND EXISTS (
+                                        SELECT 1
+                                            FROM stock_picking AS pick_a
+                                         WHERE pick_a.company_id = %s
+                                             AND pick_a.name = pick_b.name
+                             )
+                """,
+    ),
 }
 
 
