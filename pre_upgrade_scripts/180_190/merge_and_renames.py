@@ -13,6 +13,7 @@ MERGE_MODULES = [
     ("sale_three_discounts", "sale_triple_discount"),
     ("l10n_ar_stock_custom", "l10n_ar_stock"),
     ("l10n_ar_stock_adhoc", "l10n_ar_stock"),
+    ("payment_redsys_oca", "payment_redsys"),
 ]
 RENAMED_MODULES = []
 RENAMED_XMLIDS = []
