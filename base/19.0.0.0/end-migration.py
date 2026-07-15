@@ -281,7 +281,11 @@ MODEL_STRATEGY = {
     "product.pricelist.item": "KEEP",
     "payment.transaction": "KEEP",
     "payment.token": "KEEP",
-    "payment.provider": "KEEP",
+    # Sigue a su website (MOVE_TO_PARENT). Si el provider está asociado a una web
+    # que se mueve a la parent (A) y el provider se quedara en la sucursal (B),
+    # website._check_company_domain es EXACTO (no parent_of) y _check_company
+    # rompería. Moviéndolo a A queda consistente con la web.
+    "payment.provider": "MOVE_TO_PARENT",
     "digest.digest": "KEEP",
     "snailmail.letter": "KEEP",
     "account.lock_exception": "KEEP",
