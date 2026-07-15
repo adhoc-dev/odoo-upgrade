@@ -1770,6 +1770,10 @@ def set_users_default_company(env, parent_company_id):
 
 def migrate(cr, version):
     env = util.env(cr)
+
+    if len(env["res.company"].search([])) == 1:
+        return
+
     # Determinar el modo de migración
     store_mapping = (
         env["ir.config_parameter"].sudo().get_param("migration_19_end_store_to_branch")
