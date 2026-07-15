@@ -16,7 +16,7 @@ MERGE_MODULES = [
     ("payment_redsys_oca", "payment_redsys"),
 ]
 RENAMED_MODULES = []
-RENAMED_XMLIDS = []
+RENAMED_XMLIDS = [("payment_redsys.redsys_form", "payment_redsys.redirect_form")]
 
 
 def migrate(cr, version):
