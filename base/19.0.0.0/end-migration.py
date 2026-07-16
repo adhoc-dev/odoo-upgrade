@@ -877,14 +877,27 @@ def get_store_to_company_mapping(env):
                 FROM res_store_bu rsb 
                 JOIN res_company rc
                     ON rc.id=rsb.parent_id
-                WHERE rc.parent_id IS not NULL AND rc.active = TRUE
+                WHERE rc.parent_id IS NULL AND rc.active = TRUE
             """
         )
         parent_company_query = cr.fetchall()
         if parent_company_query and len(parent_company_query) == 1:
             parent_company = Company.browse(parent_company_query[0][0])
         else:
-            parent_company = Company.search([("active", "=", True)], limit=1)
+            parent_company = Company.search(
+                [("active", "=", True), ("parent_id", "=", False)], limit=1
+            )
+
+    # En stores->branches, A siempre debe ser raíz (nunca una branch).
+    if parent_company and parent_company.parent_id:
+        _logger.warning(
+            "Detected branch company %s (ID: %s) as parent candidate; switching to root company",
+            parent_company.name,
+            parent_company.id,
+        )
+        while parent_company.parent_id:
+            parent_company = parent_company.parent_id
+
     if not parent_company:
         raise UserError("No se encontró una compañía activa para usar como parent")
 
@@ -1759,8 +1772,12 @@ def set_users_default_company(env, parent_company_id):
     parent = env["res.company"].browse(parent_company_id)
     if not parent.exists():
         return
-    users = env["res.users"].with_context(active_test=False).search([("share", "=", False)])
-    missing_access = users.filtered(lambda u: parent_company_id not in u.company_ids.ids)
+    users = (
+        env["res.users"].with_context(active_test=False).search([("share", "=", False)])
+    )
+    missing_access = users.filtered(
+        lambda u: parent_company_id not in u.company_ids.ids
+    )
     if missing_access:
         missing_access.write({"company_ids": [(4, parent_company_id)]})
     to_default = users.filtered(lambda u: u.company_id.id != parent_company_id)
