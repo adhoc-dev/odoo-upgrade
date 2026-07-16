@@ -1540,6 +1540,19 @@ def migrate_standard_fields(cr, env, id_a, id_b):
                     order_type_table,
                 )
 
+    if util.column_exists(cr, "sale_order_type", "invoice_company_id") and util.column_exists(
+        cr, "sale_order_type", "journal_id"
+    ):
+        cr.execute(
+            """
+            UPDATE sale_order_type sot
+               SET invoice_company_id = aj.company_id
+              FROM account_journal aj
+             WHERE aj.id = sot.journal_id
+               AND sot.journal_id IS NOT NULL
+            """
+        )
+
     for field in field_targets:
         model_name = field.model
         table = model_name.replace(".", "_")
