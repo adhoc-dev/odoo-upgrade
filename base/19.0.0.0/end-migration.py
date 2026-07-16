@@ -278,7 +278,7 @@ MODEL_STRATEGY = {
     "certificate.certificate": "KEEP",
     "product.combo": "KEEP",
     "product.combo.item": "KEEP",
-    "product.pricelist.item": "KEEP",
+    "product.pricelist.item": "MOVE_TO_PARENT",
     "payment.transaction": "KEEP",
     "payment.token": "KEEP",
     # Sigue a su website (MOVE_TO_PARENT). Si el provider está asociado a una web
