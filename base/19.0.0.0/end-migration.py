@@ -1953,6 +1953,66 @@ def migrate(cr, version):
                 """
             )
 
+        # Branches must sort after their parent company: enterprise intercompany
+        # lookup (_find_company_from_partner) takes the first company whose
+        # partner is an ancestor of the order partner, ordered by (sequence,
+        # name). If the branch sorts first it wins the lookup, and since after
+        # the merge branches have no flags nor warehouses, the intercompany
+        # flow silently stops triggering.
+        cr.execute(
+            """
+            UPDATE res_company branch
+               SET sequence = COALESCE(parent.sequence, 10) + 1
+              FROM res_company parent
+             WHERE branch.parent_id = parent.id
+            """
+        )
+
+        if util.column_exists(cr, "res_company", "intercompany_generate_purchase_orders"):
+            cr.execute(
+                """
+                UPDATE res_company parent
+                   SET intercompany_generate_purchase_orders = parent.intercompany_generate_purchase_orders
+                                                               OR branch.intercompany_generate_purchase_orders,
+                       intercompany_generate_sales_orders    = parent.intercompany_generate_sales_orders
+                                                               OR branch.intercompany_generate_sales_orders
+                  FROM res_company branch
+                 WHERE branch.parent_id = parent.id
+                   AND (branch.intercompany_generate_purchase_orders OR branch.intercompany_generate_sales_orders)
+                """
+            )
+            cr.execute(
+                """
+                UPDATE res_company
+                   SET intercompany_generate_purchase_orders = False,
+                       intercompany_generate_sales_orders    = False
+                 WHERE parent_id IS NOT NULL
+                   AND (intercompany_generate_purchase_orders OR intercompany_generate_sales_orders)
+                """
+            )
+
+        if util.column_exists(cr, "res_company", "intercompany_warehouse_id"):
+            cr.execute(
+                """
+                UPDATE res_company parent
+                   SET intercompany_warehouse_id = COALESCE(
+                           parent.intercompany_warehouse_id, branch.intercompany_warehouse_id
+                       )
+                  FROM res_company branch
+                 WHERE branch.parent_id = parent.id
+                   AND branch.intercompany_warehouse_id IS NOT NULL
+                   AND parent.intercompany_warehouse_id IS NULL
+                """
+            )
+            cr.execute(
+                """
+                UPDATE res_company
+                   SET intercompany_warehouse_id = NULL
+                 WHERE parent_id IS NOT NULL
+                   AND intercompany_warehouse_id IS NOT NULL
+                """
+            )
+
         cr.commit()
     # ========================================================================
     # MODE 1: STORE TO BRANCH (Single company with multi-store -> Multi-company branches)
