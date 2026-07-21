@@ -1895,6 +1895,19 @@ def migrate(cr, version):
         parent_id = mapping.get("a")
         if parent_id:
             set_users_default_company(env, parent_id)
+
+        if util.column_exists(cr, "stock_lot", "company_id"):
+            cr.execute(
+                """
+                UPDATE stock_lot sl
+                   SET company_id = pt.company_id
+                  FROM product_product pp
+                  JOIN product_template pt ON pt.id = pp.product_tmpl_id
+                 WHERE sl.product_id = pp.id
+                   AND sl.company_id IS DISTINCT FROM pt.company_id
+                """
+            )
+
         cr.commit()
     # ========================================================================
     # MODE 1: STORE TO BRANCH (Single company with multi-store -> Multi-company branches)
