@@ -1681,6 +1681,51 @@ def create_mapping(cr):
       )"""
     cr.execute(query)
     result = cr.fetchone()
+
+    if result[0] > 0:
+        # Detectar los pares exactos de companies involucrados en los cruces.
+        # Si todos los cruces son consistentemente entre 2 companies específicas
+        # (sin importar cuántas companies existan en total), se auto-detecta el mapeo.
+        # B = company de la línea de venta (la que tiene el stock)
+        # A = company de la factura (la que emite el documento fiscal)
+        cr.execute(
+            """
+            SELECT DISTINCT sol.company_id AS company_b_id, inv.company_id AS company_a_id
+              FROM sale_order_line sol
+              JOIN sale_order_line_invoice_rel rel ON rel.order_line_id = sol.id
+              JOIN account_move_line aml ON aml.id = rel.invoice_line_id
+              JOIN account_move inv ON inv.id = aml.move_id
+             WHERE inv.move_type IN ('out_invoice', 'out_refund')
+               AND sol.company_id <> aml.company_id
+            """
+        )
+        cross_pairs = cr.fetchall()  # [(company_b_id, company_a_id), ...]
+        b_ids = {p[0] for p in cross_pairs}
+        a_ids = {p[1] for p in cross_pairs}
+
+        if len(b_ids) == 1 and len(a_ids) == 1:
+            id_empresa_b = env["res.company"].browse(b_ids.pop())
+            id_empresa_a = env["res.company"].browse(a_ids.pop())
+            _logger.info(
+                "Auto-detectado cruce único: B='%s' (ID: %s) -> A='%s' (ID: %s)",
+                id_empresa_b.name, id_empresa_b.id,
+                id_empresa_a.name, id_empresa_a.id,
+            )
+            company_mapping = {"a": id_empresa_a.id, "b": id_empresa_b.id}
+            env["ir.config_parameter"].sudo().set_param(
+                "migration_19_end_multicompany", company_mapping
+            )
+            return company_mapping
+        else:
+            raise UserError(
+                "Cruces entre múltiples pares de compañías: %s. "
+                "Ver con Nico Col como se estructura el mapeo manualmente.",
+                [
+                    (env["res.company"].browse(b).name, env["res.company"].browse(a).name)
+                    for b, a in cross_pairs
+                ],
+            )
+
     if (
         result[0] > 0
         and len(
