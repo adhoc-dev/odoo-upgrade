@@ -1719,11 +1719,11 @@ def create_mapping(cr):
         else:
             raise UserError(
                 "Cruces entre múltiples pares de compañías: %s. "
-                "Ver con Nico Col como se estructura el mapeo manualmente.",
-                [
+                "Ver con Nico Col como se estructura el mapeo manualmente."
+                % [
                     (env["res.company"].browse(b).name, env["res.company"].browse(a).name)
                     for b, a in cross_pairs
-                ],
+                ]
             )
 
     if (
