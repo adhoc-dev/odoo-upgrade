@@ -1830,13 +1830,17 @@ def create_mapping(cr):
 
 
 def set_users_default_company(env, parent_company_id):
-    """Deja la compania padre como predeterminada para los usuarios internos."""
+    """Deja la compania padre como predeterminada para todos los usuarios (internos y externos)."""
     parent = env["res.company"].browse(parent_company_id)
     if not parent.exists():
         return
-    users = (
-        env["res.users"].with_context(active_test=False).search([("share", "=", False)])
-    )
+    
+    # Buscar TODOS los usuarios (internos y externos), excepto el usuario público
+    # El usuario público (login='public') no debe tener company específica
+    users = env["res.users"].with_context(active_test=False).search([
+        ("login", "!=", "public"),
+    ])
+    
     missing_access = users.filtered(
         lambda u: parent_company_id not in u.company_ids.ids
     )
@@ -1964,7 +1968,7 @@ def migrate(cr, version):
 
     if not store_mapping:
         _logger.info("No store mapping found, skipping store-to-branch migration")
-        return None
+        return
 
     _logger.info("Running STORE TO BRANCH migration")
     parent_company_id = migrate_store_to_branch(cr, env)
