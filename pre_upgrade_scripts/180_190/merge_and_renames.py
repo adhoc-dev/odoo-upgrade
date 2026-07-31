@@ -73,18 +73,23 @@ def migrate(cr, version):
             continue
         old_state = old_state[0]
         util.merge_module(cr, old, into, update_dependers=False)
-        # Ensure the target module is marked for upgrade
-        cr.execute(
-            SQL(
-                """
-                UPDATE ir_module_module
-                    SET state = %(upgrade_state)s
-                    WHERE name = %(name)s
-                """,
-                name=into,
-                upgrade_state=old_state,
+        # Ensure the target module is marked for upgrade — only when the old
+        # module was actually in use. If it only existed as a not-installed
+        # leftover row, keep the target's original state: copying the old state
+        # silently uninstalled active targets (e.g. l10n_ar_tax overwritten by
+        # l10n_ar_tax_ratio's 'uninstalled').
+        if old_state in ("installed", "to upgrade"):
+            cr.execute(
+                SQL(
+                    """
+                    UPDATE ir_module_module
+                        SET state = %(upgrade_state)s
+                        WHERE name = %(name)s
+                    """,
+                    name=into,
+                    upgrade_state=old_state,
+                )
             )
-        )
     for old, into in RENAMED_MODULES:
         util.rename_module(cr, old, into)
     for old, into in RENAMED_XMLIDS:
