@@ -1873,7 +1873,7 @@ def migrate(cr, version):
         company_mapping = create_mapping(cr)
 
     if not company_mapping:
-        _logger.warning("No company mapping found, skipping migration")
+        _logger.info("No company mapping found, skipping migration")
 
     if company_mapping and not isinstance(company_mapping, (list, tuple)):
         company_mapping = [company_mapping]
