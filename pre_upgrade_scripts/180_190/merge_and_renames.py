@@ -31,7 +31,7 @@ def migrate(cr, version):
         try:
             return original_new_module(cr, module, deps=deps, *args, **kwargs)
         except util.UnknownModuleError as e:
-            _logger.warning(
+            _logger.info(
                 "Skipping module %s due to missing dependencies: %s", module, e
             )
             return None
@@ -40,7 +40,7 @@ def migrate(cr, version):
         try:
             return original_new_module_dep(cr, module, new_dep)
         except util.UnknownModuleError as e:
-            _logger.warning(
+            _logger.info(
                 "Skipping module %s due to missing dependencies: %s", module, e
             )
             return None
