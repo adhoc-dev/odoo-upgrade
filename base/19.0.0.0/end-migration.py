@@ -343,6 +343,34 @@ def table_exists(cr, table_name):
     return cr.fetchone()[0]
 
 
+def flag_remapped_dependents(env, model, field_name, record_ids):
+    """Avisa al ORM que una FK se re-mapeó por SQL para que recompute lo que depende de ella.
+
+    El UPDATE crudo del re-mapeo no dispara ningún recompute, así que los campos
+    almacenados que dependen de esa FK quedan con el valor viejo. El caso concreto que
+    motivó esto: ``account.fiscal.position.l10n_ar_tax.company_id`` es
+    ``related="fiscal_position_id.company_id"`` con ``store=True``, así que al mover las
+    líneas de la posición fiscal de B a la de A quedaban apuntando a la compañía de B
+    mientras el registro ya colgaba de la de A (ticket 122841).
+    """
+    if not record_ids:
+        return
+    try:
+        records = env[model].browse(record_ids)
+        records.invalidate_recordset([field_name])
+        records.modified([field_name])
+    except Exception as e:
+        # No abortamos la migración por no poder marcar un recompute: dejamos rastro
+        # para poder corregir el dato después.
+        _logger.warning(
+            "No se pudo marcar para recomputar los dependientes de %s.%s (ids=%s): %s",
+            model,
+            field_name,
+            record_ids,
+            e,
+        )
+
+
 def handle_merge_or_move(env, model_name, id_a, id_b):
     """
     Intenta fusionar registros de B en A si son equivalentes.
@@ -477,10 +505,24 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             # Ej: account.tax.repartition.line.tax_id debe quedarse en el impuesto
             # original de B (que luego se archiva y se mueve a A), no moverse a
             # los repartition lines del impuesto A.
+            #
+            # account.fiscal.position.l10n_ar_tax son las retenciones/percepciones AR
+            # configuradas en la posición fiscal. Re-mapearlas metía en la posición
+            # fiscal de A retenciones que solo estaban configuradas en la de B: si las
+            # dos compañías tenían una posición fiscal con el mismo nombre (criterio de
+            # equivalencia de MERGE_CRITERIA), la de la matriz terminaba aplicando las
+            # retenciones de la sucursal. Con webservice provincial seteado (arba, agip,
+            # rentas_cordoba) eso rompe el registro de pagos en la matriz, que no tiene
+            # por qué tener las credenciales cargadas (ticket 122841). Las líneas quedan
+            # en el registro de B, que se archiva y se mueve a la matriz, así que la
+            # configuración no se pierde: queda inerte y recuperable.
             SKIP_FK_REMAP_MODELS = {
                 "account.tax": {
                     "account.tax.repartition.line",
                     "l10n_ar.payment.withholding",
+                },
+                "account.fiscal.position": {
+                    "account.fiscal.position.l10n_ar_tax",
                 },
             }
             skip_models = SKIP_FK_REMAP_MODELS.get(model_name, set())
@@ -502,14 +544,30 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                 ]
             )
             for fk in fk_fields:
+                fk_table = fk.model.replace(".", "_")
                 if fk.model in skip_models:
-                    _logger.info(
-                        "Saltando FK: %s.%s (modelo hijo propio, no se redirige al equivalente en A)",
+                    # Contamos lo que queda en B para que el registro sea revisable:
+                    # si había configuración, es un cambio de comportamiento respecto
+                    # de la versión anterior y alguien lo tiene que mirar.
+                    kept = 0
+                    if table_exists(cr, fk_table) and is_integer_column(
+                        cr, fk_table, fk.name
+                    ):
+                        cr.execute(
+                            f"SELECT count(*) FROM {fk_table} WHERE {fk.name} = %s",
+                            (rec_b.id,),
+                        )
+                        kept = cr.fetchone()[0]
+                    log = _logger.warning if kept else _logger.info
+                    log(
+                        "Saltando FK: %s.%s (modelo hijo propio, no se redirige al equivalente en A). "
+                        "Quedan %s registro(s) en '%s' (B), que se archiva",
                         fk.model,
                         fk.name,
+                        kept,
+                        rec_b.display_name,
                     )
                     continue
-                fk_table = fk.model.replace(".", "_")
                 if table_exists(cr, fk_table):
                     if is_integer_column(cr, fk_table, fk.name):
                         _logger.info(
@@ -520,8 +578,11 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                             rec_a.id,
                         )
                         cr.execute(
-                            f"UPDATE {fk_table} SET {fk.name} = %s WHERE {fk.name} = %s",
+                            f"UPDATE {fk_table} SET {fk.name} = %s WHERE {fk.name} = %s RETURNING id",
                             (rec_a.id, rec_b.id),
+                        )
+                        flag_remapped_dependents(
+                            env, fk.model, fk.name, [row[0] for row in cr.fetchall()]
                         )
                     else:
                         _logger.info(
@@ -546,6 +607,11 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             # No hay equivalente, simplemente lo movemos a la matriz
             _logger.info(f"MOVIENDO: {model_name} '{rec_b.display_name}' a compañía A")
             _move_record_to_parent(rec_b)
+
+    # Materializamos los recomputes marcados en flag_remapped_dependents. El resto de
+    # la migración sigue trabajando con SQL crudo, así que los stored tienen que quedar
+    # escritos ahora y no en un flush implícito posterior.
+    env.flush_all()
 
 
 def check_consistency_keep(env, model_name, id_b):
