@@ -14,6 +14,7 @@ MERGE_MODULES = [
     ("l10n_ar_stock_custom", "l10n_ar_stock"),
     ("l10n_ar_stock_adhoc", "l10n_ar_stock"),
     ("payment_redsys_oca", "payment_redsys"),
+    ("l10n_uy_edi_stock_custom", "l10n_uy_edi_stock"),
 ]
 RENAMED_MODULES = []
 RENAMED_XMLIDS = [("payment_redsys.redsys_form", "payment_redsys.redirect_form")]
