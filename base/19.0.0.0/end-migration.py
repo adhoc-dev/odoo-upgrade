@@ -1851,6 +1851,69 @@ def set_users_default_company(env, parent_company_id):
         to_default.write({"company_id": parent_company_id})
 
 
+def realign_subcontracting_pointers(env):
+    """Realign subcontracting_location_id and the property_stock_subcontractor
+    ir.default with the location used by the subcontracting rules after the
+    branch consolidation. Idempotent; skips companies whose rules point to more
+    than one location. Ticket 123085."""
+    Company = env["res.company"]
+    if "subcontracting_location_id" not in Company._fields:
+        return
+
+    Rule = env["stock.rule"]
+    Partner = env["res.partner"]
+    IrDefault = env["ir.default"]
+
+    companies = Company.search([])
+    candidates = companies.mapped("subcontracting_location_id")
+    if not candidates:
+        return
+
+    for company in companies:
+        declared = company.subcontracting_location_id
+        rules = Rule.search([
+            ("company_id", "=", company.id),
+            ("location_dest_id", "in", candidates.ids),
+        ])
+        used = rules.mapped("location_dest_id")
+        if len(used) > 1:
+            _logger.warning(
+                "SUBCONTRACT REALIGN: %s (id=%s) tiene reglas de subcontratacion "
+                "apuntando a mas de una ubicacion (%s); no se corrige, requiere "
+                "revision funcional.",
+                company.name, company.id, used.ids)
+            continue
+        if len(used) != 1 or declared == used:
+            continue
+        target = used[0]
+
+        company.subcontracting_location_id = target
+        IrDefault.set(
+            "res.partner", "property_stock_subcontractor", target.id,
+            company_id=company.id,
+        )
+        if not declared:
+            continue
+
+        stragglers = Partner.with_company(company).search([
+            ("property_stock_subcontractor", "=", declared.id),
+        ])
+        if stragglers:
+            stragglers.with_company(company).write(
+                {"property_stock_subcontractor": target.id})
+
+        orphan_in_use = (
+            env["stock.quant"].search_count(
+                [("location_id", "child_of", declared.id)])
+            or env["stock.move"].search_count([
+                "|", ("location_id", "child_of", declared.id),
+                     ("location_dest_id", "child_of", declared.id)])
+            or Rule.search_count([("location_dest_id", "=", declared.id)])
+        )
+        if not orphan_in_use:
+            declared.active = False
+
+
 def migrate(cr, version):
     env = util.env(cr)
 
@@ -2028,6 +2091,8 @@ def migrate(cr, version):
 
     if not store_mapping:
         _logger.info("No store mapping found, skipping store-to-branch migration")
+        realign_subcontracting_pointers(env)
+        cr.commit()
         return
 
     _logger.info("Running STORE TO BRANCH migration")
@@ -2052,4 +2117,5 @@ def migrate(cr, version):
             {"shared_to_branches": True}
         )
         set_users_default_company(env, parent_company_id)
+        realign_subcontracting_pointers(env)
         cr.commit()
