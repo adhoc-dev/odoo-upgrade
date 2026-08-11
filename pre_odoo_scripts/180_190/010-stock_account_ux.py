@@ -22,3 +22,6 @@ def migrate(cr, version):
         """
         % BACKUP_TABLE
     )
+    # Sin PK, el test_ensure_has_pk de Odoo la marca CRITICAL en cada corrida. El DISTINCT ON
+    # ya garantiza un solo registro por stock_move_id y el WHERE descarta los NULL.
+    cr.execute("ALTER TABLE %s ADD PRIMARY KEY (stock_move_id)" % BACKUP_TABLE)

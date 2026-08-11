@@ -21,6 +21,12 @@ FIELD_OWNERS = [
     # Reatribuirlo igual alcanza: Odoo no conoce el modulo y lo deja, y el registro obsoleto lo
     # limpia nuestro `-u all` al actualizar el modulo.
     ("sale.subscription.report", "lot_id", "sale_order_lot_selection"),
+    # Mismo caso por otra via: saas_client_adhoc le agrega `lines` a ir.ui.view y estos dos
+    # modelos de Odoo hacen _inherits de ahi, asi que el campo delegado queda a nombre de
+    # `website`. No aborta como los de arriba (lo reporta odoo.upgrade.util como CRITICAL y
+    # sigue), pero Odoo borra el campo en su corrida y lo recrea despues nuestro `-u all`.
+    ("website.controller.page", "lines", "saas_client_adhoc"),
+    ("website.page", "lines", "saas_client_adhoc"),
 ]
 
 
