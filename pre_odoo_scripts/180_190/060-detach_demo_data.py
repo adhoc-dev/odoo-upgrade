@@ -109,7 +109,8 @@ def migrate(cr, version):
     if not _module_path("base", roots):
         raise RuntimeError("No se encontro el modulo `base` en %s carpeta(s) de addons" % len(roots))
 
-    to_delete = set()
+    declared_demo = set()
+    declared_data = set()
     with_demo = missing_path = 0
     for module in modules:
         path = _module_path(module, roots)
@@ -118,12 +119,24 @@ def migrate(cr, version):
             continue
         manifest = _manifest(path)
         demo = _declared(manifest, module, path, DEMO_KEYS)
-        if not demo:
-            continue
-        with_demo += 1
-        # Si el xmlid tambien se declara en un archivo no-demo, el registro es legitimo y el demo
-        # solo lo extiende: borrarlo romperia el de verdad.
-        to_delete |= demo - _declared(manifest, module, path, DATA_KEYS)
+        if demo:
+            with_demo += 1
+        declared_demo |= demo
+        declared_data |= _declared(manifest, module, path, DATA_KEYS)
+
+    # La resta es GLOBAL, no por modulo: el demo de un modulo puede declarar un xmlid que
+    # pertenece a otro (el demo de crm declara sales_team.team_sales_department). Restando solo
+    # dentro del mismo modulo se borran xmlids que su dueno declara como data — en el build
+    # 102274 eso se llevo puestos base.group_user, base.main_company y base.user_admin, y el
+    # pre-only-one-user-type-group.py de Odoo murio insertando un gid NULL.
+    to_delete = declared_demo - declared_data
+
+    # Red de seguridad contra esa misma clase de error: estos no son demo bajo ninguna lectura.
+    sacred = {("base", "group_user"), ("base", "group_portal"), ("base", "main_company"),
+              ("base", "user_admin")}
+    if to_delete & sacred:
+        raise RuntimeError("El calculo de xmlids de demo incluye data esencial: %s"
+                           % sorted(to_delete & sacred))
 
     _logger.info(
         "Detaching demo data: %s installed module(s), %s with demo files, %s xmlid(s) declared, "
