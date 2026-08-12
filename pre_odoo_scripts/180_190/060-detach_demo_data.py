@@ -1,9 +1,8 @@
+import ast
 import csv
 import logging
 import os
 from xml.etree import ElementTree
-
-from odoo.modules.module import get_manifest, get_module_path
 
 _logger = logging.getLogger(__name__)
 
@@ -32,6 +31,44 @@ DEMO_KEYS = ("demo", "demo_xml")
 DATA_KEYS = ("data", "init_xml", "update_xml")
 
 
+def _addons_roots():
+    """Directorios donde buscar modulos.
+
+    No se puede usar `odoo.modules.module`: el runner corre como python plano y ahi `odoo`
+    resuelve solo al namespace de upgrade-util, sin el Odoo completo (`ModuleNotFoundError:
+    No module named 'odoo.modules'`, build 102239). Los repos estan montados como hermanos del
+    nuestro, asi que salimos desde la ruta de este archivo.
+    """
+    build_dir = os.path.abspath(__file__)
+    for _ in range(4):  # .../<build>/<repo>/pre_odoo_scripts/180_190/<este archivo>
+        build_dir = os.path.dirname(build_dir)
+
+    roots = []
+    for entry in sorted(os.listdir(build_dir)):
+        repo = os.path.join(build_dir, entry)
+        if not os.path.isdir(repo):
+            continue
+        roots.append(repo)
+        # El core trae sus modulos en subcarpetas, no en la raiz del repo
+        for sub in ("addons", os.path.join("odoo", "addons")):
+            if os.path.isdir(os.path.join(repo, sub)):
+                roots.append(os.path.join(repo, sub))
+    return roots
+
+
+def _module_path(module, roots):
+    for root in roots:
+        if os.path.exists(os.path.join(root, module, "__manifest__.py")):
+            return os.path.join(root, module)
+    return None
+
+
+def _manifest(path):
+    # Mismo parseo que usa Odoo en modules/module.py: ast.literal_eval del archivo entero.
+    with open(os.path.join(path, "__manifest__.py"), encoding="utf-8") as handle:
+        return ast.literal_eval(handle.read())
+
+
 def _xmlids(path, module):
     """XMLIDs declarados en un archivo de data, como pares (modulo, nombre)."""
     found = set()
@@ -51,10 +88,10 @@ def _xmlids(path, module):
     return {tuple(x.split(".", 1)) if "." in x else (module, x) for x in found}
 
 
-def _declared(module, path, keys):
+def _declared(manifest, module, path, keys):
     declared = set()
     for key in keys:
-        for filename in get_manifest(module).get(key) or ():
+        for filename in manifest.get(key) or ():
             full_path = os.path.join(path, filename)
             if os.path.exists(full_path):
                 declared |= _xmlids(full_path, module)
@@ -66,20 +103,27 @@ def migrate(cr, version):
     cr.execute("SELECT name FROM ir_module_module WHERE state = 'installed' ORDER BY name")
     modules = [name for (name,) in cr.fetchall()]
 
+    roots = _addons_roots()
+    # Chequeo de cordura: si no encontramos `base` es que el layout no es el esperado y estariamos
+    # por hacer un detach parcial, que es peor que ninguno.
+    if not _module_path("base", roots):
+        raise RuntimeError("No se encontro el modulo `base` en %s carpeta(s) de addons" % len(roots))
+
     to_delete = set()
     with_demo = missing_path = 0
     for module in modules:
-        path = get_module_path(module, display_warning=False)
+        path = _module_path(module, roots)
         if not path:
             missing_path += 1
             continue
-        demo = _declared(module, path, DEMO_KEYS)
+        manifest = _manifest(path)
+        demo = _declared(manifest, module, path, DEMO_KEYS)
         if not demo:
             continue
         with_demo += 1
         # Si el xmlid tambien se declara en un archivo no-demo, el registro es legitimo y el demo
         # solo lo extiende: borrarlo romperia el de verdad.
-        to_delete |= demo - _declared(module, path, DATA_KEYS)
+        to_delete |= demo - _declared(manifest, module, path, DATA_KEYS)
 
     _logger.info(
         "Detaching demo data: %s installed module(s), %s with demo files, %s xmlid(s) declared, "
