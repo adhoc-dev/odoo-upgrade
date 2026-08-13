@@ -1109,7 +1109,15 @@ def migrate_store_fields_to_company(cr, env, mapping):
             if not Model._auto:
                 continue
         except KeyError:
-            _logger.warning(f"Model {model_name} not found, skipping")
+            if model_name == "res.store":
+                # Esperado en STORE TO BRANCH: multi_store no existe en 19
+                # a proposito (los stores se convierten en branches), asi que
+                # su modelo nunca va a estar en el env destino. INFO, no
+                # WARNING: en runbot pinta el build y en un cliente real
+                # pasaria exactamente igual.
+                _logger.info(f"Model {model_name} not found, skipping (expected: store -> branch)")
+            else:
+                _logger.warning(f"Model {model_name} not found, skipping")
             continue
 
         # Verificar si el modelo tiene company_id
