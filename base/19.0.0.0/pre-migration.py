@@ -242,8 +242,16 @@ def backup_store_user_relation(cr):
               FROM information_schema.table_constraints AS tc2
               JOIN information_schema.constraint_column_usage AS ccu2
                   ON ccu2.constraint_name = tc2.constraint_name
+              JOIN information_schema.key_column_usage AS kcu2
+                  ON kcu2.constraint_name = tc2.constraint_name
               WHERE tc2.constraint_type = 'FOREIGN KEY'
                 AND ccu2.table_name = 'res_users'
+                -- create_uid/write_uid le dan FK a res_users a TODA tabla de
+                -- Odoo: sin excluirlos, cualquier tabla con store_id califica
+                -- y rel_tables[0] elige la primera alfabetica (account_journal)
+                -- en vez de la m2m real res_store_users_rel (visto en el build
+                -- 102608 de runbot: el backup guardo 145 journals).
+                AND kcu2.column_name NOT IN ('create_uid', 'write_uid')
           )
         ORDER BY tc.table_name
         """
