@@ -264,7 +264,26 @@ def backup_store_user_relation(cr):
         )
         return
 
-    # Usar el primer resultado (normalmente solo hay uno)
+    # Las tablas de negocio (account_move, sale_order, ...) también tienen FK
+    # a res_store y a res_users (invoice_user_id, user_id, ...), así que
+    # entran como candidatas. La m2m real se distingue por estructura: solo
+    # tiene las dos columnas de la relación.
+    pure_m2m = []
+    for table in rel_tables:
+        cr.execute(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.columns
+            WHERE table_name = %s
+              AND table_schema = 'public'
+            """,
+            (table,),
+        )
+        if cr.fetchone()[0] == 2:
+            pure_m2m.append(table)
+    if pure_m2m:
+        rel_tables = pure_m2m
+
     rel_table = rel_tables[0]
     if len(rel_tables) > 1:
         _logger.warning(
