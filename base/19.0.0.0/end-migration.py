@@ -1662,6 +1662,31 @@ def migrate_standard_fields(cr, env, id_a, id_b):
             """,
         )
 
+    # ---- limpiar warehouse_id inconsistente en sale.order.type ----
+    # Mismo problema que journal_id arriba, pero con el almacén: company_id
+    # quedó en la parent (A) por el MOVE_TO_PARENT de sale.order.type, pero
+    # warehouse_id puede seguir apuntando a un almacén que quedó en una
+    # sucursal (B) -su company_id no se tocó acá, lo maneja aparte el
+    # mapeo store->company-. Ese cruce rompe _check_company al crear una OV
+    # con este order type desde la parent, así que lo ponemos en NULL para
+    # que Odoo elija el almacén por defecto de la company activa.
+    if table_exists(cr, "sale_order_type") and util.column_exists(
+        cr, "sale_order_type", "warehouse_id"
+    ):
+        cr.execute(
+            """
+            UPDATE sale_order_type sot
+            SET warehouse_id = NULL
+            WHERE sot.warehouse_id IS NOT NULL
+            AND EXISTS (
+                SELECT 1
+                    FROM stock_warehouse sw
+                    WHERE sw.id = sot.warehouse_id
+                    AND sw.company_id != sot.company_id
+            )
+            """,
+        )
+
 
 def create_mapping(cr):
     company_mapping = {}
