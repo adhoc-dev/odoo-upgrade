@@ -1950,7 +1950,7 @@ def realign_subcontracting_pointers(env):
 def migrate(cr, version):
     env = util.env(cr)
 
-    if len(env["res.company"].search([])) == 1:
+    if len(env["res.company"].search([])) == 1 and not table_exists(cr, "res_store_bu"):
         return
 
     # Determinar el modo de migración
