@@ -1,4 +1,5 @@
 import logging
+import re
 
 from odoo.exceptions import UserError
 from odoo.tools.safe_eval import safe_eval
@@ -1236,6 +1237,11 @@ def migrate_store_to_branch(cr, env):
         if not store_id.parent_id and company.id != store_id.company_id:
             store_id._write({"parent_id": parent_company_id})
 
+    # 2.a Stores are branches of the same legal entity as the parent company,
+    # so every branch has to carry the parent's VAT.
+    sync_branch_vat_with_parent(cr, parent_company_id, branch_company_ids)
+    cr.commit()
+
     # 2.b Defensa para builds re-corridos / companies reutilizadas: si quedó
     # algún payment.provider de una branch apuntando a una website de otra
     # company, lo limpiamos antes de tocar nada por ORM (website tiene check
@@ -1947,6 +1953,96 @@ def realign_subcontracting_pointers(env):
             declared.active = False
 
 
+def _normalized_vat(vat):
+    """Strip formatting so '30-12345678-9' and '30123456789' compare as equal."""
+    return re.sub(r"[^A-Z0-9]", "", (vat or "").upper())
+
+
+def clear_branch_vat(cr, parent_company_id, branch_company_id):
+    """Clear the VAT of a company merged in as a branch, only when it is the
+    parent's own VAT.
+
+    Two sibling companies sharing a VAT are one legal entity split in two: once
+    B hangs from A, an empty VAT makes it fall back to the closest ancestor with
+    one (see _get_branches_with_same_vat), so it consolidates with the parent
+    instead of being read as a separate taxpayer.
+
+    If the VATs differ, A and B are different legal entities and B keeps its
+    own: dropping it would silently pull its moves into the parent's tax
+    reports.
+    """
+    cr.execute(
+        """
+        SELECT c.id, p.id, p.vat
+          FROM res_company c
+          JOIN res_partner p ON p.id = c.partner_id
+         WHERE c.id IN %s
+        """,
+        (tuple({parent_company_id, branch_company_id}),),
+    )
+    company_data = {
+        company_id: (partner_id, vat) for company_id, partner_id, vat in cr.fetchall()
+    }
+    branch_partner_id, branch_vat = company_data.get(branch_company_id, (None, None))
+    parent_vat = company_data.get(parent_company_id, (None, None))[1]
+
+    if not _normalized_vat(branch_vat):
+        return
+
+    if _normalized_vat(branch_vat) != _normalized_vat(parent_vat):
+        _logger.info(
+            "Branch company %s keeps its VAT (%s): it differs from the parent "
+            "company %s (%s), so they are different legal entities",
+            branch_company_id,
+            branch_vat,
+            parent_company_id,
+            parent_vat,
+        )
+        return
+
+    cr.execute("UPDATE res_partner SET vat = NULL WHERE id = %s", (branch_partner_id,))
+    _logger.info(
+        "Cleared VAT of branch company %s: it was the same as the parent company %s (%s)",
+        branch_company_id,
+        parent_company_id,
+        parent_vat,
+    )
+
+
+def sync_branch_vat_with_parent(cr, parent_company_id, branch_company_ids):
+    """Give every branch created from a res.store the VAT of its parent.
+
+    Stores are branches of the same legal entity, so they share the parent's
+    VAT. Setting it explicitly (instead of relying on the empty-VAT fallback of
+    _get_branches_with_same_vat) keeps the branch inside the parent's fiscal
+    entity even for companies that already existed with a VAT of their own.
+    """
+    if not branch_company_ids:
+        return
+    extra_set = ""
+    if util.column_exists(cr, "res_partner", "l10n_latam_identification_type_id"):
+        extra_set = (
+            ", l10n_latam_identification_type_id = pp.l10n_latam_identification_type_id"
+        )
+    cr.execute(
+        f"""
+        UPDATE res_partner bp
+           SET vat = pp.vat{extra_set}
+          FROM res_company bc
+          JOIN res_company pc ON pc.id = %s
+          JOIN res_partner pp ON pp.id = pc.partner_id
+         WHERE bc.partner_id = bp.id
+           AND bc.id IN %s
+        """,
+        (parent_company_id, tuple(branch_company_ids)),
+    )
+    _logger.info(
+        "Synced VAT of %s branch companies with parent company %s",
+        cr.rowcount,
+        parent_company_id,
+    )
+
+
 def migrate(cr, version):
     env = util.env(cr)
 
@@ -1990,6 +2086,10 @@ def migrate(cr, version):
             cr.execute(
                 "UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b)
             )
+
+            # 0.1 If A and B shared the VAT they are one legal entity: drop
+            # B's VAT so it consolidates with the parent's once it is a branch.
+            clear_branch_vat(cr, id_a, id_b)
 
             # 1. Movimiento Operativo (SQL)
             migrate_standard_fields(cr, env, id_a, id_b)
