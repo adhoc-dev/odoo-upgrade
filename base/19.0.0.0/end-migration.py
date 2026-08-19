@@ -2046,7 +2046,7 @@ def sync_branch_vat_with_parent(cr, parent_company_id, branch_company_ids):
 def migrate(cr, version):
     env = util.env(cr)
 
-    if len(env["res.company"].search([])) == 1:
+    if len(env["res.company"].search([])) == 1 and not table_exists(cr, "res_store_bu"):
         return
 
     # Determinar el modo de migración
