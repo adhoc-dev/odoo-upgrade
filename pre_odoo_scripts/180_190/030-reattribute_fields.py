@@ -27,6 +27,17 @@ FIELD_OWNERS = [
     # sigue), pero Odoo borra el campo en su corrida y lo recrea despues nuestro `-u all`.
     ("website.controller.page", "lines", "saas_client_adhoc"),
     ("website.page", "lines", "saas_client_adhoc"),
+    # La variante inversa: el modelo es de la OCA y los campos son de Odoo. product.customerinfo
+    # (OCA product_customerinfo) nace con `_inherit = "product.supplierinfo"` + `_name` propio,
+    # asi que hereda todo lo que otros modulos le agregan al padre y el ORM registra esos xmlid
+    # contra el modulo que los declara, todos de Odoo. purchase_requisition_line_id es el unico
+    # almacenado: ahi el script de `base` aborta. Los otros cuatro los reporta como CRITICAL y
+    # sigue, pero se reatribuyen igual para que Odoo no los borre. Detectado en el request 12182.
+    ("product.customerinfo", "purchase_requisition_line_id", "product_customerinfo"),
+    ("product.customerinfo", "purchase_requisition_id", "product_customerinfo"),
+    ("product.customerinfo", "last_purchase_date", "product_customerinfo"),
+    ("product.customerinfo", "show_set_supplier_button", "product_customerinfo"),
+    ("product.customerinfo", "is_subcontractor", "product_customerinfo"),
 ]
 
 
