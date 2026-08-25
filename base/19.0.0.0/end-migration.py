@@ -813,13 +813,21 @@ def get_store_to_company_mapping(env):
     """
     Crea o encuentra el mapeo entre stores y companies.
 
-    El parámetro guardado solo contiene {'a': parent_id, 'b': [branch_ids]}.
-    El store_mapping ({store_id: company_id}) se reconstruye en runtime desde
-    res_store_bu para no almacenar datos derivados en el parámetro.
+    El parámetro guardado contiene {'a': parent_id, 'b': [branch_ids],
+    'store_mapping': {store_id: company_id}}. store_mapping cubre TODOS los
+    stores de res_store_bu, incluido el store raíz (antes se descartaba de
+    la migración de campos porque no entraba en 'b' — ver T-125292).
 
     Reglas:
-    - La company parent (A) es la que NO tiene parent_id
-    - Cada store de res_store_bu genera o reutiliza una res.company branch
+    - La company parent (A) es la que NO tiene parent_id.
+    - Cada store se resuelve, en orden: (1) override manual explícito vía el
+      parámetro `migration_19_end_store_overrides` — para casos donde el
+      cliente pide agrupar un store bajo una branch puntual que ningún
+      heurístico puede adivinar (ej. T-125292: "Casa Central" tiene que
+      terminar en la company de la sucursal Decoexpress, no en la parent ni
+      en una branch propia); (2) company existente con el mismo nombre;
+      (3) el store raíz cae en la parent (comportamiento histórico) y
+      cualquier otro store sin match se crea como branch nueva.
 
     Returns:
         dict: {'a': parent_id, 'b': [branch_ids], 'store_mapping': {store_id: company_id}}
@@ -835,7 +843,10 @@ def get_store_to_company_mapping(env):
 
     Company = env["res.company"]
 
-    # Intentar obtener el mapeo base guardado (solo 'a' y 'b')
+    # Intentar obtener el mapeo guardado. Los parámetros guardados por una
+    # versión previa de este script solo traen 'a'/'b' (sin store_mapping);
+    # en ese caso los callers hacen fallback al matching legacy por nombre,
+    # así que no forzamos una reconstrucción acá.
     saved_mapping = safe_eval(
         env["ir.config_parameter"]
         .sudo()
@@ -844,6 +855,20 @@ def get_store_to_company_mapping(env):
 
     if saved_mapping:
         return saved_mapping
+
+    # Override manual opcional: {store_id: company_id}. Se consulta ANTES de
+    # construir el mapping automático, para los stores que no se pueden
+    # resolver por heurística (ni "match por nombre" ni "el raíz es la
+    # parent"). Ejemplo real (T-125292):
+    #   migration_19_end_store_overrides = "{123: 45}"
+    # mapea el store 123 (res_store_bu.id) directo a la company 45, sin
+    # pasar por la búsqueda por nombre ni crear una branch nueva.
+    store_overrides = safe_eval(
+        env["ir.config_parameter"]
+        .sudo()
+        .get_param("migration_19_end_store_overrides", "{}")
+    ) or {}
+    store_overrides = {int(k): int(v) for k, v in store_overrides.items()}
 
     # ---- Primera ejecución: construir el mapping ----
 
@@ -913,19 +938,37 @@ def get_store_to_company_mapping(env):
     store_to_company = {}
     branch_company_ids = []
 
-    # El store parent es el primero sin parent_id
-    parent_store = next((s for s in stores_data if s[2] is None), stores_data[0])
-    store_to_company[parent_store[0]] = parent_company.id
-    _logger.info(
-        "Mapping parent store '%s' (ID: %s) -> parent company '%s' (ID: %s)",
-        parent_store[1],
-        parent_store[0],
-        parent_company.name,
-        parent_company.id,
-    )
+    # El store parent es el primero sin parent_id. Ya NO se fuerza acá mismo
+    # a la parent company: se resuelve en el loop de abajo como cualquier
+    # otro store (override > match por nombre > fallback a la parent), para
+    # no perder de vista sus registros cuando el destino real es otro
+    # (ver T-125292: el store raíz "Casa Central" no es la parent ni una
+    # branch propia, es parte de otra sucursal ya existente).
+    parent_store_id = next((s for s in stores_data if s[2] is None), stores_data[0])[0]
 
     for store_id, store_name, store_parent_id, store_original_company_id in stores_data:
         if store_id in store_to_company:
+            continue
+
+        is_root_store = store_id == parent_store_id
+
+        if store_id in store_overrides:
+            target_company = Company.browse(store_overrides[store_id])
+            if not target_company.exists():
+                raise UserError(
+                    f"migration_19_end_store_overrides mapea el store {store_id} "
+                    f"a la company {store_overrides[store_id]}, que no existe."
+                )
+            store_to_company[store_id] = target_company.id
+            if target_company.id != parent_company.id:
+                branch_company_ids.append(target_company.id)
+            _logger.info(
+                "Override manual: store '%s' (ID: %s) -> company '%s' (ID: %s)",
+                store_name,
+                store_id,
+                target_company.name,
+                target_company.id,
+            )
             continue
 
         # Buscar company existente por nombre
@@ -938,6 +981,18 @@ def get_store_to_company_mapping(env):
                 "Found existing company '%s' for store '%s'",
                 existing_company.name,
                 store_name,
+            )
+        elif is_root_store:
+            # Sin override y sin company homónima: comportamiento histórico,
+            # el store raíz asume la identidad de la parent (no se crea una
+            # branch nueva para él).
+            store_to_company[store_id] = parent_company.id
+            _logger.info(
+                "Mapping root store '%s' (ID: %s) -> parent company '%s' (ID: %s)",
+                store_name,
+                store_id,
+                parent_company.name,
+                parent_company.id,
             )
         else:
             # Determinar parent de la nueva branch
@@ -975,14 +1030,26 @@ def get_store_to_company_mapping(env):
                 store_id,
             )
 
-    # Guardar SOLO 'a' y 'b' en el parámetro (store_mapping se reconstruye desde res_store_bu)
-    base_mapping = {"a": parent_company.id, "b": branch_company_ids}
+    # Dedup preservando orden: dos stores distintos pueden resolver a la
+    # misma company (ej. un override que apunta al id de una branch que otro
+    # store ya creó/encontró por nombre — ver caso Casa Central -> Decoexpress
+    # en T-125292). migrate_store_to_branch no es tolerante a IDs repetidos
+    # en 'b' (re-procesa merge de config dos veces para la misma branch).
+    branch_company_ids = list(dict.fromkeys(branch_company_ids))
+
+    # Guardar 'a', 'b' y el store_mapping completo (store raíz incluido) para
+    # que migrate_store_fields_to_company pueda mover TODOS los registros
+    # store_id-referenciados, no solo los de las branches en 'b'.
+    base_mapping = {
+        "a": parent_company.id,
+        "b": branch_company_ids,
+        "store_mapping": store_to_company,
+    }
     env["ir.config_parameter"].sudo().set_param(
         "migration_19_end_store_to_branch", str(base_mapping)
     )
-    _logger.info("Saved base mapping to parameter: %s", base_mapping)
+    _logger.info("Saved mapping to parameter: %s", base_mapping)
 
-    # Incluir store_mapping en retorno (solo para esta ejecución)
     return base_mapping
 
 
@@ -1079,8 +1146,26 @@ def migrate_store_fields_to_company(cr, env, mapping):
 
     Args:
         mapping: dict {'a': parent_id, 'b': [branch_ids], 'store_mapping': {store_id: company_id}}
-                 store_mapping se reconstruye en runtime desde res_store_bu, no se persiste.
+
+    Camino nuevo (mapping trae 'store_mapping'): un UPDATE por store,
+    matcheando por id contra el propio field_name (ej. warehouse.store_id =
+    <store_id>). Cubre TODOS los stores resueltos en get_store_to_company_mapping,
+    store raíz incluido — antes ese store quedaba afuera porque el loop solo
+    recorría mapping['b'] (T-125292: los registros de "Casa Central" nunca se
+    tocaban acá y terminaban con el company_id que les hubiera dejado el modo
+    COMPANY MERGE previo, generando cruces entre empresas).
+
+    Camino legacy (mapping sin 'store_mapping', param guardado por una
+    versión previa de este script): se conserva el matching por nombre para
+    no romper una migración ya en curso con ese formato.
     """
+    store_mapping = mapping.get("store_mapping") or {}
+    if not store_mapping:
+        _logger.warning(
+            "mapping sin 'store_mapping' (parámetro guardado en formato "
+            "viejo) - usando el matching legacy por nombre de company. Los "
+            "registros del store raíz no se van a migrar por este camino."
+        )
 
     # Buscar todos los campos que apuntan a res.store
     store_fields = env["ir.model.fields"].search(
@@ -1126,52 +1211,68 @@ def migrate_store_fields_to_company(cr, env, mapping):
             _logger.info(f"Model {model_name} has {field_name} but no company_id field")
             continue
 
-        # Para cada store, actualizar los registros
-        for store_id in mapping["b"]:
-            store_id = env["res.company"].browse(store_id)
-            company_id = env["res.company"].browse(mapping["a"])
-            if field.ttype == "many2one":
-                # Verificar si el campo es related o computed
-                field_obj = Model._fields.get(field_name)
+        if field.ttype == "many2many":
+            # Para many2many, esto es más complejo
+            # Por ahora lo saltamos ya que store_id suele ser many2one
+            _logger.info(
+                f"  Skipping many2many field {field_name} (not commonly used for stores)"
+            )
+            processed_models.add(model_name)
+            continue
 
-                # Si es un campo related, no lo tocamos en SQL (se recomputará)
-                if field_obj and field_obj.related:
-                    _logger.info(
-                        f"  Skipping related field {field_name}, will be recomputed"
-                    )
-                    continue
+        # Verificar si el campo es related o computed
+        field_obj = Model._fields.get(field_name)
+        if field_obj and field_obj.related:
+            _logger.info(f"  Skipping related field {field_name}, will be recomputed")
+            processed_models.add(model_name)
+            continue
 
-                # account.journal tiene UNIQUE(company_id, code). Si la branch
-                # destino ya tiene un diario con el mismo code que uno entrante,
-                # el UPDATE de company_id viola la constraint. Liberamos las
-                # colisiones (renombrando el diario con menos asientos) antes.
+        if store_mapping:
+            # Camino nuevo: un UPDATE por store (no por branch), matcheando
+            # por id contra el propio field_name en vez de por nombre de
+            # company. Cubre el store raíz igual que a cualquier branch.
+            for store_id_bu, dest_company_id in store_mapping.items():
+                dest_company = env["res.company"].browse(dest_company_id)
+
                 if model_name == "account.journal":
-                    _resolve_journal_code_collisions(cr, store_id.id, store_id.name)
+                    _resolve_journal_code_collisions(cr, dest_company.id, dest_company.name)
                     env.cr.commit()
 
-                # Actualizar company_id basado en store_id
-                # Solo actualizamos si:
-                # 1. El store_id coincide
-                # 2. El company_id está vacío o es diferente al target
+                query = f"""
+                    UPDATE {table}
+                    SET company_id = %s
+                    WHERE {field_name} = %s
+                    AND (company_id IS NULL OR company_id != %s)
+                """
+                cr.execute(query, (dest_company.id, store_id_bu, dest_company.id))
+
+                if cr.rowcount > 0:
+                    _logger.info(
+                        f"  Updated {cr.rowcount} records ({model_name}.{field_name}) "
+                        f"for store {store_id_bu} -> company {dest_company.name}"
+                    )
+        else:
+            # Camino legacy: solo cubre las branches en mapping['b'], matchea
+            # por nombre (company.name == store.name). No toca el store raíz.
+            for company_id in mapping["b"]:
+                company = env["res.company"].browse(company_id)
+
+                if model_name == "account.journal":
+                    _resolve_journal_code_collisions(cr, company.id, company.name)
+                    env.cr.commit()
+
                 query = f"""
                     UPDATE {table}
                     SET company_id = %s
                     WHERE store_id in ( SELECT id FROM res_store_bu WHERE name ilike %s)
                     AND (company_id IS NULL OR company_id != %s)
                 """
-                cr.execute(query, (store_id.id, store_id.name, store_id.id))
+                cr.execute(query, (company.id, company.name, company.id))
 
                 if cr.rowcount > 0:
                     _logger.info(
-                        f"  Updated {cr.rowcount} records for store {store_id.name} -> company {company_id.name}"
+                        f"  Updated {cr.rowcount} records for store {company.name} -> company {company.name}"
                     )
-
-            elif field.ttype == "many2many":
-                # Para many2many, esto es más complejo
-                # Por ahora lo saltamos ya que store_id suele ser many2one
-                _logger.info(
-                    f"  Skipping many2many field {field_name} (not commonly used for stores)"
-                )
 
         processed_models.add(model_name)
 
