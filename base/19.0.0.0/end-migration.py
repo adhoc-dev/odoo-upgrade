@@ -293,10 +293,17 @@ MODEL_STRATEGY = {
     "account.reconcile.model.line": "KEEP",
     "account.report.external.value": "KEEP",
     "account.invoice.report": "KEEP",
-    # --- RRHH (KEEP AND CHECK) ---
-    "hr.employee": "KEEP_AND_CHECK",
+    # --- RRHH ---
+    # hr.employee y hr.job se mueven juntos a la parent (T-126411): en v19 el
+    # legajo del empleado tiene que coincidir en compañía con su puesto
+    # (hr.job); si uno queda en la sucursal y el otro en la parent, Odoo no
+    # deja asignar el empleado al puesto ("no aparecen los empleados" /
+    # no permite duplicar). El resto de RRHH sigue KEEP_AND_CHECK (sin
+    # evidencia de que necesiten moverse; revisar caso a caso si aparece un
+    # ticket similar).
+    "hr.employee": "MOVE_TO_PARENT",
+    "hr.job": "MOVE_TO_PARENT",
     "hr.contract": "KEEP_AND_CHECK",
-    "hr.job": "KEEP_AND_CHECK",
     "hr.department": "KEEP_AND_CHECK",
     "hr.leave": "KEEP_AND_CHECK",
     "hr.applicant": "KEEP_AND_CHECK",
