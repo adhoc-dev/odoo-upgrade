@@ -809,6 +809,28 @@ def table_exists(cr, table_name):
 #     return store_to_company
 
 
+def _store_mapping_is_stale(env, mapping):
+    """True si `mapping` ({'a': parent_id, 'b': [branch_ids], ...}) referencia
+    companies que ya no existen.
+
+    El parámetro migration_19_end_store_to_branch puede sobrevivir a un
+    reintento de la migración (la base de upgrade se resetea/recopia entre
+    intentos, pero el ir.config_parameter queda de una corrida anterior).
+    Si eso pasa, migrate_store_to_branch explota con MissingError al
+    resolver una company que ya no está (T-126384). Cualquier caller que
+    confíe en el mapeo guardado tiene que chequear esto primero.
+    """
+    if not mapping or not mapping.get("a"):
+        return False
+    company_ids = {mapping["a"], *(mapping.get("b") or [])}
+    existing = (
+        env["res.company"]
+        .with_context(active_test=False)
+        .search_count([("id", "in", list(company_ids))])
+    )
+    return existing != len(company_ids)
+
+
 def get_store_to_company_mapping(env):
     """
     Crea o encuentra el mapeo entre stores y companies.
@@ -843,7 +865,17 @@ def get_store_to_company_mapping(env):
     )
 
     if saved_mapping:
-        return saved_mapping
+        if _store_mapping_is_stale(env, saved_mapping):
+            _logger.warning(
+                "migration_19_end_store_to_branch %s references companies that "
+                "no longer exist - discarding and rebuilding (T-126384).",
+                saved_mapping,
+            )
+            env["ir.config_parameter"].sudo().set_param(
+                "migration_19_end_store_to_branch", "{}"
+            )
+        else:
+            return saved_mapping
 
     # ---- Primera ejecución: construir el mapping ----
 
@@ -1219,6 +1251,25 @@ def migrate_store_to_branch(cr, env):
         .sudo()
         .get_param("migration_19_end_store_to_branch", "{}")
     )
+
+    # migrate() llama a esta función directo con el mapping ya guardado en el
+    # parámetro (no pasa por get_store_to_company_mapping cuando el parámetro
+    # ya existe), así que el chequeo de staleness también tiene que vivir acá
+    # — es el punto real donde explotaba T-126384 (MissingError en
+    # Company.browse(<id inexistente>).parent_id).
+    if _store_mapping_is_stale(env, mapping):
+        _logger.warning(
+            "migration_19_end_store_to_branch %s references companies that "
+            "no longer exist - rebuilding before migrating (T-126384).",
+            mapping,
+        )
+        mapping = get_store_to_company_mapping(env)
+        if not mapping:
+            _logger.warning(
+                "Could not rebuild the store-to-branch mapping (no res_store_bu "
+                "data found); skipping STORE TO BRANCH migration."
+            )
+            return False
 
     parent_company_id = mapping["a"]
     branch_company_ids = mapping["b"]
