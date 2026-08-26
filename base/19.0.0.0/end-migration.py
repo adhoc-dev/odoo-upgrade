@@ -294,7 +294,7 @@ MODEL_STRATEGY = {
     "account.report.external.value": "KEEP",
     "account.invoice.report": "KEEP",
     # --- RRHH (KEEP AND CHECK) ---
-    "hr.employee": "KEEP_AND_CHECK",
+    "hr.employee": "MOVE_TO_PARENT",
     "hr.contract": "KEEP_AND_CHECK",
     "hr.job": "KEEP_AND_CHECK",
     "hr.department": "KEEP_AND_CHECK",
