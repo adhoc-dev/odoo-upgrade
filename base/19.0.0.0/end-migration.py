@@ -1075,7 +1075,7 @@ def _free_journal_code(cr, base_code):
         n += 1
 
 
-def _resolve_journal_code_collisions(cr, target_company_id, store_name):
+def _resolve_journal_code_collisions(cr, target_company_id, store_name=None, store_id_bu=None):
     """Libera colisiones de UNIQUE(company_id, code) antes de mover diarios.
 
     Al mover los diarios de un store a su branch (UPDATE company_id), la branch
@@ -1090,22 +1090,35 @@ def _resolve_journal_code_collisions(cr, target_company_id, store_name):
     (los que ya están + todos los entrantes del store) y, por cada code
     duplicado, dejamos el code original al diario con MÁS asientos y renombramos
     el resto a un code libre. Así preservamos la continuidad del operativo.
+
+    El store de origen se filtra por `store_id_bu` (preferido: es el id real
+    en res_store_bu, sin ambigüedad) o por `store_name` (legacy: solo es
+    correcto cuando el nombre de la company destino coincide con el nombre
+    del store, que es el caso del camino viejo de matching por nombre — NO
+    lo es para el store raíz, cuyo destino puede ser la parent u otra branch
+    con un nombre totalmente distinto — ver T-125292, corrió con
+    store_name=company del destino y no encontró el store real).
     """
+    if store_id_bu is not None:
+        store_filter_sql = "j.store_id = %s"
+        store_filter_param = store_id_bu
+    else:
+        store_filter_sql = "j.store_id IN (SELECT id FROM res_store_bu WHERE name ILIKE %s)"
+        store_filter_param = store_name
+
     # Conjunto final que vivirá en target_company_id tras el UPDATE:
     #  - los que ya están en target
     #  - los que se moverán (store coincide y company != target)
     cr.execute(
-        """
+        f"""
         SELECT j.id, j.code,
                (SELECT count(*) FROM account_move m WHERE m.journal_id = j.id)
           FROM account_journal j
          WHERE j.company_id = %s
             OR (j.company_id IS DISTINCT FROM %s
-                AND j.store_id IN (
-                    SELECT id FROM res_store_bu WHERE name ILIKE %s
-                ))
+                AND {store_filter_sql})
         """,
-        (target_company_id, target_company_id, store_name),
+        (target_company_id, target_company_id, store_filter_param),
     )
     rows = cr.fetchall()  # [(id, code, moves), ...]
 
@@ -1235,7 +1248,9 @@ def migrate_store_fields_to_company(cr, env, mapping):
                 dest_company = env["res.company"].browse(dest_company_id)
 
                 if model_name == "account.journal":
-                    _resolve_journal_code_collisions(cr, dest_company.id, dest_company.name)
+                    _resolve_journal_code_collisions(
+                        cr, dest_company.id, store_id_bu=store_id_bu
+                    )
                     env.cr.commit()
 
                 query = f"""
@@ -1258,7 +1273,7 @@ def migrate_store_fields_to_company(cr, env, mapping):
                 company = env["res.company"].browse(company_id)
 
                 if model_name == "account.journal":
-                    _resolve_journal_code_collisions(cr, company.id, company.name)
+                    _resolve_journal_code_collisions(cr, company.id, store_name=company.name)
                     env.cr.commit()
 
                 query = f"""
