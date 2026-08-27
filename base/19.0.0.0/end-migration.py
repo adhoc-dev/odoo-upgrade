@@ -1282,10 +1282,17 @@ def migrate_store_to_branch(cr, env):
 
     for store_id in branch_company_ids:
         store_id = Company.browse(store_id)
-        company = Company.browse(parent_company_id)
 
-        # Establecer parent_id basado en la jerarquía de stores
-        if not store_id.parent_id and company.id != store_id.company_id:
+        # Establecer parent_id si todavía no está seteado. Las branches
+        # recién creadas por get_store_to_company_mapping ya lo traen (ver
+        # el _write ahí); esto cubre las matcheadas por nombre a una company
+        # ya existente, que get_store_to_company_mapping no toca.
+        #
+        # Antes este chequeo era `and company.id != store_id.company_id` -
+        # res.company no tiene campo company_id, así que esa comparación
+        # rompía con AttributeError cada vez que se llegaba a evaluarla (le
+        # pasó a romymuebles/T-126384 apenas se destrabó el mapping stale).
+        if not store_id.parent_id:
             store_id._write({"parent_id": parent_company_id})
 
     # 2.a Stores are branches of the same legal entity as the parent company,
