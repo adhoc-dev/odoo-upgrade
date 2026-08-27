@@ -296,7 +296,7 @@ MODEL_STRATEGY = {
     # --- RRHH (KEEP AND CHECK) ---
     "hr.employee": "MOVE_TO_PARENT",
     "hr.contract": "KEEP_AND_CHECK",
-    "hr.job": "KEEP_AND_CHECK",
+    "hr.job": "MOVE_TO_PARENT",
     "hr.department": "KEEP_AND_CHECK",
     "hr.leave": "KEEP_AND_CHECK",
     "hr.applicant": "KEEP_AND_CHECK",
