@@ -1315,6 +1315,115 @@ def migrate_store_fields_to_company(cr, env, mapping):
                 # No forzamos el compute aquí, se hará cuando se acceda
 
 
+def migrate_warehouse_stock_to_company(cr, env):
+    """
+    Alinea ubicaciones, stock y movimientos de cada stock.warehouse con la
+    company de ese warehouse.
+
+    migrate_store_fields_to_company solo mueve los modelos que tienen un
+    campo store_id PROPIO (no related) apuntando a res.store. stock.warehouse
+    es de los pocos que lo tiene (ver stock_multi_store), así que termina con
+    el company_id correcto. Pero sus stock.location (view_location_id y todo
+    el subárbol: lot_stock_id, wh_input/output/qc/pack_stock_loc_id, ...),
+    los stock.quant que viven ahí y los stock.move / stock.move.line /
+    stock.picking que los referencian NO tienen store_id propio (stock.picking
+    y stock.picking.type solo lo tienen related, y ese paso salta los related
+    a propósito porque "se recomputan solos" - pero company_id no depende de
+    store_id, no se recomputa). Nunca los toca migrate_store_fields_to_company
+    y quedan con el company_id que traían de antes (la parent), aunque el
+    warehouse ya haya migrado a su branch.
+    T-125292: "AD Interiores casa central" termina con el almacén en su
+    branch pero todo el stock y los movimientos en la compañía padre, lo que
+    rompe cualquier pedido de venta por incompatibilidad de compañía.
+    """
+    Warehouse = env["stock.warehouse"].with_context(active_test=False)
+    Location = env["stock.location"].with_context(active_test=False)
+
+    for warehouse in Warehouse.search([]):
+        company = warehouse.company_id
+        view_location = warehouse.view_location_id
+        if not company or not view_location:
+            continue
+
+        location_ids = Location.search([("id", "child_of", view_location.id)]).ids
+        if not location_ids:
+            continue
+
+        cr.execute(
+            """
+            UPDATE stock_location
+               SET company_id = %s
+             WHERE id = ANY(%s)
+               AND company_id IS DISTINCT FROM %s
+            """,
+            (company.id, location_ids, company.id),
+        )
+        moved_locations = cr.rowcount
+
+        cr.execute(
+            """
+            UPDATE stock_quant
+               SET company_id = %s
+             WHERE location_id = ANY(%s)
+               AND company_id IS DISTINCT FROM %s
+            """,
+            (company.id, location_ids, company.id),
+        )
+        moved_quants = cr.rowcount
+
+        cr.execute(
+            """
+            UPDATE stock_move
+               SET company_id = %s
+             WHERE (location_id = ANY(%s) OR location_dest_id = ANY(%s))
+               AND company_id IS DISTINCT FROM %s
+            """,
+            (company.id, location_ids, location_ids, company.id),
+        )
+        moved_moves = cr.rowcount
+
+        moved_move_lines = 0
+        if util.column_exists(cr, "stock_move_line", "company_id"):
+            cr.execute(
+                """
+                UPDATE stock_move_line
+                   SET company_id = %s
+                 WHERE (location_id = ANY(%s) OR location_dest_id = ANY(%s))
+                   AND company_id IS DISTINCT FROM %s
+                """,
+                (company.id, location_ids, location_ids, company.id),
+            )
+            moved_move_lines = cr.rowcount
+
+        cr.execute(
+            """
+            UPDATE stock_picking
+               SET company_id = %s
+             WHERE picking_type_id IN (
+                       SELECT id FROM stock_picking_type WHERE warehouse_id = %s
+                   )
+               AND company_id IS DISTINCT FROM %s
+            """,
+            (company.id, warehouse.id, company.id),
+        )
+        moved_pickings = cr.rowcount
+
+        if moved_locations or moved_quants or moved_moves or moved_move_lines or moved_pickings:
+            _logger.info(
+                "Warehouse '%s' (ID: %s) -> company '%s' (ID: %s): "
+                "%s locations, %s quants, %s moves, %s move lines, %s pickings realigned",
+                warehouse.name,
+                warehouse.id,
+                company.name,
+                company.id,
+                moved_locations,
+                moved_quants,
+                moved_moves,
+                moved_move_lines,
+                moved_pickings,
+            )
+
+
 def migrate_store_to_branch(cr, env):
     """
     Función principal para migrar de multi-store a multi-company branches.
@@ -1327,6 +1436,8 @@ def migrate_store_to_branch(cr, env):
     1. Mapear stores a companies (crear si es necesario)
     2. Establecer jerarquía de companies
     3. Migrar campos store_id a company_id
+    3.b Alinear ubicaciones, stock y movimientos de cada warehouse con su
+        company (no tienen store_id propio, ver migrate_warehouse_stock_to_company)
     4. Fusionar configuración contable (impuestos, cuentas) en parent
     5. Mantener apuntes contables en sus branches
     """
@@ -1368,6 +1479,12 @@ def migrate_store_to_branch(cr, env):
     # 3. Migrar campos store_id a company_id
     _logger.info("Migrating store_id fields to company_id")
     migrate_store_fields_to_company(cr, env, mapping)
+    cr.commit()
+
+    # 3.b Alinear ubicaciones, stock y movimientos de cada warehouse con su
+    # company: no tienen store_id propio, así que el paso anterior no los toca.
+    _logger.info("Aligning warehouse locations, stock and moves with their company")
+    migrate_warehouse_stock_to_company(cr, env)
     cr.commit()
 
     # 4. Recalcular parent_path para todas las companies
