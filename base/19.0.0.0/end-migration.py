@@ -152,6 +152,23 @@ MERGE_CRITERIA = {
     "account.group": ["code_prefix_start"],
 }
 
+
+# Modelos hijos donde el re-mapeo de FK puede dejar filas duplicadas: si el registro
+# ya tenía una fila apuntando al equivalente en A, el UPDATE del re-mapeo la duplica.
+# Por cada modelo declaramos las columnas que definen la identidad de la fila; la que
+# se conserva es la que NO vino del re-mapeo (la que ya existía en la matriz), porque
+# la de la sucursal es justamente la que quedó redundante.
+DEDUPE_AFTER_REMAP = {
+    # l10n_ar.partner.tax: las alícuotas de percepción/retención por contacto. Un
+    # contacto puede tener la misma alícuota cargada en la matriz y en la sucursal
+    # (se presupuestaba desde la sucursal para ver todos los impuestos), y al
+    # fusionarse los impuestos las dos líneas terminan apuntando al mismo
+    # account.tax. Dos líneas del mismo grupo vigentes a la vez violan
+    # l10n_ar_tax._check_tax_group_overlap y rompen la cotización en
+    # account.fiscal.position._l10n_ar_add_taxes (ticket 126347).
+    "l10n_ar.partner.tax": ["partner_id", "tax_id", "from_date", "to_date"],
+}
+
 ############
 # STRATEGIES
 ############
@@ -313,6 +330,21 @@ MODEL_STRATEGY = {
 }
 
 
+def column_exists(cr, table_name, column_name):
+    """Check if a column exists in a table."""
+    cr.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name=%s AND column_name=%s
+        )
+    """,
+        (table_name, column_name),
+    )
+    return cr.fetchone()[0]
+
+
 def is_integer_column(cr, table_name, column_name):
     """Check if a column is of integer or bigint type (not JSONB, etc)."""
     cr.execute(
@@ -369,6 +401,50 @@ def flag_remapped_dependents(env, model, field_name, record_ids):
             record_ids,
             e,
         )
+
+
+def dedupe_after_remap(cr, model, table, columns, remapped_ids):
+    """Borra las filas que el re-mapeo de FK dejó duplicadas.
+
+    El ``UPDATE ... SET fk = A WHERE fk = B`` no sabe nada de unicidad, así que si el
+    registro ya tenía una fila equivalente apuntando a A, después del re-mapeo hay dos
+    filas idénticas. Conservamos la que NO vino del re-mapeo (la de la matriz) y, entre
+    varias re-mapeadas idénticas entre sí, la de menor id. Devuelve los ids borrados.
+    """
+    if not remapped_ids:
+        return []
+    missing = [c for c in columns if not column_exists(cr, table, c)]
+    if missing:
+        _logger.warning(
+            "No se deduplica %s: la tabla %s no tiene la(s) columna(s) %s",
+            model,
+            table,
+            ", ".join(missing),
+        )
+        return []
+    same_row = " AND ".join(f"t.{c} IS NOT DISTINCT FROM keep.{c}" for c in columns)
+    cr.execute(
+        f"""
+        DELETE FROM {table} t
+        USING {table} keep
+        WHERE t.id = ANY(%(remapped)s)
+          AND keep.id <> t.id
+          AND NOT (keep.id = ANY(%(remapped)s) AND keep.id > t.id)
+          AND {same_row}
+        RETURNING t.id
+        """,
+        {"remapped": list(remapped_ids)},
+    )
+    deleted = [row[0] for row in cr.fetchall()]
+    if deleted:
+        _logger.warning(
+            "Deduplicando %s: se borraron %s fila(s) que el re-mapeo de FK dejó "
+            "duplicadas (ids=%s). Se conservó la fila de la matriz.",
+            model,
+            len(deleted),
+            deleted,
+        )
+    return deleted
 
 
 def handle_merge_or_move(env, model_name, id_a, id_b):
@@ -581,9 +657,14 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                             f"UPDATE {fk_table} SET {fk.name} = %s WHERE {fk.name} = %s RETURNING id",
                             (rec_a.id, rec_b.id),
                         )
-                        flag_remapped_dependents(
-                            env, fk.model, fk.name, [row[0] for row in cr.fetchall()]
-                        )
+                        remapped_ids = [row[0] for row in cr.fetchall()]
+                        dedupe_columns = DEDUPE_AFTER_REMAP.get(fk.model)
+                        if dedupe_columns:
+                            deleted_ids = dedupe_after_remap(
+                                cr, fk.model, fk_table, dedupe_columns, remapped_ids
+                            )
+                            remapped_ids = [i for i in remapped_ids if i not in deleted_ids]
+                        flag_remapped_dependents(env, fk.model, fk.name, remapped_ids)
                     else:
                         _logger.info(
                             "Saltando FK: %s.%s porque la columna no es integer",
