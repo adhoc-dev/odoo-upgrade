@@ -344,6 +344,112 @@ def table_exists(cr, table_name):
     return cr.fetchone()[0]
 
 
+PARTNER_TAX_TABLE = "l10n_ar_partner_tax"
+PARTNER_TAX_MODEL = "l10n_ar.partner.tax"
+
+
+def drop_overlapping_partner_taxes(env, tax_a, tax_b):
+    """Borra las alícuotas de contacto que el re-mapeo dejaría en conflicto.
+
+    Antes de re-mapear ``l10n_ar_partner_tax.tax_id`` de B a A: si el contacto ya tiene
+    una alícuota del impuesto de la matriz en un período que se solapa, después del
+    re-mapeo queda con dos filas del mismo impuesto vigentes a la vez. Dos filas del
+    mismo impuesto están por definición en el mismo grupo, así que violan
+    ``l10n_ar_tax._check_tax_group_overlap`` (un solo impuesto vigente por grupo +
+    compañía + período) y cotizar falla con un ``RedirectWarning``: "el contacto tiene
+    múltiples impuestos vigentes para el grupo de impuestos X en la fecha Y y compañía
+    Z" (ticket 126347).
+
+    El criterio es **solapamiento**, no períodos idénticos: dos alícuotas del mismo
+    impuesto con fechas distintas pero solapadas rompen la validación igual. ``NULL``
+    cuenta como infinito, como en el constraint.
+
+    Se borra la fila de la sucursal y se conserva la de la matriz, que es la que se usa
+    para facturar. Ojo: si la de la sucursal cubría un período más amplio, esa cobertura
+    se pierde — es inevitable, porque el módulo no admite las dos a la vez. Devuelve los
+    ids borrados.
+    """
+    cr = env.cr
+    if not table_exists(cr, PARTNER_TAX_TABLE):
+        return []
+    columns = ("partner_id", "tax_id", "from_date", "to_date")
+    if not all(util.column_exists(cr, PARTNER_TAX_TABLE, c) for c in columns):
+        _logger.info(
+            "No se buscan conflictos en %s: la tabla no tiene las columnas esperadas",
+            PARTNER_TAX_TABLE,
+        )
+        return []
+
+    cr.execute(
+        f"""
+        DELETE FROM {PARTNER_TAX_TABLE} t
+        USING {PARTNER_TAX_TABLE} keep
+        WHERE t.tax_id = %(tax_b)s
+          AND keep.tax_id = %(tax_a)s
+          AND keep.partner_id = t.partner_id
+          AND (keep.from_date IS NULL OR t.to_date IS NULL OR keep.from_date <= t.to_date)
+          AND (keep.to_date IS NULL OR t.from_date IS NULL OR keep.to_date >= t.from_date)
+        RETURNING t.id
+        """,
+        {"tax_a": tax_a.id, "tax_b": tax_b.id},
+    )
+    deleted = [row[0] for row in cr.fetchall()]
+    if deleted:
+        # El DELETE crudo no limpia el cache del ORM. flush=False es deliberado: estas
+        # filas ya no existen, no hay nada que escribirles.
+        env[PARTNER_TAX_MODEL].browse(deleted).invalidate_recordset(flush=False)
+    return deleted
+
+
+def sync_partner_taxes_company(env, tax, company_id):
+    """Pone al día ``company_id`` en las alícuotas de contacto de un impuesto movido.
+
+    ``l10n_ar_partner_tax.company_id`` es related store de ``tax_id.company_id``, y ni
+    el ``UPDATE`` crudo del re-mapeo ni el ``_write`` de bajo nivel de
+    ``_move_record_to_parent`` disparan recompute. Las filas quedan con la compañía de
+    la sucursal apuntando a un impuesto que ya cuelga de la matriz y, como
+    ``_check_company_domain`` es ``parent_of``, la matriz no las ve: la alícuota deja de
+    aplicarse al cotizar, sin error ni aviso.
+
+    ``company_id`` va explícito porque en el camino MOVE el impuesto que se pasa es el
+    de la sucursal y su valor en cache puede no reflejar todavía el ``_write``.
+
+    Se acota a las filas de ese impuesto (no barre la tabla) y es idempotente. Devuelve
+    los ids actualizados.
+    """
+    cr = env.cr
+    if not table_exists(cr, PARTNER_TAX_TABLE) or not util.column_exists(
+        cr, PARTNER_TAX_TABLE, "company_id"
+    ):
+        return []
+    cr.execute(
+        f"""
+        UPDATE {PARTNER_TAX_TABLE}
+           SET company_id = %(company_id)s
+         WHERE tax_id = %(tax_id)s
+           AND company_id IS DISTINCT FROM %(company_id)s
+        RETURNING id
+        """,
+        {"tax_id": tax.id, "company_id": company_id},
+    )
+    updated = [row[0] for row in cr.fetchall()]
+    if updated:
+        # El UPDATE crudo no dispara recompute ni limpia el cache del ORM. flush=False
+        # es deliberado: el flush por default escribiría lo que el ORM tenga pendiente
+        # para estas filas y pisaría el UPDATE de arriba.
+        env[PARTNER_TAX_MODEL].browse(updated).invalidate_recordset(
+            ["company_id"], flush=False
+        )
+        _logger.info(
+            "Se puso al día company_id en %s alícuota(s) de contacto (ids=%s) que quedaban "
+            "en la compañía de la sucursal apuntando a '%s'.",
+            len(updated),
+            updated,
+            tax.display_name,
+        )
+    return updated
+
+
 def handle_merge_or_move(env, model_name, id_a, id_b):
     """
     Intenta fusionar registros de B en A si son equivalentes.
@@ -373,6 +479,11 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             record._write({"company_ids": [(3, id_b), (4, id_a)]})
         else:
             record._write({"company_id": id_a})
+        if model_name == "account.tax":
+            # _write es el writer de bajo nivel y no dispara recomputes: las alícuotas
+            # de contacto que apuntan a este impuesto quedarían con la compañía de la
+            # sucursal, invisibles para la matriz.
+            sync_partner_taxes_company(env, record, id_a)
 
     for rec_b in records_b:
         # --- CASO account.tax.group: eliminar si no tiene impuestos asociados y no tiene campo active ---
@@ -520,10 +631,24 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                             rec_b.id,
                             rec_a.id,
                         )
+                        is_partner_tax_remap = (
+                            model_name == "account.tax"
+                            and fk.model == "l10n_ar.partner.tax"
+                            and fk.name == "tax_id"
+                        )
+                        if is_partner_tax_remap:
+                            # El UPDATE de abajo no sabe nada de unicidad: si el
+                            # contacto ya tiene la alícuota del impuesto de la matriz
+                            # en un período que se solapa, el re-mapeo la duplicaría.
+                            drop_overlapping_partner_taxes(env, rec_a, rec_b)
                         cr.execute(
                             f"UPDATE {fk_table} SET {fk.name} = %s WHERE {fk.name} = %s",
                             (rec_a.id, rec_b.id),
                         )
+                        if is_partner_tax_remap:
+                            # company_id es related store de tax_id.company_id y el
+                            # UPDATE de arriba no lo recomputa.
+                            sync_partner_taxes_company(env, rec_a, rec_a.company_id.id)
                     else:
                         _logger.info(
                             "Saltando FK: %s.%s porque la columna no es integer",
