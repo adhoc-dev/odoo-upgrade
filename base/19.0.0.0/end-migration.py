@@ -1563,8 +1563,11 @@ def migrate_store_to_branch(cr, env):
             store_id._write({"parent_id": parent_company_id})
 
     # 2.a Stores are branches of the same legal entity as the parent company,
-    # so every branch has to carry the parent's VAT.
+    # so every branch has to carry the parent's VAT and address. Sin el pais no
+    # corre la localizacion en la branch (ver sync_branch_address_with_parent).
     sync_branch_vat_with_parent(cr, parent_company_id, branch_company_ids)
+    sync_branch_address_with_parent(cr, env, parent_company_id, branch_company_ids)
+    create_branch_receiptbooks(env, branch_company_ids)
     cr.commit()
 
     # 2.b Defensa para builds re-corridos / companies reutilizadas: si quedó
@@ -2371,6 +2374,155 @@ def sync_branch_vat_with_parent(cr, parent_company_id, branch_company_ids):
         "Synced VAT of %s branch companies with parent company %s",
         cr.rowcount,
         parent_company_id,
+    )
+
+
+def sync_branch_address_with_parent(cr, env, parent_company_id, branch_company_ids):
+    """Give every branch created from a res.store the address of its parent.
+
+    get_store_to_company_mapping crea la branch solo con nombre, moneda y
+    responsabilidad ARCA, y Odoo no le da ningun fallback: la direccion no esta
+    delegada al root (_get_company_root_delegated_field_names devuelve
+    currency_id mas los cuatro campos fiscales de account) y
+    compute_account_tax_fiscal_country solo copia el country_id PROPIO de la
+    company. Una branch que nace sin pais se queda sin pais, y con eso se apaga
+    todo l10n_ar, que gatea contra
+    company_id.account_fiscal_country_id.code == 'AR': no calcula el tipo de
+    documento, no valida y no pide CAE (T-126778, romymuebles).
+
+    Se hace por SQL a proposito. res.company.write() dispara
+    install_l10n_modules() cuando entra un country_id en una company que no lo
+    tenia, y setear el pais en el create() hace que el create() de account cargue
+    un plan de cuentas entero en la branch. Ninguna de las dos es aceptable
+    dentro de un end-migration.
+
+    COALESCE en todos los campos: una branch matcheada por nombre contra una
+    company preexistente puede tener direccion propia, y esa es mejor que la del
+    padre.
+    """
+    if not branch_company_ids:
+        return
+
+    address_fields = env["res.company"]._get_company_address_field_names()
+    set_clause = ", ".join(
+        f"{fname} = COALESCE(bp.{fname}, pp.{fname})" for fname in address_fields
+    )
+    cr.execute(
+        f"""
+        UPDATE res_partner bp
+           SET {set_clause}
+          FROM res_company bc
+          JOIN res_company pc ON pc.id = %s
+          JOIN res_partner pp ON pp.id = pc.partner_id
+         WHERE bc.partner_id = bp.id
+           AND bc.id IN %s
+        """,
+        (parent_company_id, tuple(branch_company_ids)),
+    )
+    _logger.info(
+        "Synced address (%s) of %s branch companies with parent company %s",
+        ", ".join(address_fields),
+        cr.rowcount,
+        parent_company_id,
+    )
+
+    # account_fiscal_country_id es columna stored en res_company y su compute
+    # solo rellena cuando esta vacio, asi que lo bajamos explicitamente del
+    # padre en vez de confiar en que el recompute lo agarre.
+    cr.execute(
+        """
+        UPDATE res_company bc
+           SET account_fiscal_country_id = pc.account_fiscal_country_id
+          FROM res_company pc
+         WHERE pc.id = %s
+           AND bc.id IN %s
+           AND bc.account_fiscal_country_id IS NULL
+           AND pc.account_fiscal_country_id IS NOT NULL
+        """,
+        (parent_company_id, tuple(branch_company_ids)),
+    )
+    _logger.info(
+        "Set account_fiscal_country_id on %s branch companies from parent %s",
+        cr.rowcount,
+        parent_company_id,
+    )
+
+    # El UPDATE de arriba entra por SQL, asi que el ORM no se entera de que
+    # cambio la direccion y deja stale a todo campo stored que dependa de ella.
+    # modified() marca para recalculo a los dependientes declarados de los
+    # campos de direccion, y flush_all() los corre. En una base AR esto es lo
+    # que prende use_payment_pro / use_receiptbook (account_payment_pro, que
+    # dependen de partner_id.country_id) y deja currency_provider en afip: sin
+    # esto la branch pierde el talonario de recibos y los pagos se numeran con
+    # la secuencia generica del diario en vez de la del talonario (T-126734).
+    env.invalidate_all()
+    branches = env["res.company"].browse(branch_company_ids)
+    branches.partner_id.modified(address_fields)
+    env.flush_all()
+    _logger.info(
+        "Retriggered stored computes depending on the address of %s branch companies",
+        len(branch_company_ids),
+    )
+
+    # domestic_fiscal_position_id es stored y lee country_id, pero NO lo declara
+    # en su @api.depends (account/models/company.py), asi que modified() no lo
+    # alcanza y hay que recalcularlo a mano.
+    if "domestic_fiscal_position_id" in branches._fields:
+        branches._compute_domestic_fiscal_position_id()
+        branches.flush_recordset(["domestic_fiscal_position_id"])
+
+    missing = branches.filtered(lambda c: not c.account_fiscal_country_id)
+    if missing:
+        _logger.warning(
+            "Branch companies %s still have no account_fiscal_country_id: the "
+            "parent company %s has none either. The localization will not run "
+            "on them until an address is loaded.",
+            missing.ids,
+            parent_company_id,
+        )
+
+
+def create_branch_receiptbooks(env, branch_company_ids):
+    """Give every branch its own receiptbooks, like any AR company created in 19.
+
+    account.payment.receiptbook viaja como KEEP_AND_CHECK, asi que los
+    talonarios se quedan en la company padre y la branch no hereda ninguno:
+    _compute_receiptbook busca por company_id exacto y no sube por el arbol. Sin
+    talonario el pago cae en la secuencia generica del diario (PCAJA/2026/00001)
+    en vez de numerar como recibo (RE-X 0002-00000001) y ni siquiera muestra el
+    campo Talonario (T-126734).
+
+    Delegamos en _create_receiptbooks del propio modulo, que es lo que corre al
+    crear cualquier company AR: es idempotente (saltea la company que ya tiene
+    talonario para ese partner_type) y toma el prefijo libre del arbol via
+    _get_free_prefix, con lo cual el padre conserva 0001- y cada branch recibe
+    0002-, 0003-, ... Eso es a proposito: en 19 la branch comparte los diarios
+    de la padre, y dos talonarios con el mismo (prefix, document_type,
+    partner_type) en el mismo arbol chocarian en el nombre del asiento.
+
+    Depende de que sync_branch_address_with_parent haya corrido antes: sin el
+    pais del padre la branch tiene use_receiptbook en False y no corresponde
+    crearle talonarios.
+    """
+    if not branch_company_ids or "account.payment.receiptbook" not in env:
+        return
+
+    chart_template = env["account.chart.template"]
+    for branch in env["res.company"].browse(branch_company_ids):
+        if not branch.use_receiptbook:
+            continue
+        chart_template.with_company(branch)._create_receiptbooks(branch)
+
+    created = env["account.payment.receiptbook"].search(
+        [("company_id", "in", branch_company_ids)]
+    )
+    _logger.info(
+        "Branch receiptbooks in place: %s",
+        ", ".join(
+            "%s -> %s %s" % (r.company_id.name, r.partner_type, r.prefix)
+            for r in created
+        )
+        or "none",
     )
 
 
