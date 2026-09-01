@@ -1591,6 +1591,19 @@ def migrate_store_to_branch(cr, env):
     migrate_store_user_access_to_company(cr, env, mapping)
     cr.commit()
 
+    # 8. Alinear sale.order.type con la nueva jerarquía: el order type se
+    # comparte desde la parent pero factura con el diario de la sucursal.
+    _logger.info("Aligning sale.order.type company references")
+    align_order_type_invoice_company(cr)
+    clean_order_type_inconsistent_refs(cr)
+    cr.commit()
+
+    # 9. La branch no hereda las properties contables del parent (ir.default no
+    # sube por la jerarquía), así que sin esto no resuelve la cuenta a cobrar.
+    _logger.info("Copying parent account defaults to branch companies")
+    copy_parent_account_defaults_to_branches(env, parent_company_id, branch_company_ids)
+    cr.commit()
+
     return parent_company.id
 
 
@@ -1845,18 +1858,7 @@ def migrate_standard_fields(cr, env, id_a, id_b):
                     order_type_table,
                 )
 
-    if util.column_exists(cr, "sale_order_type", "invoice_company_id") and util.column_exists(
-        cr, "sale_order_type", "journal_id"
-    ):
-        cr.execute(
-            """
-            UPDATE sale_order_type sot
-               SET invoice_company_id = aj.company_id
-              FROM account_journal aj
-             WHERE aj.id = sot.journal_id
-               AND sot.journal_id IS NOT NULL
-            """
-        )
+    align_order_type_invoice_company(cr)
 
     for field in field_targets:
         model_name = field.model
@@ -1935,54 +1937,155 @@ def migrate_standard_fields(cr, env, id_a, id_b):
             _logger.warning(
                 f"Estrategia desconocida '{strategy}' para el modelo '{model_name}'"
             )
-    # ---- limpiar journal_id inconsistente en sale.order.type ----
-    # Al mover sale.order.type a la parent, company_id -> A pero invoice_company_id
-    # quedó fijado en la sucursal (B, ver preprocesamiento arriba). El journal_id
-    # solo es problemático si apunta a un diario cuya company NO coincide con
-    # invoice_company_id: en ese caso Odoo fallaría la validación al facturar, así
-    # que lo ponemos en NULL para que elija el diario correcto automáticamente. Un
-    # diario de la sucursal (B) ahora ES consistente con invoice_company_id, por lo
-    # que se conserva.
-    if table_exists(cr, "sale_order_type"):
+    clean_order_type_inconsistent_refs(cr)
+
+
+def align_order_type_invoice_company(cr):
+    """Fija invoice_company_id de sale.order.type a la company de su diario.
+
+    El order type se comparte desde la parent, pero la factura se emite en la
+    company del diario. Si invoice_company_id apunta a otra company, Odoo tira
+    _check_company al crear la factura ("Draft Invoice belongs to company X
+    while Journal belongs to another company") y la venta no se puede facturar
+    (T-126734, romymuebles).
+
+    Vivía inline en migrate_standard_fields, así que solo corría en COMPANY
+    MERGE; en STORE TO BRANCH los order types quedaban con el diario de la
+    sucursal y invoice_company_id en la parent.
+    """
+    if not table_exists(cr, "sale_order_type"):
+        return
+    if not (
+        util.column_exists(cr, "sale_order_type", "invoice_company_id")
+        and util.column_exists(cr, "sale_order_type", "journal_id")
+    ):
+        return
+    cr.execute(
+        """
+        UPDATE sale_order_type sot
+           SET invoice_company_id = aj.company_id
+          FROM account_journal aj
+         WHERE aj.id = sot.journal_id
+           AND sot.journal_id IS NOT NULL
+           AND sot.invoice_company_id IS DISTINCT FROM aj.company_id
+        """
+    )
+    _logger.info(
+        "Alineado invoice_company_id a la company del diario en %s sale.order.type",
+        cr.rowcount,
+    )
+
+
+def clean_order_type_inconsistent_refs(cr):
+    """Limpia journal_id / warehouse_id de sale.order.type que crucen companies.
+
+    - journal_id: solo es problemático si su company NO coincide con
+      invoice_company_id. Un diario de la sucursal ES consistente cuando
+      align_order_type_invoice_company ya corrió, así que se conserva.
+    - warehouse_id: company_id del order type queda en la parent, pero el
+      almacén puede haber quedado en una sucursal. Ese cruce rompe
+      _check_company al crear la OV desde la parent.
+
+    En ambos casos se pone NULL para que Odoo elija el registro por defecto de
+    la company activa. Igual que align_order_type_invoice_company, vivía inline
+    en migrate_standard_fields y no corría en STORE TO BRANCH.
+    """
+    if not table_exists(cr, "sale_order_type"):
+        return
+
+    cr.execute(
+        """
+        UPDATE sale_order_type sot
+           SET journal_id = NULL
+         WHERE sot.journal_id IS NOT NULL
+           AND sot.invoice_company_id IS NOT NULL
+           AND EXISTS (
+               SELECT 1
+                 FROM account_journal aj
+                WHERE aj.id = sot.journal_id
+                  AND aj.company_id != sot.invoice_company_id
+           )
+        """
+    )
+    _logger.info(
+        "Limpiado journal_id inconsistente en %s sale.order.type", cr.rowcount
+    )
+
+    if util.column_exists(cr, "sale_order_type", "warehouse_id"):
         cr.execute(
             """
             UPDATE sale_order_type sot
-            SET journal_id = NULL
-            WHERE sot.journal_id IS NOT NULL
-            AND sot.invoice_company_id IS NOT NULL
-            AND EXISTS (
-                SELECT 1
-                    FROM account_journal aj
-                    WHERE aj.id = sot.journal_id
-                    AND aj.company_id != sot.invoice_company_id
-            )
-            """,
+               SET warehouse_id = NULL
+             WHERE sot.warehouse_id IS NOT NULL
+               AND EXISTS (
+                   SELECT 1
+                     FROM stock_warehouse sw
+                    WHERE sw.id = sot.warehouse_id
+                      AND sw.company_id != sot.company_id
+               )
+            """
+        )
+        _logger.info(
+            "Limpiado warehouse_id inconsistente en %s sale.order.type", cr.rowcount
         )
 
-    # ---- limpiar warehouse_id inconsistente en sale.order.type ----
-    # Mismo problema que journal_id arriba, pero con el almacén: company_id
-    # quedó en la parent (A) por el MOVE_TO_PARENT de sale.order.type, pero
-    # warehouse_id puede seguir apuntando a un almacén que quedó en una
-    # sucursal (B) -su company_id no se tocó acá, lo maneja aparte el
-    # mapeo store->company-. Ese cruce rompe _check_company al crear una OV
-    # con este order type desde la parent, así que lo ponemos en NULL para
-    # que Odoo elija el almacén por defecto de la company activa.
-    if table_exists(cr, "sale_order_type") and util.column_exists(
-        cr, "sale_order_type", "warehouse_id"
-    ):
-        cr.execute(
-            """
-            UPDATE sale_order_type sot
-            SET warehouse_id = NULL
-            WHERE sot.warehouse_id IS NOT NULL
-            AND EXISTS (
-                SELECT 1
-                    FROM stock_warehouse sw
-                    WHERE sw.id = sot.warehouse_id
-                    AND sw.company_id != sot.company_id
+
+# Properties contables que la branch necesita heredar de su parent. Son
+# company_dependent y viven en ir.default; ir.default._get_model_defaults filtra
+# con "company_id IS NULL OR company_id = %s" -match EXACTO, no sube por la
+# jerarquia-, asi que una branch sin fila propia no resuelve nada.
+BRANCH_INHERITED_DEFAULTS = (
+    ("res.partner", "property_account_receivable_id"),
+    ("res.partner", "property_account_payable_id"),
+)
+
+
+def copy_parent_account_defaults_to_branches(env, parent_company_id, branch_company_ids):
+    """Copia a cada branch las cuentas por defecto (a cobrar / a pagar) del parent.
+
+    get_store_to_company_mapping crea la branch sin parent_id para que el
+    create() de account no le cargue un plan de cuentas entero. El efecto
+    colateral es que la branch tampoco recibe las properties contables que ese
+    load habria creado, y como ir.default no hereda del ancestro, la company
+    queda sin cuenta a cobrar.
+
+    Sin eso, la linea de payment_term de la factura no resuelve una cuenta
+    asset_receivable y la constraint _check_payable_receivable revienta con un
+    mensaje que despista: "Any journal item on a receivable account must have a
+    due date and vice versa" (T-126734, romymuebles).
+
+    Solo rellena lo que falta: si la branch ya tiene un valor propio, se
+    respeta.
+    """
+    if not branch_company_ids:
+        return
+
+    Default = env["ir.default"].sudo()
+    for model_name, field_name in BRANCH_INHERITED_DEFAULTS:
+        if field_name not in env[model_name]._fields:
+            continue
+        parent_value = Default._get(model_name, field_name, company_id=parent_company_id)
+        if not parent_value:
+            _logger.warning(
+                "La parent company %s no tiene default para %s.%s: las branches "
+                "quedan sin cuenta y no van a poder facturar.",
+                parent_company_id,
+                model_name,
+                field_name,
             )
-            """,
-        )
+            continue
+        for branch_id in branch_company_ids:
+            if Default._get(model_name, field_name, company_id=branch_id):
+                continue
+            Default.set(model_name, field_name, parent_value, company_id=branch_id)
+            _logger.info(
+                "Copiado default %s.%s = %s del parent %s a la branch %s",
+                model_name,
+                field_name,
+                parent_value,
+                parent_company_id,
+                branch_id,
+            )
 
 
 def create_mapping(cr):
