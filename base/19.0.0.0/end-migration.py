@@ -1456,6 +1456,105 @@ def migrate_warehouse_stock_to_company(cr, env):
             )
 
 
+def fix_order_type_invoice_company_from_journal(cr):
+    """Alinea invoice_company_id de sale.order.type/purchase.order.type con la
+    company de su journal_id, y vacía journal_id/warehouse_id si de todas
+    formas quedan de una company distinta.
+
+    Ya existe una versión de este fix adentro de migrate_standard_fields(),
+    pero esa función solo corre en el modo COMPANY MERGE (2 companies A/B
+    preexistentes, ver mas abajo). En el modo STORE TO BRANCH no hay ese
+    id_a/id_b: el journal de cada sucursal sí termina con su company_id
+    correcto (migrate_store_fields_to_company mueve account_journal.store_id
+    -> company_id), pero sale.order.type nunca tuvo campo store_id propio en
+    sale_multi_store/account_multi_store, así que su invoice_company_id
+    (aportado por sale_order_type_ux, compute+store desde company_id) se queda
+    apuntando a la company única original (la parent) y termina desalineado
+    con el journal. Al facturar, sale_order_type_ux._prepare_invoice fuerza
+    company_id = invoice_company_id (la parent) contra un diario que ya vive
+    en la sucursal, y Odoo rechaza la factura por mismatch de company
+    (T-126734, romymuebles).
+    """
+    for order_type_table in ("sale_order_type", "purchase_order_type"):
+        if not (
+            util.column_exists(cr, order_type_table, "invoice_company_id")
+            and util.column_exists(cr, order_type_table, "journal_id")
+        ):
+            continue
+
+        cr.execute(
+            f"""
+            UPDATE {order_type_table} sot
+               SET invoice_company_id = aj.company_id
+              FROM account_journal aj
+             WHERE aj.id = sot.journal_id
+               AND sot.journal_id IS NOT NULL
+               AND sot.invoice_company_id IS DISTINCT FROM aj.company_id
+            """
+        )
+        if cr.rowcount:
+            _logger.info(
+                "STORE TO BRANCH: alineado invoice_company_id con la company "
+                "del diario en %s registros de %s",
+                cr.rowcount,
+                order_type_table,
+            )
+
+        # Si de todas formas queda inconsistente (p.ej. invoice_company_id se
+        # fijo a mano y no matchea la company del diario), vaciamos journal_id
+        # para que Odoo elija uno valido solo en vez de fallar al facturar.
+        cr.execute(
+            f"""
+            UPDATE {order_type_table} sot
+               SET journal_id = NULL
+             WHERE sot.journal_id IS NOT NULL
+               AND sot.invoice_company_id IS NOT NULL
+               AND EXISTS (
+                     SELECT 1
+                       FROM account_journal aj
+                      WHERE aj.id = sot.journal_id
+                        AND aj.company_id != sot.invoice_company_id
+               )
+            """
+        )
+        if cr.rowcount:
+            _logger.info(
+                "STORE TO BRANCH: vaciado journal_id inconsistente en %s "
+                "registros de %s",
+                cr.rowcount,
+                order_type_table,
+            )
+
+    # warehouse_id tiene el mismo problema que journal_id: sale_order_type.
+    # company_id se queda en la parent (nunca tuvo store_id propio) pero
+    # warehouse_id puede seguir apuntando a un almacen que ahora vive en una
+    # sucursal (migrate_warehouse_stock_to_company solo realinea
+    # stock.warehouse/stock.location, no este campo). Ese cruce rompe
+    # _check_company al crear una OV con ese order type, asi que lo vaciamos
+    # para que Odoo elija el almacen por defecto de la company activa.
+    if util.column_exists(cr, "sale_order_type", "warehouse_id"):
+        cr.execute(
+            """
+            UPDATE sale_order_type sot
+               SET warehouse_id = NULL
+             WHERE sot.warehouse_id IS NOT NULL
+               AND sot.company_id IS NOT NULL
+               AND EXISTS (
+                     SELECT 1
+                       FROM stock_warehouse sw
+                      WHERE sw.id = sot.warehouse_id
+                        AND sw.company_id != sot.company_id
+               )
+            """
+        )
+        if cr.rowcount:
+            _logger.info(
+                "STORE TO BRANCH: vaciado warehouse_id inconsistente en %s "
+                "registros de sale_order_type",
+                cr.rowcount,
+            )
+
+
 def migrate_store_to_branch(cr, env):
     """
     Función principal para migrar de multi-store a multi-company branches.
@@ -1543,6 +1642,15 @@ def migrate_store_to_branch(cr, env):
     # company: no tienen store_id propio, así que el paso anterior no los toca.
     _logger.info("Aligning warehouse locations, stock and moves with their company")
     migrate_warehouse_stock_to_company(cr, env)
+    cr.commit()
+
+    # 3.c sale.order.type/purchase.order.type tampoco tienen store_id propio en
+    # sale_multi_store/account_multi_store, así que el paso 3 no los toca: su
+    # invoice_company_id se queda en la company única original (parent) aunque
+    # su journal_id ya haya migrado a la sucursal en el paso 3. Sin esto, la
+    # facturación de esos order types falla por company mismatch (T-126734).
+    _logger.info("Aligning order type invoice company with its journal's company")
+    fix_order_type_invoice_company_from_journal(cr)
     cr.commit()
 
     # 4. Recalcular parent_path para todas las companies
