@@ -481,10 +481,62 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             SKIP_FK_REMAP_MODELS = {
                 "account.tax": {
                     "account.tax.repartition.line",
-                    "l10n_ar.payment.withholding",
                 },
             }
             skip_models = SKIP_FK_REMAP_MODELS.get(model_name, set())
+
+            # l10n_ar.payment.withholding.tax_id NO es "hijo propio": es una
+            # referencia al impuesto aplicado, igual que account.move.line.
+            # tax_line_id. Saltear su remap (como se hacía antes) deja las
+            # líneas de retención apuntando al impuesto archivado de B mientras
+            # el apunte contable ya quedó en A: _compute_withholding
+            # (l10n_ar_tax/models/account_move_line.py) no encuentra el match
+            # y rompe la exportación de SIFERE/SICORE/SIRCAR (T-125999).
+            # Remapeamos con guarda: si el mismo pago ya tiene una línea con
+            # el impuesto destino (A), el UPDATE violaría el unique(tax_id,
+            # payment_id) de l10n_ar.payment.withholding (caso real: PR #142,
+            # ticket #120212) — esas quedan sin remapear y logueadas como
+            # warning para revisión manual, en vez de abortar la migración.
+            if model_name == "account.tax" and table_exists(
+                cr, "l10n_ar_payment_withholding"
+            ):
+                cr.execute(
+                    """
+                    UPDATE l10n_ar_payment_withholding w
+                       SET tax_id = %s
+                     WHERE w.tax_id = %s
+                       AND NOT EXISTS (
+                             SELECT 1
+                               FROM l10n_ar_payment_withholding w2
+                              WHERE w2.payment_id = w.payment_id
+                                AND w2.tax_id = %s
+                           )
+                    """,
+                    (rec_a.id, rec_b.id, rec_a.id),
+                )
+                if cr.rowcount:
+                    _logger.info(
+                        "Re-mapeando FK: l10n_ar.payment.withholding.tax_id id=%s -> id=%s (%s líneas)",
+                        rec_b.id,
+                        rec_a.id,
+                        cr.rowcount,
+                    )
+                cr.execute(
+                    "SELECT payment_id FROM l10n_ar_payment_withholding WHERE tax_id = %s",
+                    (rec_b.id,),
+                )
+                colliding_payments = [row[0] for row in cr.fetchall()]
+                if colliding_payments:
+                    _logger.warning(
+                        "COLISIÓN l10n_ar.payment.withholding: %s pago(s) mantienen "
+                        "tax_id=%s (impuesto archivado de B) porque ya tienen otra "
+                        "línea con tax_id=%s (A); revisar manualmente payment_id=%s",
+                        len(colliding_payments),
+                        rec_b.id,
+                        rec_a.id,
+                        colliding_payments,
+                    )
+                skip_models = skip_models | {"l10n_ar.payment.withholding"}
 
             # Excluimos campos custom / Studio (state='manual'): no remapeamos FKs
             # sobre ellos. Sus columnas pueden tener el nombre con mayúsculas
