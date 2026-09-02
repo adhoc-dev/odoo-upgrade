@@ -2249,33 +2249,38 @@ def _normalized_vat(vat):
     return re.sub(r"[^A-Z0-9]", "", (vat or "").upper())
 
 
-def clear_branch_vat(cr, parent_company_id, branch_company_id):
-    """Clear the VAT of a company merged in as a branch, only when it is the
-    parent's own VAT.
+def check_branch_vat_matches_parent(cr, parent_company_id, branch_company_id):
+    """Log whether a company merged in as a branch shares the parent's VAT.
 
-    Two sibling companies sharing a VAT are one legal entity split in two: once
-    B hangs from A, an empty VAT makes it fall back to the closest ancestor with
-    one (see _get_branches_with_same_vat), so it consolidates with the parent
-    instead of being read as a separate taxpayer.
+    Under the legal-entity criterion shipped in task #71642 (same entity =
+    literal VAT equality, no fallback), an equal VAT is already enough for B
+    to be read as the parent's own entity once it hangs from A — there is
+    nothing left to change here.
+
+    This used to be `clear_branch_vat` and cleared B's VAT when it matched
+    A's, relying on the OLD fallback of `_get_branches_with_same_vat` (empty
+    VAT -> closest ancestor with one). That fallback is gone: clearing an
+    already-matching VAT would now make B read as ITS OWN legal entity
+    instead of the parent's — the opposite of the intent, and exactly the
+    "branch silently falls out of the parent's VAT book" risk flagged in
+    jjs's review on task #72204.
 
     If the VATs differ, A and B are different legal entities and B keeps its
-    own: dropping it would silently pull its moves into the parent's tax
+    own: touching it would silently pull its moves into the parent's tax
     reports.
     """
     cr.execute(
         """
-        SELECT c.id, p.id, p.vat
+        SELECT c.id, p.vat
           FROM res_company c
           JOIN res_partner p ON p.id = c.partner_id
          WHERE c.id IN %s
         """,
         (tuple({parent_company_id, branch_company_id}),),
     )
-    company_data = {
-        company_id: (partner_id, vat) for company_id, partner_id, vat in cr.fetchall()
-    }
-    branch_partner_id, branch_vat = company_data.get(branch_company_id, (None, None))
-    parent_vat = company_data.get(parent_company_id, (None, None))[1]
+    vat_by_company = dict(cr.fetchall())
+    branch_vat = vat_by_company.get(branch_company_id)
+    parent_vat = vat_by_company.get(parent_company_id)
 
     if not _normalized_vat(branch_vat):
         return
@@ -2291,9 +2296,9 @@ def clear_branch_vat(cr, parent_company_id, branch_company_id):
         )
         return
 
-    cr.execute("UPDATE res_partner SET vat = NULL WHERE id = %s", (branch_partner_id,))
     _logger.info(
-        "Cleared VAT of branch company %s: it was the same as the parent company %s (%s)",
+        "Branch company %s already shares the parent company %s's VAT (%s): "
+        "same legal entity under the current criterion, nothing to change",
         branch_company_id,
         parent_company_id,
         parent_vat,
@@ -2378,9 +2383,9 @@ def migrate(cr, version):
                 "UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b)
             )
 
-            # 0.1 If A and B shared the VAT they are one legal entity: drop
-            # B's VAT so it consolidates with the parent's once it is a branch.
-            clear_branch_vat(cr, id_a, id_b)
+            # 0.1 If A and B share the VAT they are already the same legal
+            # entity once B hangs from A — nothing to clear, just log it.
+            check_branch_vat_matches_parent(cr, id_a, id_b)
 
             # 1. Movimiento Operativo (SQL)
             migrate_standard_fields(cr, env, id_a, id_b)
