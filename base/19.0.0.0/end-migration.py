@@ -297,9 +297,10 @@ MODEL_STRATEGY = {
     "hr.employee": "MOVE_TO_PARENT",
     "hr.contract": "KEEP_AND_CHECK",
     "hr.job": "MOVE_TO_PARENT",
-    "hr.department": "KEEP_AND_CHECK",
+    "hr.department": "MOVE_TO_PARENT",
     "hr.leave": "KEEP_AND_CHECK",
     "hr.applicant": "KEEP_AND_CHECK",
+    "hr.work.location": "MOVE_TO_PARENT",
     # --- OTROS (MOVE TO PARENT) ---
     "account.account": "MOVE_TO_PARENT",
     "mail.activity.plan": "MOVE_TO_PARENT",
