@@ -1562,6 +1562,18 @@ def migrate_store_to_branch(cr, env):
         if not store_id.parent_id:
             store_id._write({"parent_id": parent_company_id})
 
+    # _write() no reconstruye parent_path, y root_id / parent_ids se computan
+    # desde ahi: sin esto la branch se sigue viendo como su propia raiz y todo
+    # domain 'child_of' / 'parent_of' sobre res.company lee mal el arbol por el
+    # resto de la corrida. Le pego a la company entera porque _parent_store_update
+    # reconstruye el subarbol completo.
+    # invalidate_all() ANTES: _parent_store_update() agrupa por el parent_id que
+    # tiene en cache, y _write() lo dejo stale, con lo cual sin esto agrupa por el
+    # padre viejo y no hace nada.
+    env.invalidate_all()
+    Company.browse(branch_company_ids)._parent_store_update()
+    env.invalidate_all()
+
     # 2.a Stores are branches of the same legal entity as the parent company,
     # so every branch has to carry the parent's VAT and address. Sin el pais no
     # corre la localizacion en la branch (ver sync_branch_address_with_parent).
@@ -2513,9 +2525,21 @@ def create_branch_receiptbooks(env, branch_company_ids):
             continue
         chart_template.with_company(branch)._create_receiptbooks(branch)
 
-    created = env["account.payment.receiptbook"].search(
-        [("company_id", "in", branch_company_ids)]
-    )
+    # Red de contencion del propio modulo: reasigna un prefijo libre a los
+    # talonarios de branch que hayan quedado chocando con otro del mismo arbol
+    # (conserva el de la raiz) y resincroniza la numeracion. Es idempotente, y
+    # ademas repara las bases que ya se migraron con todos los talonarios en
+    # 0001- por el parent_path stale de arriba.
+    Receiptbook = env["account.payment.receiptbook"]
+    if hasattr(Receiptbook, "_resolve_branch_prefix_collisions"):
+        reassigned = Receiptbook._resolve_branch_prefix_collisions()
+        if reassigned:
+            _logger.info(
+                "Reassigned the prefix of %s colliding branch receiptbooks",
+                len(reassigned),
+            )
+
+    created = Receiptbook.search([("company_id", "in", branch_company_ids)])
     _logger.info(
         "Branch receiptbooks in place: %s",
         ", ".join(
