@@ -1185,6 +1185,46 @@ def _resolve_journal_code_collisions(cr, target_company_id, store_name=None, sto
             )
 
 
+def set_journals_shared_to_branches(env, shared, domain=None):
+    """Set account.journal.shared_to_branches tolerating both shapes of the field.
+
+    account_ux turned the flag into a scope in 19.0.1.27.0: it stopped being a
+    Boolean and became a Selection (all / legal_entity / none), and its
+    pre-migration converts the existing column with True -> 'all' and
+    False -> 'none'. That migration runs with the module upgrade, so by the time
+    this end-migration runs the column is already a varchar and writing the old
+    booleans blows up with
+
+        ValueError: Wrong value for account.journal.shared_to_branches: True
+
+    Resolving the value from the field type keeps the script working against
+    both shapes instead of pinning it to one version of account_ux. It matters
+    in the boolean direction too: writing the string 'none' on a Boolean field
+    would be worse than the crash, because a non-empty string is truthy and
+    every journal would end up silently shared.
+
+    'all' is the equivalent of the old True and not 'legal_entity' on purpose,
+    same criterion as the account_ux migration: narrowing the scope is a product
+    decision, not part of turning a flag into a scope. (T-127216)
+    """
+    field = env["account.journal"]._fields.get("shared_to_branches")
+    if not field:
+        return
+
+    if field.type == "selection":
+        value = "all" if shared else "none"
+    else:
+        value = shared
+
+    journals = env["account.journal"].search(domain or [])
+    journals.write({"shared_to_branches": value})
+    _logger.info(
+        "Set shared_to_branches=%r on %s journals",
+        value,
+        len(journals),
+    )
+
+
 def migrate_store_fields_to_company(cr, env, mapping):
     """
     Migra todos los campos store_id a company_id según el mapeo.
@@ -2427,7 +2467,7 @@ def migrate(cr, version):
             for id_b in ids_b:
                 if warehouse.partner_id.name == env["res.company"].browse(id_b).name:
                     warehouse.partner_id = warehouse.company_id.partner_id
-        env["account.journal"].search([]).write({"shared_to_branches": False})
+        set_journals_shared_to_branches(env, False)
         parent_id = mapping.get("a")
         if parent_id:
             set_users_default_company(env, parent_id)
@@ -2537,8 +2577,8 @@ def migrate(cr, version):
             pmls.invalidate_recordset(["shared_to_branches"])
             pmls.flush_recordset(["shared_to_branches"])
 
-        env["account.journal"].search([("company_id", "=", parent_company_id)]).write(
-            {"shared_to_branches": True}
+        set_journals_shared_to_branches(
+            env, True, [("company_id", "=", parent_company_id)]
         )
         set_users_default_company(env, parent_company_id)
         realign_subcontracting_pointers(env)
