@@ -1866,26 +1866,6 @@ def preprocess_unique_move_conflicts(cr, model_name, id_a, id_b):
             )
 
 
-# def sync_account_codes_sql(cr, rel_table, rel_account_col, rel_company_col, id_a, id_b):
-#     """Sincroniza code_store de B hacia A para cuentas ligadas a la sucursal B."""
-#     cr.execute(
-#         f"""
-#             UPDATE account_account aa
-#                SET code_store = jsonb_set(
-#                     COALESCE(aa.code_store, '{{}}'::jsonb),
-#                     ARRAY[%s],
-#                     aa.code_store->%s,
-#                     true
-#                )
-#               FROM {rel_table} rel
-#              WHERE rel.{rel_account_col} = aa.id
-#                AND rel.{rel_company_col} = %s
-#                AND aa.code_store ? %s
-#         """,
-#         (str(id_a), str(id_b), id_b, str(id_b)),
-#     )
-
-
 def migrate_standard_fields(cr, env, id_a, id_b):
     """Movimiento de campos Many2one/Many2many de compañía"""
     # Igual que en handle_merge_or_move: excluimos campos custom / Studio
