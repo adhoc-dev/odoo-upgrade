@@ -619,9 +619,20 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
                       AND NOT ({field_name} ? '{id_a_str}');
                 """
                 cr.execute(query)
-            elif field_type == "many2one":
-                # Many2one: copiar de B a A y eliminar B
-                _logger.info(f"Migrando JSONB many2one: {model_name}.{field_name}")
+            else:
+                # Cualquier otro tipo (many2one, char, selection, etc.):
+                # copiar de B a A si A todavía no tiene su propio valor, y
+                # limpiar la llave de B. La operación es sobre la llave del
+                # JSONB (compañía -> valor), no sobre el contenido del valor
+                # en sí, así que le sirve igual a un many2one que a un char
+                # — no hay tratamiento especial que dependa del tipo.
+                #
+                # Encontrado con account.account.code_store (char,
+                # company_dependent): antes esto cala al "no hacer nada" y la
+                # cuenta de la sucursal quedaba con código invisible desde la
+                # matriz (no matcheaba en merge_accounts_by_code ni se veía
+                # con su código real en el plan de cuentas consolidado).
+                _logger.info(f"Migrando JSONB: {model_name}.{field_name} ({field_type})")
                 query = f"""
                     UPDATE {table}
                     SET {field_name} = (
@@ -634,11 +645,6 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
                     WHERE {field_name} ? '{id_b_str}';
                 """
                 cr.execute(query)
-            else:
-                # Otros tipos de campo: no hacer nada
-                _logger.info(
-                    f"Saltando JSONB ({field_type}): {model_name}.{field_name}"
-                )
 
 
 def get_next_available_code(env, code, exclude_account_id=None):
