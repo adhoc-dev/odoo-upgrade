@@ -5,6 +5,8 @@
 #     EXPECTED = { <modelo>: { ref(...): {<campo>: <valor esperado>} } }
 # donde el valor esperado es el que debe quedar DESPUÉS de la migración. No hay
 # contraparte "before": nada se verifica sobre la base fuente (ADR 0007).
+# De un campo relacional el valor esperado se declara con los mismos ref(): uno
+# para un m2o, una lista para un x2m, [] o None para vacío.
 # Este módulo provee las primitivas con las que se escribe ese dict y el
 # descubrimiento/parseo que usa check_expected.py.
 #
@@ -83,6 +85,42 @@ def parse_spec(spec, key, xmlid):
             % (key, xmlid)
         )
     return spec
+
+
+def parse_expected_value(want, key, xmlid, field):
+    """Clasifica el valor declarado para un campo mirando SOLO su forma: acá
+    no hay Odoo, así que contra el tipo real del campo lo cruza el runner.
+
+    Devuelve ('refs', [Ref, ...]) cuando el valor se declaró con
+    ref()/company_ref() —uno solo, o una lista para un x2m— y ('scalar', want)
+    para todo lo demás. El vacío (None, []) sale como escalar: qué significa
+    vacío depende del campo, y eso lo sabe el runner.
+
+    Los ids crudos NO son una forma válida de declarar un relacional, pero eso
+    tampoco se decide acá: sin el campo a la vista, un int puede ser un entero
+    esperado perfectamente legítimo."""
+    if isinstance(want, Ref):
+        return "refs", [want]
+    if isinstance(want, (list, tuple, set, frozenset)):
+        items = list(want)
+        refs = [v for v in items if isinstance(v, Ref)]
+        if not refs:
+            return "scalar", want
+        if len(refs) != len(items):
+            raise ValueError(
+                "%s: %s: %s mezcla ref() con valores sueltos (%r) — un x2m se "
+                "declara con refs, o vacío ([] / None)" % (key, xmlid, field, want)
+            )
+        xmlids = [r.xmlid for r in refs]
+        dupes = sorted({x for x in xmlids if xmlids.count(x) > 1})
+        if dupes:
+            raise ValueError(
+                "%s: %s: %s repite %s — lo esperado de un x2m es el conjunto "
+                "de registros vinculados, y un vínculo no se repite"
+                % (key, xmlid, field, ", ".join(dupes))
+            )
+        return "refs", refs
+    return "scalar", want
 
 
 # --- descubrimiento y carga -------------------------------------------------
