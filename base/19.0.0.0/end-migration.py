@@ -663,13 +663,27 @@ def get_next_available_code(env, code, exclude_account_id=None):
 
 
 def merge_accounts_by_code(env, id_a):
-    """Fusiona cuentas contables con mismo code dentro de la compañía destino."""
+    """Fusiona cuentas contables con mismo code dentro de la compañía destino.
+
+    Llama a `wizard._action_merge()` directo, sin pasar por las líneas del
+    asistente interactivo — ahí viven las protecciones nativas de Odoo
+    (`account/wizard/account_merge_wizard.py`), así que ninguna corre sola acá
+    y hay que replicarlas a mano (T-73832, verificado por jjs):
+    - cuentas de banco/caja nunca se fusionan (dos cajas físicas distintas no
+      son "la misma cuenta" aunque compartan código);
+    - dos cuentas que ya comparten una compañía entre sí no se fusionan (no
+      hay forma sin ambigüedad de decidir cuál se queda con esa compañía);
+    - si más de una cuenta del grupo tiene asientos hasheados (inalterables),
+      no se fusionan — fusionar borra todas menos una, y un asiento hasheado
+      no puede perder la cuenta a la que apunta.
+    """
     Account = env["account.account"].with_context(active_test=False)
     accounts = Account.with_context(allowed_company_ids=[id_a]).search(
         [
             ("company_ids", "in", [id_a]),
             ("company_ids.active", "=", True),
             ("code", "!=", False),
+            ("account_type", "not in", ("asset_bank", "asset_cash")),
         ],
         order="code, id",
     )
@@ -707,10 +721,52 @@ def merge_accounts_by_code(env, id_a):
                 acc.write({"code": new_code})
             continue
 
+        # No mergear cuentas que ya comparten compañía entre sí.
+        companies_seen = env["res.company"]
+        has_company_overlap = False
+        for acc in duplicate_accounts:
+            if acc.company_ids & companies_seen:
+                has_company_overlap = True
+                break
+            companies_seen |= acc.company_ids
+        if has_company_overlap:
+            _logger.warning(
+                "SALTANDO MERGE de cuentas con code=%s (ids=%s): dos o más ya comparten compañía entre sí",
+                code,
+                duplicate_accounts.ids,
+            )
+            continue
+
+        # No mergear si más de una cuenta tiene asientos hasheados.
+        hashed_account_ids = set(
+            env["account.move.line"]
+            .search(
+                [
+                    ("account_id", "in", duplicate_accounts.ids),
+                    ("move_id.inalterable_hash", "!=", False),
+                ]
+            )
+            .mapped("account_id.id")
+        )
+        if len(hashed_account_ids) > 1:
+            _logger.warning(
+                "SALTANDO MERGE de cuentas con code=%s (ids=%s): más de una tiene asientos hasheados (%s)",
+                code,
+                duplicate_accounts.ids,
+                hashed_account_ids,
+            )
+            continue
+
         _logger.info(
             "FUSIONANDO CUENTAS: code=%s, ids=%s",
             code,
             duplicate_accounts.ids,
+        )
+        # Si una cuenta del grupo tiene asientos hasheados, tiene que
+        # sobrevivir ella (su ID es el que _action_merge conserva) — igual
+        # que hace el asistente interactivo antes de fusionar.
+        ordered_accounts = duplicate_accounts.sorted(
+            lambda a: a.id in hashed_account_ids, reverse=True
         )
         wizard = (
             env["account.merge.wizard"]
@@ -723,7 +779,7 @@ def merge_accounts_by_code(env, id_a):
             )
             .create({"is_group_by_name": False})
         )
-        wizard._action_merge(duplicate_accounts)
+        wizard._action_merge(ordered_accounts)
         merged_groups += 1
 
     _logger.info("Merge por código finalizado. Grupos fusionados: %s", merged_groups)
