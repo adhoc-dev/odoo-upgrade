@@ -563,6 +563,77 @@ def check_consistency_keep(env, model_name, id_b):
         # Por ahora logueamos la permanencia exitosa.
 
 
+def dedupe_and_move_partner_tax(cr, id_a, id_b):
+    """Mueve l10n_ar.partner.tax (Percepciones/Retenciones por contacto) de la
+    sucursal (B) a la matriz (A), deduplicando contra lo que ya tenga A.
+
+    T-125999: este modelo no está en MODEL_STRATEGY, así que su company_id
+    caía en el default "CHECK" de migrate_standard_fields, que no tiene rama
+    (cae al `else: continue` y ni siquiera llega a loguear el warning) — o
+    sea, nunca se tocaba. Cuando la misma alícuota se había importado antes
+    en ambas compañías (mismo partner_id + tax_id + período), quedaban dos
+    filas idénticas apuntando al mismo contacto tras el merge.
+
+    Guarda por partner_id + tax_id + from_date + to_date: el modelo no tiene
+    ningún campo propio de "valor" además de esa combinación (la alícuota la
+    da `tax_id`), así que dos filas que matchean esa clave son la misma
+    percepción/retención cargada dos veces — se descarta la de B. El único
+    campo que puede diferir es `ref` (metadata de origen, no de valor); si
+    difiere, se loguea informativamente pero igual se elimina la de B (queda
+    el `ref` de A).
+    """
+    if not table_exists(cr, "l10n_ar_partner_tax"):
+        return
+
+    cr.execute(
+        """
+        SELECT b.id, b.ref, a.id, a.ref
+          FROM l10n_ar_partner_tax b
+          JOIN l10n_ar_partner_tax a
+            ON a.company_id = %s
+           AND a.partner_id = b.partner_id
+           AND a.tax_id = b.tax_id
+           AND a.from_date IS NOT DISTINCT FROM b.from_date
+           AND a.to_date IS NOT DISTINCT FROM b.to_date
+         WHERE b.company_id = %s
+        """,
+        (id_a, id_b),
+    )
+    matches = cr.fetchall()
+    dup_ids = [b_id for b_id, _b_ref, _a_id, _a_ref in matches]
+    ref_mismatches = [
+        (b_id, a_id) for b_id, b_ref, a_id, a_ref in matches if b_ref != a_ref
+    ]
+
+    if dup_ids:
+        cr.execute("DELETE FROM l10n_ar_partner_tax WHERE id = ANY(%s)", (dup_ids,))
+        _logger.info(
+            "Eliminando l10n_ar.partner.tax duplicado de la sucursal (B): %s "
+            "fila(s) (ya existía la misma percepción/retención en la matriz A)",
+            len(dup_ids),
+        )
+
+    if ref_mismatches:
+        _logger.info(
+            "l10n_ar.partner.tax: %s fila(s) duplicadas tenían distinto `ref` "
+            "entre A y B — se conservó el de A, se descartó el de B "
+            "(id_b, id_a)=%s",
+            len(ref_mismatches),
+            ref_mismatches,
+        )
+
+    cr.execute(
+        "UPDATE l10n_ar_partner_tax SET company_id = %s WHERE company_id = %s",
+        (id_a, id_b),
+    )
+    if cr.rowcount:
+        _logger.info(
+            "Moviendo l10n_ar.partner.tax restante de la sucursal (B) a la matriz "
+            "(A): %s fila(s)",
+            cr.rowcount,
+        )
+
+
 def migrate_json_company_dependent(cr, env, id_a, id_b):
     """Busca y migra campos JSONB company_dependent"""
     id_a_str = str(id_a)
@@ -2576,6 +2647,10 @@ def migrate(cr, version):
 
             # 1. Movimiento Operativo (SQL)
             migrate_standard_fields(cr, env, id_a, id_b)
+
+            # 1.1 l10n_ar.partner.tax: no está en MODEL_STRATEGY, se mueve y
+            # deduplica aparte (T-125999).
+            dedupe_and_move_partner_tax(cr, id_a, id_b)
 
             # 2. Fusión de Configuración (ORM)
             merge_models = [
