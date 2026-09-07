@@ -43,6 +43,52 @@ De dónde salen los registros que el test referencia con `ref()`:
 `expected_lib.py` trae las primitivas (`ref` / `company_ref`) y el
 descubrimiento de `<modulo>/tests/expected_*.py`.
 
+## Campos relacionales: el valor también se declara con `ref()`
+
+Un m2o o un x2m se declara con las mismas primitivas que la clave, así el
+expected no depende de ids —que no son estables entre bases— ni queda limitado
+a "el campo tiene que estar vacío":
+
+> El ejemplo de abajo es de `route_line_test`, el módulo de prueba del remapeo
+> m2o → m2m, y **todavía no está en master**: vive en una rama de trabajo, así
+> que estos xmlids no se encuentran grepeando el repo. El otro ejemplo de este
+> README (`po_force_delivered_no`) sí es un caso vivo y sembrado.
+
+```python
+EXPECTED = {
+    "route.line": {
+        # m2o -> m2m: el script tiene que dejar en el m2m nuevo la misma ruta
+        # que estaba en el m2o. Parte de route_id = MTO; si acá viene [], la
+        # tabla de relación nació vacía y el vínculo se perdió sin error.
+        ref("upgrade_prepare_demo.rl_una_ruta"): {
+            "route_ids": [ref("stock.route_warehouse0_mto")],
+        },
+        # Rama de preservación: la línea no tenía ruta y tiene que seguir sin
+        # ninguna — que el script no le invente el vínculo por defecto.
+        ref("upgrade_prepare_demo.rl_sin_ruta"): {
+            "route_ids": [],
+        },
+    },
+}
+```
+
+- Un `ref()` suelto para un m2o, una lista para un x2m; vacío es `[]`, `None`
+  o el `False` que devuelve el ORM.
+- Se compara el **conjunto** de registros vinculados: el orden no se verifica
+  (declarar un o2m ordenado queda fuera de este carril).
+- `many2one_reference` y `reference` **también quedan afuera**, con su propio
+  diagnóstico: el registro apuntado sale de otro campo, así que no hay comodel
+  fijo contra el que resolver un `ref()`. El corte es explícito porque
+  `Field.relational` los da por no relacionales, y sin él un id crudo en el
+  `res_id` de `mail.activity` o de `ir.attachment` pasaba en verde.
+- Un **id crudo es FAIL explícito**, no una comparación silenciosa: los ids no
+  son estables entre bases y el verde que sacan no significa nada.
+- Los refs del lado del valor son **anclas como los de la clave**: si uno no
+  resuelve es FAIL con su propio diagnóstico —sin fila en `ir_model_data`,
+  xmlid colgado, o registrado bajo otro modelo que el que apunta el campo—, y
+  no un `esperaba X, obtuvo Y` que se leería como culpa del migration script.
+- El diff se imprime con el xmlid al lado del id (`[12 (stock.route_mto)]`).
+
 ## Anti-falso-verde (regla del runner, no de cada test)
 
 - 0 archivos descubiertos ⇒ FAIL
@@ -87,7 +133,11 @@ conocidos (runbot `/data/build/ingadhoc-odoo-upgrade`, stack local
 - El formato `{"before": ..., "after": ...}` del diseño anterior (ADR 0006)
   quedó **sin efecto** y el runner lo rechaza con FAIL explícito, en vez de
   ignorar el `before` en silencio.
-- Valores esperados: escalares (m2o/x2m: pendiente).
+- Valores esperados: escalares y relacionales (ver arriba).
+- La parte de `expected_lib.py` que no necesita Odoo tiene arnés propio:
+  `python3 testing_post_odu/test_expected_lib.py` (19 casos, sin base ni
+  infra). Lo que sí necesita un `env` —que un `ref()` resuelva, que un id
+  crudo FAILee— se prueba sobre una base viva.
 - Verificar data **orgánica** de la base (registros sin xmlid, correlacionando
   valor viejo → nuevo) requiere una ventana pre-`-u`, que es justamente lo que
   este diseño evita: ese carril queda fuera, y el escape hatch imperativo es
