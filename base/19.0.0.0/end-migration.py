@@ -300,8 +300,14 @@ MODEL_STRATEGY = {
     "hr.department": "KEEP_AND_CHECK",
     "hr.leave": "KEEP_AND_CHECK",
     "hr.applicant": "KEEP_AND_CHECK",
+    # --- PLAN DE CUENTAS (KEEP) ---
+    # El plan de la sucursal no sube en bloque: la hija puede ser otra razón
+    # social con otro CUIT. Quién sube y quién no lo decide después, cuenta por
+    # cuenta, consolidate_branch_accounts (T-73832). KEEP y no KEEP_AND_CHECK
+    # porque en 19 account.account no tiene company_id y check_consistency_keep
+    # lo busca.
+    "account.account": "KEEP",
     # --- OTROS (MOVE TO PARENT) ---
-    "account.account": "MOVE_TO_PARENT",
     "mail.activity.plan": "MOVE_TO_PARENT",
     "documents.document": "MOVE_TO_PARENT",
     "loyalty.program": "MOVE_TO_PARENT",
@@ -626,7 +632,7 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
                 # Encontrado con account.account.code_store (char,
                 # company_dependent): antes esto cala al "no hacer nada" y la
                 # cuenta de la sucursal quedaba con código invisible desde la
-                # matriz (no matcheaba en merge_accounts_by_code ni se veía
+                # matriz (no matcheaba al consolidar el plan ni se veía
                 # con su código real en el plan de cuentas consolidado).
                 _logger.info(f"Migrando JSONB: {model_name}.{field_name} ({field_type})")
                 query = f"""
@@ -662,127 +668,220 @@ def get_next_available_code(env, code, exclude_account_id=None):
         suffix += 1
 
 
-def merge_accounts_by_code(env, id_a):
-    """Fusiona cuentas contables con mismo code dentro de la compañía destino.
+def merge_same_account(env, id_a, code, account_type, accounts):
+    """Fusiona un grupo de cuentas que son la misma cuenta y devuelve la que queda.
 
     Llama a `wizard._action_merge()` directo, sin pasar por las líneas del
     asistente interactivo — ahí viven las protecciones nativas de Odoo
-    (`account/wizard/account_merge_wizard.py`), así que ninguna corre sola acá
-    y hay que replicarlas a mano (T-73832, verificado por jjs):
+    (`account/wizard/account_merge_wizard.py`), así que ninguna corre sola acá y
+    hay que replicarlas a mano (T-73832):
     - cuentas de banco/caja nunca se fusionan (dos cajas físicas distintas no
       son "la misma cuenta" aunque compartan código);
-    - dos cuentas que ya comparten una compañía entre sí no se fusionan (no
-      hay forma sin ambigüedad de decidir cuál se queda con esa compañía);
-    - si más de una cuenta del grupo tiene asientos hasheados (inalterables),
-      no se fusionan — fusionar borra todas menos una, y un asiento hasheado
-      no puede perder la cuenta a la que apunta.
+    - dos cuentas que ya comparten una compañía entre sí no se fusionan (no hay
+      forma sin ambigüedad de decidir cuál se queda con esa compañía);
+    - si más de una tiene asientos hasheados (inalterables), no se fusionan:
+      fusionar borra todas menos una y un asiento hasheado no puede perder la
+      cuenta a la que apunta.
+
+    Si no se puede fusionar devuelve el grupo entero sin tocar.
     """
-    Account = env["account.account"].with_context(active_test=False)
-    accounts = Account.with_context(allowed_company_ids=[id_a]).search(
-        [
-            ("company_ids", "in", [id_a]),
-            ("company_ids.active", "=", True),
-            ("code", "!=", False),
-            ("account_type", "not in", ("asset_bank", "asset_cash")),
-        ],
-        order="code, id",
-    )
+    if len(accounts) <= 1:
+        return accounts
 
-    grouped_accounts = {}
+    if account_type in ("asset_bank", "asset_cash"):
+        _logger.warning(
+            "SALTANDO MERGE de cuentas de liquidez con code=%s (ids=%s): "
+            "son cuentas físicas distintas aunque compartan código",
+            code,
+            accounts.ids,
+        )
+        return accounts
+
+    companies_seen = env["res.company"]
     for account in accounts:
-        grouped_accounts.setdefault(account.code, env["account.account"])
-        grouped_accounts[account.code] |= account
-
-    merged_groups = 0
-    for code, duplicate_accounts in grouped_accounts.items():
-        if len(duplicate_accounts) <= 1:
-            continue
-
-        # No mergear si hay discrepancia en currency_id (una tiene moneda y otra no, o tienen monedas distintas)
-        currencies = {acc.currency_id for acc in duplicate_accounts}
-        if len(currencies) > 1:
-            _logger.warning(
-                "SALTANDO MERGE de cuentas con code=%s (ids=%s): discrepancia en currency_id (%s), renombrando todas salvo la de menor id con sufijo .1",
-                code,
-                duplicate_accounts.ids,
-                [c.name or "sin moneda" for c in currencies],
-            )
-            keeper = duplicate_accounts.sorted("id")[0]
-            for acc in duplicate_accounts.filtered(lambda a: a.id != keeper.id):
-                new_code = get_next_available_code(
-                    env, acc.code, exclude_account_id=acc.id
-                )
-                _logger.info(
-                    "Renombrando cuenta id=%s: code '%s' -> '%s'",
-                    acc.id,
-                    acc.code,
-                    new_code,
-                )
-                acc.write({"code": new_code})
-            continue
-
-        # No mergear cuentas que ya comparten compañía entre sí.
-        companies_seen = env["res.company"]
-        has_company_overlap = False
-        for acc in duplicate_accounts:
-            if acc.company_ids & companies_seen:
-                has_company_overlap = True
-                break
-            companies_seen |= acc.company_ids
-        if has_company_overlap:
+        if account.company_ids & companies_seen:
             _logger.warning(
                 "SALTANDO MERGE de cuentas con code=%s (ids=%s): dos o más ya comparten compañía entre sí",
                 code,
-                duplicate_accounts.ids,
+                accounts.ids,
             )
-            continue
+            return accounts
+        companies_seen |= account.company_ids
 
-        # No mergear si más de una cuenta tiene asientos hasheados.
-        hashed_account_ids = set(
-            env["account.move.line"]
-            .search(
-                [
-                    ("account_id", "in", duplicate_accounts.ids),
-                    ("move_id.inalterable_hash", "!=", False),
-                ]
-            )
-            .mapped("account_id.id")
+    hashed_account_ids = set(
+        env["account.move.line"]
+        .search(
+            [
+                ("account_id", "in", accounts.ids),
+                ("move_id.inalterable_hash", "!=", False),
+            ]
         )
-        if len(hashed_account_ids) > 1:
-            _logger.warning(
-                "SALTANDO MERGE de cuentas con code=%s (ids=%s): más de una tiene asientos hasheados (%s)",
-                code,
-                duplicate_accounts.ids,
-                hashed_account_ids,
-            )
-            continue
-
-        _logger.info(
-            "FUSIONANDO CUENTAS: code=%s, ids=%s",
+        .mapped("account_id.id")
+    )
+    if len(hashed_account_ids) > 1:
+        _logger.warning(
+            "SALTANDO MERGE de cuentas con code=%s (ids=%s): más de una tiene asientos hasheados (%s)",
             code,
-            duplicate_accounts.ids,
+            accounts.ids,
+            hashed_account_ids,
         )
-        # Si una cuenta del grupo tiene asientos hasheados, tiene que
-        # sobrevivir ella (su ID es el que _action_merge conserva) — igual
-        # que hace el asistente interactivo antes de fusionar.
-        ordered_accounts = duplicate_accounts.sorted(
-            lambda a: a.id in hashed_account_ids, reverse=True
-        )
-        wizard = (
-            env["account.merge.wizard"]
-            .with_context(
-                {
-                    "allowed_company_ids": [id_a],
-                    "active_model": "account.account",
-                    "active_ids": duplicate_accounts.ids,
-                }
-            )
-            .create({"is_group_by_name": False})
-        )
-        wizard._action_merge(ordered_accounts)
-        merged_groups += 1
+        return accounts
 
-    _logger.info("Merge por código finalizado. Grupos fusionados: %s", merged_groups)
+    _logger.info("FUSIONANDO CUENTAS: code=%s, ids=%s", code, accounts.ids)
+    # La cuenta con asientos hasheados tiene que sobrevivir: `_action_merge`
+    # conserva la primera del recordset, igual que el asistente interactivo.
+    ordered = accounts.sorted(lambda a: a.id in hashed_account_ids, reverse=True)
+    wizard = (
+        env["account.merge.wizard"]
+        .with_context(
+            {
+                "allowed_company_ids": [id_a],
+                "active_model": "account.account",
+                "active_ids": accounts.ids,
+            }
+        )
+        .create({"is_group_by_name": False})
+    )
+    wizard._action_merge(ordered)
+    return ordered[0]
+
+
+def get_branch_tied_account_ids(cr, env, branch):
+    """Ids de las cuentas que la sucursal referencia.
+
+    Los tres usos que definen si una cuenta es de la sucursal (T-73832):
+    apuntes contables, diarios e impuestos. Los apuntes van por SQL porque el
+    volumen no entra en un recordset.
+    """
+    cr.execute(
+        "SELECT DISTINCT account_id FROM account_move_line "
+        "WHERE company_id = %s AND account_id IS NOT NULL",
+        (branch.id,),
+    )
+    tied_ids = {row[0] for row in cr.fetchall()}
+
+    journals = (
+        env["account.journal"]
+        .with_context(active_test=False)
+        .search([("company_id", "=", branch.id)])
+    )
+    taxes = env["account.tax.repartition.line"].search(
+        [("company_id", "=", branch.id)]
+    )
+    for records in (journals, journals.payment_method_line_ids, taxes):
+        # Recorremos los campos en vez de nombrarlos: cada localización agrega
+        # cuentas por defecto propias y una lista a mano se desactualiza.
+        for name, field in records._fields.items():
+            if (
+                field.comodel_name == "account.account"
+                and field.store
+                and not field.company_dependent
+            ):
+                tied_ids.update(records.mapped(name).ids)
+    return tied_ids
+
+
+def lift_unused_branch_accounts(cr, env, id_a, branches):
+    """Sube a la matriz las cuentas de sucursal que no tienen nada atado abajo.
+
+    Una cuenta se queda en la sucursal solo si algún registro de esa sucursal la
+    referencia; si no la referencia nada, no es del plan de la sucursal y sube.
+    Corre después de fusionar y renumerar: para entonces no hay códigos
+    repetidos y el write no choca con `_ensure_code_is_unique`.
+    """
+    Account = env["account.account"].with_context(active_test=False)
+    for branch in branches:
+        tied_ids = get_branch_tied_account_ids(cr, env, branch)
+        branch_accounts = Account.search(
+            [("company_ids", "in", branch.ids), ("company_ids", "not in", [id_a])]
+        )
+        to_lift = branch_accounts - Account.browse(tied_ids)
+        to_lift.write({"company_ids": [(3, branch.id), (4, id_a)]})
+        _logger.info(
+            "Sucursal %s: suben %s cuentas a la matriz, se quedan %s (tienen algo atado)",
+            branch.id,
+            len(to_lift),
+            len(branch_accounts) - len(to_lift),
+        )
+
+
+def consolidate_branch_accounts(cr, env, id_a):
+    """Consolida el plan de cuentas del árbol de id_a después del re-parenting.
+
+    Por cada código repetido en el árbol: fusiona lo que es la misma cuenta en
+    la matriz y en la sucursal (mismo código, tipo y moneda) y renumera lo que
+    quedó repetido a propósito. Al final sube a la matriz las cuentas de
+    sucursal que no tienen nada atado abajo (T-73832).
+    """
+    branches = env["res.company"].browse(id_a).child_ids
+    if not branches:
+        _logger.info("La compañía %s no tiene sucursales, nada que consolidar", id_a)
+        return
+
+    # `code` sale de `code_store`, indexado por la RAÍZ de la compañía: sin este
+    # contexto se lee el código de otra compañía.
+    env = env(context=dict(env.context, allowed_company_ids=[id_a]))
+    Account = env["account.account"].with_context(active_test=False)
+    by_code = {}
+    for account in Account.search(
+        [
+            ("company_ids", "child_of", [id_a]),
+            ("company_ids.active", "=", True),
+            ("code", "!=", False),
+        ],
+        order="code, id",
+    ):
+        by_code.setdefault(account.code, Account)
+        by_code[account.code] |= account
+
+    merged = renumbered = 0
+    for code, same_code in by_code.items():
+        if len(same_code) <= 1:
+            continue
+
+        # Comparten código: son la misma cuenta solo si además comparten tipo y
+        # moneda.
+        pairs = {}
+        for account in same_code:
+            key = (account.account_type, account.currency_id.id)
+            pairs.setdefault(key, Account)
+            pairs[key] |= account
+
+        survivors = Account
+        for (account_type, _currency_id), pair in pairs.items():
+            kept = merge_same_account(env, id_a, code, account_type, pair)
+            if len(kept) < len(pair):
+                merged += 1
+            survivors |= kept
+
+        # Un código no se puede repetir en el árbol: `_ensure_code_is_unique` lo
+        # valida contra la compañía, sus padres y sus hijas. Lo que quedó
+        # repetido a propósito (liquidez, tipos distintos) se renumera, y el
+        # código original se lo queda la matriz para no tocar su plan.
+        if len(survivors) > 1:
+            from_parent = survivors.filtered(lambda a: id_a in a.company_ids.ids)
+            keeper = (from_parent or survivors).sorted("id")[0]
+            for account in survivors - keeper:
+                new_code = get_next_available_code(
+                    env, code, exclude_account_id=account.id
+                )
+                _logger.warning(
+                    "RENUMERANDO cuenta id=%s '%s' (compañías %s): code '%s' -> '%s'",
+                    account.id,
+                    account.name,
+                    account.company_ids.ids,
+                    code,
+                    new_code,
+                )
+                account.write({"code": new_code})
+                renumbered += 1
+
+    _logger.info(
+        "Consolidación de cuentas: %s grupos fusionados, %s cuentas renumeradas",
+        merged,
+        renumbered,
+    )
+    lift_unused_branch_accounts(cr, env, id_a, branches)
 
 
 # ============================================================================
@@ -2762,20 +2861,14 @@ def migrate(cr, version):
             # 3. Propiedades JSONB (SQL)
             migrate_json_company_dependent(cr, env, id_a, id_b)
 
-            # 4. Limpieza: Archivar cuentas de la sucursal
-            _logger.info("ARCHIVE: Desactivando cuentas contables de la sucursal B")
-            env["account.account"].search([("company_ids", "=", id_b)]).write(
-                {"active": False}
-            )
-
             # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
             env["res.company"].browse(id_b)._write({"parent_id": id_a})
             # 5.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
             env["res.company"]._parent_store_compute()
             cr.commit()
 
-            # 6. Fusiona cuentas contables
-            merge_accounts_by_code(env, id_a)
+            # 6. Consolida el plan de cuentas del árbol
+            consolidate_branch_accounts(cr, env, id_a)
 
             # 7.1. Recomputa campos stored en journals que dependen de la jerarquía
             journals = env["account.journal"].search([])
@@ -2889,8 +2982,8 @@ def migrate(cr, version):
     parent_company_id = migrate_store_to_branch(cr, env)
 
     if parent_company_id:
-        # Después de migrar stores a branches, aplicar merge de cuentas
-        merge_accounts_by_code(env, parent_company_id)
+        # Después de migrar stores a branches, consolidar el plan de cuentas
+        consolidate_branch_accounts(cr, env, parent_company_id)
 
         # Recomputar campos relacionados con la jerarquía
         journals = env["account.journal"].search([])
