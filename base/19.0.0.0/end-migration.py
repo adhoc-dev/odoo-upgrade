@@ -295,7 +295,10 @@ MODEL_STRATEGY = {
     "account.invoice.report": "KEEP",
     # --- RRHH (KEEP AND CHECK) ---
     "hr.employee": "MOVE_TO_PARENT",
-    "hr.contract": "KEEP_AND_CHECK",
+    # hr.version holds job_id / department_id / resource_calendar_id (all
+    # check_company=True) with its own stored company_id; it must follow the
+    # employee to the parent or the employee form breaks under the parent alone.
+    "hr.version": "MOVE_TO_PARENT",
     "hr.job": "MOVE_TO_PARENT",
     "hr.department": "MOVE_TO_PARENT",
     "hr.leave": "KEEP_AND_CHECK",
