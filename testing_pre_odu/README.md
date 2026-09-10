@@ -1,16 +1,15 @@
 # testing_pre_odu — siembra de la base de prueba (lado 18, antes de ODU)
 
-Scripts que preparan la **base candidata** antes de que viaje a ODU: curan la
-base demo y siembran los registros que después referencian los tests
-declarativos de [`testing_post_odu/`](../testing_post_odu/README.md). Absorbe
+Scripts que preparan la **base candidata** antes de que viaje a ODU: siembran
+los registros que después referencian los tests declarativos de
+[`testing_post_odu/`](../testing_post_odu/README.md). Absorbe
 el repo `upgrade-prepare-demo` (un repo, un bundle, un trigger — ADR 0005 de
 actua-20: la data de prueba vive en `odoo-upgrade`).
 
 **Nunca corren para un cliente real.** Ese es el límite con
 [`pre_odoo_scripts/`](../pre_odoo_scripts/): aquel carril llega a producción
 vía el provider; este existe solo para fabricar la base del pipeline de
-testing. La curación de la demo se sacó de `pre_odoo_scripts/` justamente por
-ese riesgo (el detach borra `ir_model_data` en bulk).
+testing.
 
 ## Layout y contrato
 
