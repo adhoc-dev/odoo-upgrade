@@ -46,16 +46,59 @@ def migrate(cr, version):
     for model, fieldname, module in FIELD_OWNERS:
         # Convencion de nombre de xmlid de campo del ORM, misma que usa odoo.upgrade.util
         xmlid_name = "field_%s__%s" % (model.replace(".", "_"), fieldname)
+        # Un mismo campo puede llegar con mas de un xmlid con este name: al actualizar su modulo,
+        # Odoo deja el viejo huerfano (modulo `__export__`) y crea el suyo. Moverlos todos de una
+        # viola ir_model_data_module_name_uniq_index, asi que primero se elige cual queda: el que
+        # apunta a un campo que existe, despues el que ya esta a nombre del modulo, despues el de
+        # un modulo instalado, y a igualdad el mas viejo. Detectado en el request 12411.
         cr.execute(
             """
-            UPDATE ir_model_data
-               SET module = %s
-             WHERE model = 'ir.model.fields'
-               AND name = %s
-               AND module != %s
+            SELECT d.id, d.module, d.res_id
+              FROM ir_model_data d
+             WHERE d.model = 'ir.model.fields'
+               AND d.name = %s
+             ORDER BY EXISTS (SELECT 1 FROM ir_model_fields f WHERE f.id = d.res_id) DESC,
+                      (d.module = %s) DESC,
+                      EXISTS (SELECT 1 FROM ir_module_module m
+                               WHERE m.name = d.module AND m.state != 'uninstalled') DESC,
+                      d.id
             """,
-            (module, xmlid_name, module),
+            (xmlid_name, module),
         )
-        _logger.info(
-            "Reattributed %s.%s to %s (%s row(s))", model, fieldname, module, cr.rowcount
+        rows = cr.fetchall()
+        if not rows:
+            _logger.info("No xmlid for %s.%s, nothing to reattribute", model, fieldname)
+            continue
+
+        keep_id, keep_module, keep_res_id = rows[0]
+        # Del mismo campo y de un modulo instalado: esos son los que reclaman el campo y los
+        # unicos que chocan al mover. Una fila que apunta a otro campo no se toca, aunque comparta
+        # el name; un huerfano no lo reclama nadie y se deja donde esta.
+        cr.execute(
+            """
+            DELETE FROM ir_model_data d
+             WHERE d.model = 'ir.model.fields'
+               AND d.name = %s
+               AND d.id != %s
+               AND d.res_id = %s
+               AND EXISTS (SELECT 1 FROM ir_module_module m
+                            WHERE m.name = d.module AND m.state != 'uninstalled')
+         RETURNING d.id, d.module
+            """,
+            (xmlid_name, keep_id, keep_res_id),
         )
+        dropped = cr.fetchall()
+        if dropped:
+            # El log del pase es la unica traza: que se borro, no cuantos
+            _logger.info(
+                "Dropped duplicate xmlid(s) of %s.%s: %s",
+                model,
+                fieldname,
+                ", ".join("id %s (module %s)" % (row_id, row_module) for row_id, row_module in dropped),
+            )
+
+        if keep_module == module:
+            _logger.info("%s.%s already belongs to %s", model, fieldname, module)
+            continue
+        cr.execute("UPDATE ir_model_data SET module = %s WHERE id = %s", (module, keep_id))
+        _logger.info("Reattributed %s.%s to %s (was %s)", model, fieldname, module, keep_module)
