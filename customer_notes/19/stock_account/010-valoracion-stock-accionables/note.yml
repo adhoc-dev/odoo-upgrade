@@ -1,0 +1,24 @@
+# Metadata of the note: what today are fields of upgrade line 2021.
+# Values taken from that line, not invented -- it stays as the mirror (ul_id) so the
+# 15.873 customer notes already issued keep pointing somewhere.
+ul_id: 2021
+title: ⚙️ Cambios en la gestión de valoración de stock - Accionables
+product: Finanzas / Contabilidad
+
+# static | finding | check. `finding` means an upgrade script emits the values while it
+# migrates, under this folder's name as slug, and there is no code here at all: this note
+# is metadata plus message. The emitter is stock_account/19.0.0.0/end-migration.py.
+source: finding
+
+phase: 4_post
+sequence: 10                  # execution order, mirrored by the folder prefix
+customer_note_sequence: 7     # display order in the customer's portal
+priority: "1"
+
+modules: [stock_account]
+module_logic: all
+from_versions: ["18.0"]
+upgrade_types: [v19]
+
+force_reopen: false
+validation: false             # no validate.py: closing this note is not gated

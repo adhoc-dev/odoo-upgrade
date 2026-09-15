@@ -1,0 +1,7 @@
+# The emitter emits on every upgrade, empty lists included, so this case is the common
+# one. Both `t-if` fall through and the message renders down to the intro alone -- which
+# is what `generate()` sees as content and what decides whether the note is worth
+# publishing at all.
+values:
+  escenario_b_rows: []
+  escenario_d_rows: []

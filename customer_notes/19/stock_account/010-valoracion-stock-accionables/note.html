@@ -1,0 +1,51 @@
+<p data-oe-version="2.0"><span class="h3-fs">🟡 <strong>ACCIÓN REQUERIDA (SOLO PARA CATEGORÍAS DE PRODUCTO CON VALORACIÓN AUTOMATIZADA)</strong></span></p><h3>1. Acciones recomendadas en la versión actual</h3><ul><li><p><b>Cierre de operaciones:</b> Se recomienda intentar cerrar la contabilización de la mayor cantidad posible de facturas por recepciones o entregas. Esto evitará tener que realizar ajustes manuales complejos tras la migración a la nueva versión.</p></li></ul><h3>2. Configuraciones obligatorias en la nueva versión&nbsp;</h3><ul><li><p><b>Por categoría de producto:</b> Es necesario definir la cuenta de Costo de Mercancía Vendida (CMV) como "Cuenta de gastos".</p></li><li><p><b>Por ubicaciones de inventario:</b> Para las ubicaciones configuradas como "Pérdida de inventario", se debe definir la cuenta de resultado como "Cuenta de pérdidas".</p></li></ul><h3>3. Monitoreo de operaciones pendientes de transición</h3><p>Al migrar, se debe realizar un seguimiento estricto de los saldos que queden en los siguientes estados:</p><ul><li><p>Facturas a recibir</p></li><li><p>Facturado pero no recibido</p></li><li><p>Facturas por emitir</p></li><li><p>Facturado y no entregado</p></li></ul><h3>4. Guía de regularización contable por escenario</h3><h4>📥 Escenario A: Recepciones pendientes de facturar (Facturas a recibir)</h4><ul><li><p><b>💡&nbsp;NO REQUIERE ACCIÓN ALGUNA. Al registrar la factura pendiente, el sistema definirá la cuenta utilizada como contrapartida en el asiento de recepción registrado en la versión anterior con el objetivo de no duplicar la valuación del activo.</b></p></li><li class="oe-nested"><p style="text-align: left;"><br><strong>ACLARACIÓN: Este comportamiento solo ocurrirá en aquellas facturas que tengan vinculadas recepciones de stock ya contabilizados, en las nuevas operaciones el sistema se comportará en función de lo detallado en los cambios.</strong></p></li></ul><div><br></div><h4>📦 Escenario B: Compras facturadas pendientes de recibir</h4><ul><li><p><b>El problema:</b> En la factura de compra registrada en la nueva versión se determinó la "Cuenta de entrada de existencias" como cuenta de gasto. Por este motivo, al momento de realizar la recepción física del inventario, el sistema no ejecutará ningún asiento de activación.</p></li><li><p><b>💡 Solución sugerida:</b> Realizar un asiento contable manual para dar de baja la cuenta de gasto definida como "Cuenta de entrada de existencias" en la versión anterior. La contrapartida debe ser la cuenta de activo definida en la categoría de producto como "Cuenta de inventario".</p></li></ul><div><t t-if="escenario_b_rows"><p><b>Operaciones detectadas:</b></p>
+    <table class="table table-bordered o_table">
+
+        <tbody><tr>
+                <th class="o_table_header">Referencia de la orden</th>
+                <th class="o_table_header">Contacto</th>
+                <th class="o_table_header">Producto</th>
+                <th class="o_table_header">Cantidad</th>
+                <th class="o_table_header">Recibido</th>
+                <th class="o_table_header">Facturado</th>
+                <th class="o_table_header">Precio unitario</th>
+                <th class="o_table_header">Importe</th>
+            </tr>
+            <tr t-foreach="escenario_b_rows" t-as="row" t-key="row_index">
+                <td><t t-out="row.get('orden')"></t><br></td>
+                <td><t t-out="row.get('contacto')"></t><br></td>
+                <td><t t-out="row.get('producto')"></t><br></td>
+                <td><t t-out="row.get('cantidad')"></t><br></td>
+                <td><t t-out="row.get('recibido')"></t><br></td>
+                <td><t t-out="row.get('facturado')"></t><br></td>
+                <td><t t-out="row.get('precio')"></t><br></td>
+                <td><t t-out="row.get('importe')"></t><br></td>
+            </tr>
+        </tbody>
+    </table>
+</t></div><h4>📄 Escenario C: Entregas pendientes de facturar (Facturas por emitir)</h4><ul><li><p><b>💡 NO REQUIERE ACCIÓN ALGUNA dado que el sistema contempla de manera correcta que las entregas se encuentran registradas contablemente desde la versión anterior.</b></p></li><li class="oe-nested"><p><b><br><strong>ACLARACIÓN</strong>: Este comportamiento solo ocurrirá en aquellas facturas que tengan vinculadas entregas&nbsp;de stock ya contabilizados, en las nuevas operaciones el sistema se comportará en función de lo detallado en los cambios.</b></p></li></ul><div><br></div><h4>🚚 Escenario D: Ventas facturadas pendientes de entregar</h4><ul><li><p><b>El problema:</b> En la factura de venta registrada en la nueva versión no se devengó el asiento de Costo de Mercancía Vendida (CMV). En consecuencia, cuando se realice la entrega física, el sistema tampoco generará ningún asiento automático para reconocer dicho costo.</p></li><li><p><b>💡 Solución sugerida:</b> Al momento de entregar la mercancía, registrar un asiento manual para reconocer el costo. Se debe debitar la cuenta de Costo de Mercancía Vendida (CMV) y acreditar la cuenta de activo especificada en la categoría de producto como "Cuenta de inventario".</p></li></ul><div><t t-if="escenario_d_rows"><p><b>Operaciones detectadas:</b></p>
+    <table class="table table-bordered o_table">
+
+        <tbody><tr>
+                <th class="o_table_header">Referencia de la orden</th>
+                <th class="o_table_header">Cliente</th>
+                <th class="o_table_header">Descripción</th>
+                <th class="o_table_header">Cantidad</th>
+                <th class="o_table_header">Entregado</th>
+                <th class="o_table_header">Facturado</th>
+                <th class="o_table_header">Precio unitario</th>
+                <th class="o_table_header">Importe</th>
+            </tr>
+            <tr t-foreach="escenario_d_rows" t-as="row" t-key="row_index">
+                <td><t t-out="row.get('orden')"></t><br></td>
+                <td><t t-out="row.get('cliente')"></t><br></td>
+                <td><t t-out="row.get('descripcion')"></t><br></td>
+                <td><t t-out="row.get('cantidad')"></t><br></td>
+                <td><t t-out="row.get('entregado')"></t><br></td>
+                <td><t t-out="row.get('facturado')"></t><br></td>
+                <td><t t-out="row.get('precio')"></t><br></td>
+                <td><t t-out="row.get('importe')"></t><br></td>
+            </tr>
+        </tbody>
+    </table>
+</t></div><p><br></p>

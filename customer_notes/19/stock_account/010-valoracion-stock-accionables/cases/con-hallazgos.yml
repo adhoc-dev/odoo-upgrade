@@ -1,0 +1,30 @@
+# Values as the emitter leaves them. The keys are the real ones -- taken from the
+# placeholders of run 1815858 -- the rows are made up: that run carried 116 and 119 of
+# them, and a fixture only needs enough to exercise the template.
+values:
+  escenario_b_rows:
+    - orden: P00042
+      contacto: Distribuidora del Sur SA
+      producto: "[FER-001] Perfil de hierro 2x2"
+      cantidad: 120.0
+      recibido: 0.0
+      facturado: 120.0
+      precio: 8450.5
+      importe: 1014060.0
+    - orden: P00057
+      contacto: Metalúrgica Paraná SRL
+      producto: "[FER-019] Chapa galvanizada C25"
+      cantidad: 40.0
+      recibido: 12.0
+      facturado: 40.0
+      precio: 15200.0
+      importe: 608000.0
+  escenario_d_rows:
+    - orden: S00311
+      cliente: Corralón Belgrano
+      descripcion: Perfil de hierro 2x2
+      cantidad: 60.0
+      entregado: 0.0
+      facturado: 60.0
+      precio: 12300.0
+      importe: 738000.0
