@@ -29,11 +29,28 @@ STORE_XMLID = "upgrade_prepare_demo.store_to_branch"
 
 def migrate(env):
     if "res.store" not in env:
-        _logger.info("multi_store no esta en esta base - no se siembra nada")
+        _logger.info("multi_store is not in this database - nothing to seed")
         return
     Journal = env["account.journal"]
     if "store_id" not in Journal._fields:
-        _logger.info("account_multi_store no esta en esta base - no se siembra nada")
+        _logger.info("account_multi_store is not in this database - nothing to seed")
+        return
+
+    # El store sembrado tiene que colgar de un store que YA sea padre de otro
+    # (ver el paso 2). Si ninguno lo es, no hay de donde colgarlo y crearlo
+    # suelto lo convertiria en un store RAIZ de mas, que le mueve la parent
+    # company detectada a TODOS los casos de la base. Sin ese ancla el caso no
+    # aplica: no se siembra nada y el check post -u lo dice como ref ausente,
+    # que es el diagnostico correcto. El gate va aca arriba, antes de crear la
+    # company: sembrar a medias daria un mismatch de parent_id que se lee como
+    # culpa del migration script.
+    Store = env["res.store"]
+    parent_store = Store.search([("parent_id", "!=", False)], order="id", limit=1).parent_id
+    if not parent_store:
+        _logger.info(
+            "No store has a parent in this database - not seeding the "
+            "store-to-branch case (it would add a second root store)"
+        )
         return
 
     main_company = env.ref("base.main_company")
@@ -53,19 +70,16 @@ def migrate(env):
 
     # 2. El store homonimo. Cuelga de un store que YA es padre de otro, a
     #    proposito: get_store_to_company_mapping toma como store raiz el primero
-    #    sin parent_id y resuelve la company parent de TODA la corrida con un
-    #    DISTINCT sobre los parent_id de la tabla. Un store raiz de mas, o un
-    #    parent_id nuevo, moveria esas dos cosas para todos los demas casos de
-    #    la base. Colgarlo de un padre que ya existe no cambia ninguno de los
-    #    dos conjuntos.
-    Store = env["res.store"]
-    parent_store = Store.search([("parent_id", "!=", False)], limit=1).parent_id
+    #    sin parent_id, y de ese store sale la company parent de TODA la
+    #    corrida. Un store raiz de mas se la moveria a todos los demas casos de
+    #    la base. Colgarlo de un padre que ya existe no agrega un store raiz ni
+    #    cambia el que ya habia. Si no hubiera ninguno, el gate de arriba corto.
     Store._load_records([{
         "xml_id": STORE_XMLID,
         "values": {
             "name": NAME,
             "company_id": main_company.id,
-            "parent_id": parent_store.id or False,
+            "parent_id": parent_store.id,
         },
         "noupdate": True,
     }])

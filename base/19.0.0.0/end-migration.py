@@ -1187,6 +1187,18 @@ def get_store_to_company_mapping(env):
     if not stores_data:
         return {}
 
+    # El store raíz es el primero sin parent_id. Se resuelve acá arriba porque
+    # la detección de la parent company de abajo también lo necesita; el loop
+    # del mapping lo usa para el fallback histórico ("el store raíz cae en la
+    # parent"). Ya NO se fuerza al store raíz a la parent company al armar el
+    # mapping: se resuelve como cualquier otro store (override > match por
+    # nombre > fallback a la parent), para no perder de vista sus registros
+    # cuando el destino real es otro (ver T-125292: el store raíz "Casa
+    # Central" no es la parent ni una branch propia, es parte de otra sucursal
+    # ya existente).
+    root_store = next((s for s in stores_data if s[2] is None), stores_data[0])
+    parent_store_id = root_store[0]
+
     # Identificar la company parent (la que no tiene parent_id)
     parent_company = False
     cr.execute(
@@ -1207,32 +1219,31 @@ def get_store_to_company_mapping(env):
         parent_company = Company.browse(parent_company_query[0][0])
 
     if not parent_company:
-        # La parent sale de la company del STORE RAIZ (el store sin
-        # parent_id). Es el mismo criterio que aplica el loop de abajo
-        # ("el store raíz cae en la parent"), solo que resuelto por la
-        # company que el store ya tenía en 18.
+        # La parent sale de la company del STORE RAIZ (root_store). Es el
+        # mismo criterio que aplica el loop de abajo ("el store raíz cae en la
+        # parent"), solo que resuelto por la company que el store ya tenía
+        # en 18.
         #
-        # Antes esta query hacía JOIN res_company rc ON rc.id = rsb.parent_id.
-        # res_store.parent_id tiene FK a res_store, no a res_company
-        # (res_store_parent_id_fkey -> res_store(id)), así que el JOIN no
-        # resolvía la company padre de nada: emparejaba el id de un STORE con
-        # el de una COMPANY cualquiera que tuviera ese mismo número. En la base
-        # canónica el único parent_id no nulo es 4 (los stores "Unidad A/B"
-        # cuelgan del store 4) y existe una company 4, así que toda la
-        # jerarquía terminaba colgada de "(AR) Exento" por coincidencia de ids.
-        cr.execute(
-            """
-                SELECT DISTINCT(rsb.company_id)
-                FROM res_store_bu rsb
-                JOIN res_company rc
-                    ON rc.id=rsb.company_id
-                WHERE rsb.parent_id IS NULL
-                  AND rc.parent_id IS NULL AND rc.active = TRUE
-            """
-        )
-        parent_company_query = cr.fetchall()
-        if parent_company_query and len(parent_company_query) == 1:
-            parent_company = Company.browse(parent_company_query[0][0])
+        # Antes esto era una query con JOIN res_company rc ON rc.id =
+        # rsb.parent_id. res_store.parent_id tiene FK a res_store, no a
+        # res_company (res_store_parent_id_fkey -> res_store(id)), así que el
+        # JOIN no resolvía la company padre de nada: emparejaba el id de un
+        # STORE con el de una COMPANY cualquiera que tuviera ese mismo número.
+        # En la base canónica el único parent_id no nulo es 4 (los stores
+        # "Unidad A/B" cuelgan del store 4) y existe una company 4, así que
+        # toda la jerarquía terminaba colgada de "(AR) Exento" por coincidencia
+        # de ids.
+        #
+        # Se resuelve sobre root_store y no con un DISTINCT sobre todos los
+        # stores sin parent_id: el store raíz ya quedó elegido arriba, y un
+        # DISTINCT que devolviera dos companies tiraría abajo esa elección para
+        # caer en una company cualquiera. Tampoco se pide que la company sea
+        # raíz: de eso se encarga el `while` de acá abajo, que sube hasta la
+        # raíz del árbol. Pedirlo en la condición descartaba el único dato
+        # bueno que hay cuando el store raíz cuelga de una branch.
+        root_store_company = Company.browse(root_store[3]).exists()
+        if root_store_company and root_store_company.active:
+            parent_company = root_store_company
         else:
             parent_company = Company.search(
                 [("active", "=", True), ("parent_id", "=", False)], limit=1
@@ -1257,14 +1268,6 @@ def get_store_to_company_mapping(env):
 
     store_to_company = {}
     branch_company_ids = []
-
-    # El store parent es el primero sin parent_id. Ya NO se fuerza acá mismo
-    # a la parent company: se resuelve en el loop de abajo como cualquier
-    # otro store (override > match por nombre > fallback a la parent), para
-    # no perder de vista sus registros cuando el destino real es otro
-    # (ver T-125292: el store raíz "Casa Central" no es la parent ni una
-    # branch propia, es parte de otra sucursal ya existente).
-    parent_store_id = next((s for s in stores_data if s[2] is None), stores_data[0])[0]
 
     for store_id, store_name, store_parent_id, store_original_company_id in stores_data:
         if store_id in store_to_company:

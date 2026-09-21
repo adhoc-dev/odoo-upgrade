@@ -20,6 +20,17 @@
 # referenciar (la siembra la crea con xmlid en
 # testing_pre_odu/base/180_190/030-store_to_branch_cases.py).
 #
+# DE QUE DEPENDE EL ROJO, que es lo que este carril no puede declarar. El
+# assert de res.company ejercita la deteccion de la parent company por su
+# camino de FALLBACK: la primera query de get_store_to_company_mapping
+# (sale_order + stock_warehouse) no resuelve en la base canonica, y recien por
+# eso la parent sale de la company del store raiz. Si esa base llegara a tener
+# sale orders con warehouse en una sola company raiz, esa primera query pasa a
+# devolver una fila, el fallback deja de correr y los seis asserts de aca
+# siguen en VERDE sin haber tocado el codigo que verifican. El verde prueba el
+# resultado, no el camino: al tocar la data canonica hay que rehacer el rojo
+# (revertir el fix y ver el fail) para saber que el assert sigue discriminando.
+#
 # Solo se declara el estado esperado DESPUES del -u (ADR 0007): la base que
 # recibimos se da por buena.
 
