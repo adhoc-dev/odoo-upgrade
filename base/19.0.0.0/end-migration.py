@@ -1207,13 +1207,27 @@ def get_store_to_company_mapping(env):
         parent_company = Company.browse(parent_company_query[0][0])
 
     if not parent_company:
+        # La parent sale de la company del STORE RAIZ (el store sin
+        # parent_id). Es el mismo criterio que aplica el loop de abajo
+        # ("el store raíz cae en la parent"), solo que resuelto por la
+        # company que el store ya tenía en 18.
+        #
+        # Antes esta query hacía JOIN res_company rc ON rc.id = rsb.parent_id.
+        # res_store.parent_id tiene FK a res_store, no a res_company
+        # (res_store_parent_id_fkey -> res_store(id)), así que el JOIN no
+        # resolvía la company padre de nada: emparejaba el id de un STORE con
+        # el de una COMPANY cualquiera que tuviera ese mismo número. En la base
+        # canónica el único parent_id no nulo es 4 (los stores "Unidad A/B"
+        # cuelgan del store 4) y existe una company 4, así que toda la
+        # jerarquía terminaba colgada de "(AR) Exento" por coincidencia de ids.
         cr.execute(
             """
-                SELECT DISTINCT(rsb.parent_id) 
-                FROM res_store_bu rsb 
+                SELECT DISTINCT(rsb.company_id)
+                FROM res_store_bu rsb
                 JOIN res_company rc
-                    ON rc.id=rsb.parent_id
-                WHERE rc.parent_id IS NULL AND rc.active = TRUE
+                    ON rc.id=rsb.company_id
+                WHERE rsb.parent_id IS NULL
+                  AND rc.parent_id IS NULL AND rc.active = TRUE
             """
         )
         parent_company_query = cr.fetchall()
