@@ -28,7 +28,11 @@ def migrate(cr, version):
     consumen tal cual las upgrade lines de post (2212) y test (2219), así que no
     se renombran a la convención `_bu` del repo.
 
-    Es idempotente: cada corrida rehace la copia desde los datos vigentes.
+    Es idempotente, y la copia se hace una sola vez: si ya está, la corrida nueva no la
+    toca. Un `-u` que falla se retoma sobre la misma base, donde los datos vigentes ya
+    pueden ser los que migró el intento anterior; rehacer la copia desde ahí se lleva
+    puesto el respaldo que el post necesita. En un reintento desde cero la base se
+    regenera entera y la copia no existe, así que se hace igual.
     """
     _logger.info("Running 'l10n_ar_stock_remito_digital_backup.py' script for version %s", version)
 
@@ -37,7 +41,9 @@ def migrate(cr, version):
             _logger.info("Table %s does not exist, nothing to back up", table)
             continue
         backup_table = BACKUP_PREFIX + table
-        cr.execute(SQL("DROP TABLE IF EXISTS %s", SQL.identifier(backup_table)))
+        if util.table_exists(cr, backup_table):
+            _logger.info("Table %s is already backed up in %s, leaving it", table, backup_table)
+            continue
         cr.execute(
             SQL(
                 "CREATE TABLE %s AS SELECT * FROM %s",
@@ -51,13 +57,9 @@ def migrate(cr, version):
             _logger.info("Column %s.%s does not exist, nothing to back up", table, column)
             continue
         backup_column = BACKUP_PREFIX + column
-        cr.execute(
-            SQL(
-                "ALTER TABLE %s DROP COLUMN IF EXISTS %s",
-                SQL.identifier(table),
-                SQL.identifier(backup_column),
-            )
-        )
+        if util.column_exists(cr, table, backup_column):
+            _logger.info("Column %s.%s is already backed up, leaving it", table, column)
+            continue
         util.create_column(cr, table, backup_column, "int4")
         cr.execute(
             SQL(

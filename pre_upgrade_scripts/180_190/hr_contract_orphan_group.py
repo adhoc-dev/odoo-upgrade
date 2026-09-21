@@ -25,7 +25,7 @@ def migrate(cr, version):
     if not util.table_exists(cr, BACKUP_TABLE):
         _logger.warning(
             "No existe la tabla %s: no se reparó ningún grupo. O no corrió el script "
-            "pre-odoo, o es un reintento del -u all que ya la consumió.",
+            "pre-odoo, o es una corrida retomada del -u que ya la consumió.",
             BACKUP_TABLE,
         )
         return
