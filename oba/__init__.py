@@ -7,9 +7,11 @@ comes from too.
 
 Import from the package, not from the modules inside it:
 
-    from odoo.upgrade.oba import add_customer_note
+    from odoo.upgrade.oba import add_customer_note, log_message, request_context
 """
 
 from .customer_note import add_customer_note
+from .output import log_message, set_breaks, set_result
+from .request_context import request_context
 
-__all__ = ["add_customer_note"]
+__all__ = ["add_customer_note", "log_message", "request_context", "set_breaks", "set_result"]
