@@ -2852,7 +2852,9 @@ def check_branch_vat_matches_parent(cr, parent_company_id, branch_company_id):
     Under the legal-entity criterion shipped in task #71642 (same entity =
     literal VAT equality, no fallback), an equal VAT is already enough for B
     to be read as the parent's own entity once it hangs from A — there is
-    nothing left to change here.
+    nothing left to change here. The exception is an auxiliary B that shares
+    the VAT but never invoiced with fiscal documents: that one gets its VAT
+    cleared later, by `clear_auxiliary_branch_vat`.
 
     This used to be `clear_branch_vat` and cleared B's VAT when it matched
     A's, relying on the OLD fallback of `_get_branches_with_same_vat` (empty
@@ -2900,6 +2902,140 @@ def check_branch_vat_matches_parent(cr, parent_company_id, branch_company_id):
         parent_company_id,
         parent_vat,
     )
+
+
+# Company conditions, per fiscal country, that tell the branch invoices
+# electronically: ARCA certificate in Argentina, DGI certificate in Uruguay.
+AUXILIARY_BRANCH_EDI_DOMAINS = {
+    "AR": [("l10n_ar_afip_ws_crt_id", "!=", False)],
+    "UY": [("l10n_uy_dgi_crt_id", "!=", False)],
+}
+
+
+def _branch_accounting_policy_fields(cr, env):
+    """Stored res.company fields that every company of a legal entity has to share.
+
+    Core delegates them to the root (_get_company_root_delegated_field_names of
+    account) and account_ux moves them to the head of the legal entity
+    (_get_legal_entity_delegated_field_names): fiscalyear_last_day,
+    fiscalyear_last_month, account_storno and tax_exigibility. currency_id is
+    left out on purpose: it is set when the branch is created and a
+    pre-existing company does not get its currency changed.
+    """
+    Company = env["res.company"]
+    fnames = list(Company._get_company_root_delegated_field_names())
+    if hasattr(Company, "_get_legal_entity_delegated_field_names"):
+        fnames += Company._get_legal_entity_delegated_field_names()
+    return [
+        fname
+        for fname in dict.fromkeys(fnames)
+        if fname != "currency_id"
+        and Company._fields[fname].store
+        and util.column_exists(cr, "res_company", fname)
+    ]
+
+
+def _branch_has_invoiced(env, branch):
+    """Whether the branch posted a sale or a purchase with fiscal documents.
+
+    For the countries in AUXILIARY_BRANCH_EDI_DOMAINS the journal also needs
+    electronic invoicing set up on the company.
+    """
+    domain = [
+        ("type", "in", ("sale", "purchase")),
+        ("active", "=", True),
+        ("l10n_latam_use_documents", "=", True),
+        ("company_id", "=", branch.id),
+    ]
+    for field_name, operator, value in AUXILIARY_BRANCH_EDI_DOMAINS.get(
+        branch.account_fiscal_country_id.code, []
+    ):
+        if field_name in env["res.company"]._fields:
+            domain.append((f"company_id.{field_name}", operator, value))
+    journals = env["account.journal"].search(domain)
+    return bool(
+        journals
+        and env["account.move"].search_count(
+            [
+                ("company_id", "=", branch.id),
+                ("journal_id", "in", journals.ids),
+                ("state", "=", "posted"),
+            ],
+            limit=1,
+        )
+    )
+
+
+def clear_auxiliary_branch_vat(env, parent_company_id, branch_company_ids):
+    """Clear the VAT of the branches that share it with the parent but are another entity.
+
+    A branch with the parent's VAT is read as the parent's own legal entity.
+    Two things tell it is not, and either one clears its VAT, which makes it
+    its own legal entity and keeps its moves out of the parent's VAT books:
+
+    - it never posted a sale or a purchase in a journal with fiscal documents
+      (and, for the countries in AUXILIARY_BRANCH_EDI_DOMAINS, with electronic
+      invoicing set up): it is an auxiliary B company;
+    - its accounting policy (_branch_accounting_policy_fields: fiscal year
+      closing, storno, cash basis) differs from the parent's. Every company of
+      a legal entity has to share it, so a B that closes its year on another
+      date is read as another entity even if it invoiced with that VAT. Left
+      as is, _check_legal_entity_delegated_fields (account_ux) rejects it on
+      the next write, and its message asks for exactly this: its own Tax ID.
+      The contra, known and accepted: the invoices it posted with that VAT
+      leave the parent's VAT books.
+
+    The old VAT, and the policy values that differed, are left as a note in
+    the chatter of the branch partner.
+    """
+    Company = env["res.company"]
+    parent = Company.browse(parent_company_id)
+    parent_vat = _normalized_vat(parent.vat)
+    if not parent_vat:
+        return
+    check_invoiced = "l10n_latam_use_documents" in env["account.journal"]._fields
+    policy_fnames = _branch_accounting_policy_fields(env.cr, env)
+    branches = Company.browse(branch_company_ids).filtered(
+        lambda c: _normalized_vat(c.vat) == parent_vat
+    )
+    for branch in branches:
+        policy_diff = [
+            fname for fname in policy_fnames if branch[fname] != parent[fname]
+        ]
+        if policy_diff:
+            reason = (
+                "its accounting policy differs from the parent's (%s), and every "
+                "company of a legal entity has to share it, so it is treated as "
+                "another legal entity"
+                % ", ".join(
+                    "%s: %s vs %s" % (fname, branch[fname], parent[fname])
+                    for fname in policy_diff
+                )
+            )
+        elif check_invoiced and not _branch_has_invoiced(env, branch):
+            reason = (
+                "it never invoiced with fiscal documents, so it is treated as an "
+                "auxiliary company"
+            )
+        else:
+            continue
+
+        old_vat = branch.vat
+        branch.vat = False
+        branch.partner_id.message_post(
+            body=(
+                "Upgrade to 19.0: VAT %s cleared. This company became a branch of "
+                "%s and %s, kept out of the parent's VAT books."
+            )
+            % (old_vat, branch.parent_id.name, reason),
+            subtype_xmlid="mail.mt_note",
+        )
+        _logger.info(
+            "Branch company %s: VAT %s cleared, %s",
+            branch.id,
+            old_vat,
+            reason,
+        )
 
 
 def sync_branch_vat_with_parent(cr, parent_company_id, branch_company_ids):
@@ -3266,6 +3402,7 @@ def migrate(cr, version):
                 """
             )
 
+        clear_auxiliary_branch_vat(env, id_a, ids_b)
         cr.commit()
     # ========================================================================
     # MODE 1: STORE TO BRANCH (Single company with multi-store -> Multi-company branches)
@@ -3304,4 +3441,6 @@ def migrate(cr, version):
         )
         set_users_default_company(env, parent_company_id)
         realign_subcontracting_pointers(env)
+        branches = env["res.company"].search([("parent_id", "=", parent_company_id)])
+        branches.write({"vat": env["res.company"].browse(parent_company_id).vat})
         cr.commit()
