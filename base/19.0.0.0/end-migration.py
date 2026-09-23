@@ -630,6 +630,135 @@ def check_consistency_keep(env, model_name, id_b):
         # Por ahora logueamos la permanencia exitosa.
 
 
+def dedupe_and_move_partner_tax(cr, env, id_a, id_b):
+    """Deja una sola l10n_ar.partner.tax (Percepciones/Retenciones por
+    contacto) por contacto, impuesto y período, y pone en cada fila la
+    compañía del impuesto que tiene configurado.
+
+    T-125999: este modelo no está en MODEL_STRATEGY, así que su company_id
+    caía en el default "CHECK" de migrate_standard_fields, que no tiene rama
+    (cae al `else: continue` y ni siquiera llega a loguear el warning) — o
+    sea, nunca se tocaba.
+
+    El duplicado no viene de la sucursal: lo crea el re-mapeo de
+    `l10n_ar_partner_tax.tax_id` cuando el impuesto de la sucursal se fusiona
+    contra su homónimo de la matriz. Después de eso las dos filas tienen el
+    mismo tax_id, y como company_id es related store de tax_id.company_id,
+    las dos están en la misma compañía. Por eso corre después del merge y la
+    guarda es (partner_id, tax_id, from_date, to_date), sin mirar la compañía
+    de cada fila.
+
+    De cada grupo sobrevive la de menor id; si hay tres o más, se borran
+    todas salvo esa. El único campo que puede diferir es `ref` (metadata de
+    origen, no de valor): se loguea y queda el de la fila que sobrevive.
+    """
+    if not table_exists(cr, "l10n_ar_partner_tax"):
+        return
+
+    # Cada sucursal que se fusiona dispara su propia pasada: el sufijo dice de
+    # cuál habla, así dos corridas seguidas se leen como dos merges y no como
+    # una repetición. Va al final del mensaje para no romper el grep por el
+    # texto de siempre.
+    names = {c.id: c.name for c in env["res.company"].browse([id_a, id_b])}
+    ctx = "sucursal %s '%s' -> matriz %s '%s'" % (
+        id_b,
+        names.get(id_b, "?"),
+        id_a,
+        names.get(id_a, "?"),
+    )
+    _logger.info("l10n_ar.partner.tax: deduplicando [%s]", ctx)
+
+    # company_id es related store de tax_id.company_id y ni el UPDATE crudo
+    # del re-mapeo ni el _write de bajo nivel lo recomputan: lo derivamos del
+    # impuesto antes de deduplicar, para no comparar filas con la compañía
+    # desactualizada. Sin acotar a las compañías de este merge: la regla vale
+    # para toda la tabla y no depende de qué par se esté fusionando.
+    cr.execute(
+        """
+        UPDATE l10n_ar_partner_tax pt
+           SET company_id = t.company_id
+          FROM account_tax t
+         WHERE pt.tax_id = t.id
+           AND pt.company_id IS DISTINCT FROM t.company_id
+        """
+    )
+    if cr.rowcount:
+        _logger.info(
+            "l10n_ar.partner.tax: se puso al día company_id (related de "
+            "tax_id.company_id) en %s fila(s) [%s]",
+            cr.rowcount,
+            ctx,
+        )
+
+    # A propósito no se fuerza nada hacia la matriz: la compañía de la fila
+    # es la del impuesto que tiene configurado, y ninguna otra. Mover por
+    # company_id dejaría filas en una compañía distinta a la de su tax_id,
+    # que es la inconsistencia que este bloque viene a evitar.
+
+    # row_number() sobre (contacto, impuesto, período) ordenado por id: se
+    # borra todo lo que no sea el primero, así queden dos filas o veinte. Un
+    # auto-join con la misma guarda devolvía el par en las dos orientaciones
+    # (a,b) y (b,a), y borraba las dos filas.
+    cr.execute(
+        """
+        WITH ranked AS (
+            SELECT id,
+                   ref,
+                   first_value(id) OVER w AS keep_id,
+                   first_value(ref) OVER w AS keep_ref,
+                   row_number() OVER w AS rn
+              FROM l10n_ar_partner_tax
+             WHERE company_id IN %s
+            WINDOW w AS (
+                PARTITION BY partner_id, tax_id, from_date, to_date
+                ORDER BY id
+            )
+        )
+        DELETE FROM l10n_ar_partner_tax t
+              USING ranked r
+              WHERE t.id = r.id
+                AND r.rn > 1
+          RETURNING t.id, r.keep_id, t.ref, r.keep_ref
+        """,
+        ((id_a, id_b),),
+    )
+    deleted = cr.fetchall()
+    if not deleted:
+        _logger.info(
+            "l10n_ar.partner.tax: sin duplicados que borrar [%s]", ctx
+        )
+        return
+
+    _logger.info(
+        "Eliminando l10n_ar.partner.tax duplicado: %s fila(s), queda una por "
+        "contacto, impuesto y período [%s] (borrada, queda)=%s",
+        len(deleted),
+        ctx,
+        [(d_id, keep_id) for d_id, keep_id, _d_ref, _keep_ref in deleted],
+    )
+
+    ref_mismatches = [
+        (d_id, d_ref, keep_id, keep_ref)
+        for d_id, keep_id, d_ref, keep_ref in deleted
+        if d_ref != keep_ref
+    ]
+    if ref_mismatches:
+        _logger.info(
+            "l10n_ar.partner.tax: %s de esas filas tenían distinto `ref` que la "
+            "que queda — se conservó el de la que queda [%s] "
+            "(borrada, ref borrado, queda, ref que queda)=%s",
+            len(ref_mismatches),
+            ctx,
+            ref_mismatches,
+        )
+
+    # El DELETE crudo no limpia el cache del ORM. flush=False es deliberado:
+    # estas filas ya no existen, no hay nada que escribirles.
+    env["l10n_ar.partner.tax"].browse(
+        [d_id for d_id, _k, _dr, _kr in deleted]
+    ).invalidate_recordset(flush=False)
+
+
 def migrate_json_company_dependent(cr, env, id_a, id_b):
     """Busca y migra campos JSONB company_dependent"""
     id_a_str = str(id_a)
@@ -2987,6 +3116,11 @@ def migrate(cr, version):
             for model_name in merge_models:
                 handle_merge_or_move(env, model_name, id_a, id_b)
                 cr.commit()
+
+            # 2.1 l10n_ar.partner.tax: no está en MODEL_STRATEGY. Va después
+            # del merge porque el duplicado lo crea el re-mapeo de tax_id
+            # (T-125999).
+            dedupe_and_move_partner_tax(cr, env, id_a, id_b)
 
             # 3. Propiedades JSONB (SQL)
             migrate_json_company_dependent(cr, env, id_a, id_b)
