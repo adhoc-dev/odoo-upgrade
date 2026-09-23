@@ -839,6 +839,27 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
                 cr.execute(query)
 
 
+def get_branch_marked_code(code):
+    """Inserta el marcador de sucursal sin cambiar la cuenta de grupo.
+
+    Anteponer el primer segmento mueve la cuenta de categoría cuando el
+    segundo nivel no coincide con el primero: `2.1.1.01.012` pasaba a
+    `2.2.1.1.01.012`, o sea del grupo 2.1 al 2.2. El marcador va despues de
+    los segmentos de encabezado -los de un digito-, que es el primer lugar
+    donde no cambia la categoria: `1.1.10.00.002` -> `1.1.1.10.00.002` da lo
+    mismo que antes, y `2.1.1.01.012` -> `2.1.1.2.01.012` deja de saltar de
+    grupo. Si el codigo no tiene encabezado que respetar, se antepone como
+    siempre.
+    """
+    parts = code.split(".")
+    cut = 0
+    while cut < len(parts) and len(parts[cut]) == 1:
+        cut += 1
+    if 0 < cut < len(parts):
+        return ".".join(parts[:cut] + [parts[0]] + parts[cut:])
+    return "%s.%s" % (parts[0], code)
+
+
 def get_next_available_code(env, code, exclude_account_id=None):
     """Devuelve un código libre validando contra todas las cuentas visibles por sudo."""
     Account = env["account.account"].sudo().with_context(active_test=False)
@@ -1091,16 +1112,16 @@ def consolidate_branch_accounts(cr, env, id_a):
             from_parent = survivors.filtered(lambda a: id_a in a.company_ids.ids)
             keeper = (from_parent or survivors).sorted("id")[0]
             for account in survivors - keeper:
-                # La sucursal no hereda el sufijo ".1": se le antepone una
-                # copia del primer segmento del código como prefijo propio
-                # (ej. 1.1.10.00.002 -> 1.1.1.10.00.002). Sigue siendo
+                # La sucursal no hereda el sufijo ".1": lleva una copia del
+                # primer segmento del código como marcador propio
+                # (ej. 1.1.10.00.002 -> 1.1.1.10.00.002), insertada donde no
+                # le cambia la categoría. Sigue siendo
                 # `get_next_available_code` el que garantiza que quede libre
-                # en todo el árbol — si el prefijo también colisionara (no
+                # en todo el árbol — si el marcador también colisionara (no
                 # debería, es un namespace nuevo), cae al sufijo .1/.2 de
                 # siempre en vez de fallar.
-                first_segment = code.split(".", 1)[0]
                 new_code = get_next_available_code(
-                    env, f"{first_segment}.{code}", exclude_account_id=account.id
+                    env, get_branch_marked_code(code), exclude_account_id=account.id
                 )
                 _logger.warning(
                     "RENUMERANDO cuenta id=%s '%s' (compañías %s): code '%s' -> '%s'",
