@@ -1250,9 +1250,11 @@ def get_store_to_company_mapping(env):
       cliente pide agrupar un store bajo una branch puntual que ningún
       heurístico puede adivinar (ej. T-125292: "Casa Central" tiene que
       terminar en la company de la sucursal Decoexpress, no en la parent ni
-      en una branch propia); (2) company existente con el mismo nombre;
-      (3) el store raíz cae en la parent (comportamiento histórico) y
-      cualquier otro store sin match se crea como branch nueva.
+      en una branch propia); (2) company existente con el mismo nombre —
+      primero entre las activas y después incluyendo las archivadas, que se
+      reusan tal cual, sin desarchivar (T-75471); (3) el store raíz cae en la
+      parent (comportamiento histórico) y cualquier otro store sin match se
+      crea como branch nueva.
 
     Returns:
         dict: {'a': parent_id, 'b': [branch_ids], 'store_mapping': {store_id: company_id}}
@@ -1423,9 +1425,46 @@ def get_store_to_company_mapping(env):
             )
             continue
 
-        # Buscar company existente por nombre
+                # Buscar company existente por nombre. Dos pasadas a proposito: primero
+        # entre las activas (comportamiento historico, y la que gana si hay una
+        # homonima de cada tipo) y recien despues incluyendo las archivadas.
+        #
+        # Sin la segunda pasada, una company archivada homonima no la ve nadie
+        # -- `search` filtra `active = true` por default, y eso deja afuera
+        # tambien a las que tienen `active` en NULL --, el store se iba por la
+        # rama de crear una branch nueva con ese mismo nombre y el `create` de
+        # abajo moria contra la constraint de unicidad:
+        #
+        #   psycopg2.errors.UniqueViolation: duplicate key value violates
+        #   unique constraint "res_company_name_uniq"
+        #
+        # Como esto corre en `end-migration`, esa excepcion no se lleva puesto
+        # solo al store: corta el `-u all` entero y el upgrade del cliente
+        # queda caido (T-75471).
+        #
+        # La company archivada se REUSA TAL CUAL: se mapea el store ahi y se
+        # cuelga de la parent como cualquier branch, pero NO se desarchiva. Es
+        # una decision explicita -- la migracion no cambia por su cuenta la
+        # visibilidad de una company que el cliente archivo --, y tiene una
+        # contra que hay que saber: los registros de ese store terminan en una
+        # company inactiva, invisible en la UI y fuera de los dominios por
+        # default hasta que alguien la desarchive a mano. Si el destino tiene
+        # que ser otro, para eso esta `migration_19_end_store_overrides`.
         existing_company = Company.search([("name", "=", store_name)], limit=1)
-
+        if not existing_company:
+            existing_company = Company.with_context(active_test=False).search(
+                [("name", "=", store_name)], limit=1
+            )
+            if existing_company:
+                _logger.warning(
+                    "Store '%s' (ID: %s) matched the ARCHIVED company '%s' "
+                    "(ID: %s); reusing it as a branch WITHOUT unarchiving it - "
+                    "its records will land in an inactive company (T-75471).",
+                    store_name,
+                    store_id,
+                    existing_company.name,
+                    existing_company.id,
+                )
         if existing_company:
             store_to_company[store_id] = existing_company.id
             branch_company_ids.append(existing_company.id)
