@@ -946,9 +946,7 @@ def dedupe_and_move_partner_tax(cr, env, id_a, id_b):
     )
     deleted = cr.fetchall()
     if not deleted:
-        _logger.info(
-            "l10n_ar.partner.tax: sin duplicados que borrar [%s]", ctx
-        )
+        _logger.info("l10n_ar.partner.tax: sin duplicados que borrar [%s]", ctx)
         return
 
     _logger.info(
@@ -1046,7 +1044,9 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
                 # cuenta de la sucursal quedaba con código invisible desde la
                 # matriz (no matcheaba al consolidar el plan ni se veía
                 # con su código real en el plan de cuentas consolidado).
-                _logger.info(f"Migrando JSONB: {model_name}.{field_name} ({field_type})")
+                _logger.info(
+                    f"Migrando JSONB: {model_name}.{field_name} ({field_type})"
+                )
                 query = f"""
                     UPDATE {table}
                     SET {field_name} = (
@@ -1263,9 +1263,7 @@ def get_branch_tied_account_ids(cr, env, branch):
         .with_context(active_test=False)
         .search([("company_id", "=", branch.id)])
     )
-    taxes = env["account.tax.repartition.line"].search(
-        [("company_id", "=", branch.id)]
-    )
+    taxes = env["account.tax.repartition.line"].search([("company_id", "=", branch.id)])
     # Las líneas de método de pago se buscan por diario: account.journal no
     # tiene un campo único con todas (son inbound_ y outbound_ por separado).
     payment_lines = env["account.payment.method.line"].search(
@@ -1686,11 +1684,14 @@ def get_store_to_company_mapping(env):
     #   migration_19_end_store_overrides = "{123: 45}"
     # mapea el store 123 (res_store_bu.id) directo a la company 45, sin
     # pasar por la búsqueda por nombre ni crear una branch nueva.
-    store_overrides = safe_eval(
-        env["ir.config_parameter"]
-        .sudo()
-        .get_param("migration_19_end_store_overrides", "{}")
-    ) or {}
+    store_overrides = (
+        safe_eval(
+            env["ir.config_parameter"]
+            .sudo()
+            .get_param("migration_19_end_store_overrides", "{}")
+        )
+        or {}
+    )
     store_overrides = {int(k): int(v) for k, v in store_overrides.items()}
 
     # ---- Primera ejecución: construir el mapping ----
@@ -1811,7 +1812,7 @@ def get_store_to_company_mapping(env):
             )
             continue
 
-                # Buscar company existente por nombre. Dos pasadas a proposito: primero
+            # Buscar company existente por nombre. Dos pasadas a proposito: primero
         # entre las activas (comportamiento historico, y la que gana si hay una
         # homonima de cada tipo) y recien despues incluyendo las archivadas.
         #
@@ -1952,7 +1953,9 @@ def _free_journal_code(cr, base_code):
         n += 1
 
 
-def _resolve_journal_code_collisions(cr, target_company_id, store_name=None, store_id_bu=None):
+def _resolve_journal_code_collisions(
+    cr, target_company_id, store_name=None, store_id_bu=None
+):
     """Libera colisiones de UNIQUE(company_id, code) antes de mover diarios.
 
     Al mover los diarios de un store a su branch (UPDATE company_id), la branch
@@ -1980,7 +1983,9 @@ def _resolve_journal_code_collisions(cr, target_company_id, store_name=None, sto
         store_filter_sql = "j.store_id = %s"
         store_filter_param = store_id_bu
     else:
-        store_filter_sql = "j.store_id IN (SELECT id FROM res_store_bu WHERE name ILIKE %s)"
+        store_filter_sql = (
+            "j.store_id IN (SELECT id FROM res_store_bu WHERE name ILIKE %s)"
+        )
         store_filter_param = store_name
 
     # Conjunto final que vivirá en target_company_id tras el UPDATE:
@@ -2131,7 +2136,9 @@ def migrate_store_fields_to_company(cr, env, mapping):
                 # su modelo nunca va a estar en el env destino. INFO, no
                 # WARNING: en runbot pinta el build y en un cliente real
                 # pasaria exactamente igual.
-                _logger.info(f"Model {model_name} not found, skipping (expected: store -> branch)")
+                _logger.info(
+                    f"Model {model_name} not found, skipping (expected: store -> branch)"
+                )
             else:
                 _logger.warning(f"Model {model_name} not found, skipping")
             continue
@@ -2190,7 +2197,9 @@ def migrate_store_fields_to_company(cr, env, mapping):
                 company = env["res.company"].browse(company_id)
 
                 if model_name == "account.journal":
-                    _resolve_journal_code_collisions(cr, company.id, store_name=company.name)
+                    _resolve_journal_code_collisions(
+                        cr, company.id, store_name=company.name
+                    )
                     env.cr.commit()
 
                 query = f"""
@@ -2325,7 +2334,13 @@ def migrate_warehouse_stock_to_company(cr, env):
         )
         moved_pickings = cr.rowcount
 
-        if moved_locations or moved_quants or moved_moves or moved_move_lines or moved_pickings:
+        if (
+            moved_locations
+            or moved_quants
+            or moved_moves
+            or moved_move_lines
+            or moved_pickings
+        ):
             _logger.info(
                 "Warehouse '%s' (ID: %s) -> company '%s' (ID: %s): "
                 "%s locations, %s quants, %s moves, %s move lines, %s pickings realigned",
@@ -2423,6 +2438,17 @@ def migrate_store_to_branch(cr, env):
     # so every branch has to carry the parent's VAT and address. Sin el pais no
     # corre la localizacion en la branch (ver sync_branch_address_with_parent).
     sync_branch_vat_with_parent(cr, parent_company_id, branch_company_ids)
+    # Before the address sync: its flush_all() recomputes legal_entity_root_id
+    # with the VAT just set, and that runs _check_legal_entity_delegated_fields
+    # (account_ux) against these fields. The whole subtree, for nested stores.
+    sync_branch_accounting_policy_with_parent(
+        cr,
+        env,
+        parent_company_id,
+        Company.search(
+            [("id", "child_of", parent_company_id), ("id", "!=", parent_company_id)]
+        ).ids,
+    )
     sync_branch_address_with_parent(cr, env, parent_company_id, branch_company_ids)
     create_branch_receiptbooks(env, branch_company_ids)
     cr.commit()
@@ -2887,9 +2913,7 @@ def clean_order_type_inconsistent_refs(cr):
            )
         """
     )
-    _logger.info(
-        "Limpiado journal_id inconsistente en %s sale.order.type", cr.rowcount
-    )
+    _logger.info("Limpiado journal_id inconsistente en %s sale.order.type", cr.rowcount)
 
     if util.column_exists(cr, "sale_order_type", "warehouse_id"):
         cr.execute(
@@ -2920,7 +2944,9 @@ BRANCH_INHERITED_DEFAULTS = (
 )
 
 
-def copy_parent_account_defaults_to_branches(env, parent_company_id, branch_company_ids):
+def copy_parent_account_defaults_to_branches(
+    env, parent_company_id, branch_company_ids
+):
     """Copia a cada branch las cuentas por defecto (a cobrar / a pagar) del parent.
 
     get_store_to_company_mapping crea la branch sin parent_id para que el
@@ -2944,7 +2970,9 @@ def copy_parent_account_defaults_to_branches(env, parent_company_id, branch_comp
     for model_name, field_name in BRANCH_INHERITED_DEFAULTS:
         if field_name not in env[model_name]._fields:
             continue
-        parent_value = Default._get(model_name, field_name, company_id=parent_company_id)
+        parent_value = Default._get(
+            model_name, field_name, company_id=parent_company_id
+        )
         if not parent_value:
             _logger.warning(
                 "La parent company %s no tiene default para %s.%s: las branches "
@@ -3021,8 +3049,10 @@ def create_mapping(cr):
             id_empresa_a = env["res.company"].browse(a_ids.pop())
             _logger.info(
                 "Auto-detectado cruce único: B='%s' (ID: %s) -> A='%s' (ID: %s)",
-                id_empresa_b.name, id_empresa_b.id,
-                id_empresa_a.name, id_empresa_a.id,
+                id_empresa_b.name,
+                id_empresa_b.id,
+                id_empresa_a.name,
+                id_empresa_a.id,
             )
             company_mapping = {"a": id_empresa_a.id, "b": id_empresa_b.id}
             env["ir.config_parameter"].sudo().set_param(
@@ -3034,7 +3064,10 @@ def create_mapping(cr):
                 "Cruces entre múltiples pares de compañías: %s. "
                 "Ver con Nico Col como se estructura el mapeo manualmente."
                 % [
-                    (env["res.company"].browse(b).name, env["res.company"].browse(a).name)
+                    (
+                        env["res.company"].browse(b).name,
+                        env["res.company"].browse(a).name,
+                    )
                     for b, a in cross_pairs
                 ]
             )
@@ -3147,13 +3180,19 @@ def set_users_default_company(env, parent_company_id):
     parent = env["res.company"].browse(parent_company_id)
     if not parent.exists():
         return
-    
+
     # Buscar TODOS los usuarios (internos y externos), excepto el usuario público
     # El usuario público (login='public') no debe tener company específica
-    users = env["res.users"].with_context(active_test=False).search([
-        ("login", "!=", "public"),
-    ])
-    
+    users = (
+        env["res.users"]
+        .with_context(active_test=False)
+        .search(
+            [
+                ("login", "!=", "public"),
+            ]
+        )
+    )
+
     missing_access = users.filtered(
         lambda u: parent_company_id not in u.company_ids.ids
     )
@@ -3184,17 +3223,22 @@ def realign_subcontracting_pointers(env):
 
     for company in companies:
         declared = company.subcontracting_location_id
-        rules = Rule.search([
-            ("company_id", "=", company.id),
-            ("location_dest_id", "in", candidates.ids),
-        ])
+        rules = Rule.search(
+            [
+                ("company_id", "=", company.id),
+                ("location_dest_id", "in", candidates.ids),
+            ]
+        )
         used = rules.mapped("location_dest_id")
         if len(used) > 1:
             _logger.warning(
                 "SUBCONTRACT REALIGN: %s (id=%s) tiene reglas de subcontratacion "
                 "apuntando a mas de una ubicacion (%s); no se corrige, requiere "
                 "revision funcional.",
-                company.name, company.id, used.ids)
+                company.name,
+                company.id,
+                used.ids,
+            )
             continue
         if len(used) != 1 or declared == used:
             continue
@@ -3202,25 +3246,33 @@ def realign_subcontracting_pointers(env):
 
         company.subcontracting_location_id = target
         IrDefault.set(
-            "res.partner", "property_stock_subcontractor", target.id,
+            "res.partner",
+            "property_stock_subcontractor",
+            target.id,
             company_id=company.id,
         )
         if not declared:
             continue
 
-        stragglers = Partner.with_company(company).search([
-            ("property_stock_subcontractor", "=", declared.id),
-        ])
+        stragglers = Partner.with_company(company).search(
+            [
+                ("property_stock_subcontractor", "=", declared.id),
+            ]
+        )
         if stragglers:
             stragglers.with_company(company).write(
-                {"property_stock_subcontractor": target.id})
+                {"property_stock_subcontractor": target.id}
+            )
 
         orphan_in_use = (
-            env["stock.quant"].search_count(
-                [("location_id", "child_of", declared.id)])
-            or env["stock.move"].search_count([
-                "|", ("location_id", "child_of", declared.id),
-                     ("location_dest_id", "child_of", declared.id)])
+            env["stock.quant"].search_count([("location_id", "child_of", declared.id)])
+            or env["stock.move"].search_count(
+                [
+                    "|",
+                    ("location_id", "child_of", declared.id),
+                    ("location_dest_id", "child_of", declared.id),
+                ]
+            )
             or Rule.search_count([("location_dest_id", "=", declared.id)])
         )
         if not orphan_in_use:
@@ -3456,6 +3508,62 @@ def sync_branch_vat_with_parent(cr, parent_company_id, branch_company_ids):
         cr.rowcount,
         parent_company_id,
     )
+
+
+def sync_branch_accounting_policy_with_parent(
+    cr, env, parent_company_id, branch_company_ids
+):
+    """Give every branch created from a res.store the accounting policy of its parent.
+
+    fiscalyear_last_day, fiscalyear_last_month, account_storno y
+    tax_exigibility tienen que ser iguales en toda la entidad legal: core los
+    delega al root (_get_company_root_delegated_field_names de account) y
+    account_ux los pasa al head de la entidad
+    (_get_legal_entity_delegated_field_names). En los dos casos la copia desde
+    el padre la hace el create() cuando trae parent_id, pero
+    get_store_to_company_mapping crea la branch SIN parent_id (ver el comentario
+    ahi) y lo asigna despues con _write, asi que la branch nace con los
+    defaults (31/12, sin storno, sin cash basis). Las companies matcheadas por
+    nombre tampoco pasan por ese create y conservan los suyos. Cualquiera de
+    las dos queda violando _check_root_delegated_fields /
+    _check_legal_entity_delegated_fields, que salta en el proximo write que
+    toque parent_id o alguno de estos campos.
+
+    Se pisa sin COALESCE a proposito: a diferencia de la direccion, un valor
+    propio de la branch no es mejor que el del padre, es justamente lo que la
+    constraint no admite. currency_id queda afuera: ya se setea en el create y
+    en una company preexistente no se cambia la moneda por SQL.
+
+    Por SQL, como el resto de los sync: write() propagaria y re-dispararia las
+    constraints a mitad de la migracion.
+    """
+    if not branch_company_ids:
+        return
+
+    fnames = _branch_accounting_policy_fields(cr, env)
+    if not fnames:
+        return
+
+    set_clause = ", ".join(f"{fname} = pc.{fname}" for fname in fnames)
+    cr.execute(
+        f"""
+        UPDATE res_company bc
+           SET {set_clause}
+          FROM res_company pc
+         WHERE pc.id = %s
+           AND bc.id IN %s
+        """,
+        (parent_company_id, tuple(branch_company_ids)),
+    )
+    _logger.info(
+        "Synced accounting policy (%s) of %s branch companies with parent company %s",
+        ", ".join(fnames),
+        cr.rowcount,
+        parent_company_id,
+    )
+    # No flush: it would run the pending recomputes (and their constraints)
+    # against the stale cached values this UPDATE just replaced.
+    env["res.company"].invalidate_model(fnames, flush=False)
 
 
 def sync_branch_address_with_parent(cr, env, parent_company_id, branch_company_ids):
@@ -3743,7 +3851,9 @@ def migrate(cr, version):
             """
         )
 
-        if util.column_exists(cr, "res_company", "intercompany_generate_purchase_orders"):
+        if util.column_exists(
+            cr, "res_company", "intercompany_generate_purchase_orders"
+        ):
             cr.execute(
                 """
                 UPDATE res_company parent
@@ -3828,3 +3938,6 @@ def migrate(cr, version):
         set_users_default_company(env, parent_company_id)
         realign_subcontracting_pointers(env)
         cr.commit()
+    
+    env['res.company'].search([('parent_id','!=',False)])._compute_legal_entity_root_id()
+    cr.commit()
