@@ -3072,6 +3072,60 @@ def sync_branch_vat_with_parent(cr, parent_company_id, branch_company_ids):
     )
 
 
+def sync_branch_accounting_policy_with_parent(
+    cr, env, parent_company_id, branch_company_ids
+):
+    """Give every branch created from a res.store the accounting policy of its parent.
+
+    fiscalyear_last_day, fiscalyear_last_month, account_storno y
+    tax_exigibility tienen que ser iguales en toda la entidad legal: core los
+    delega al root (_get_company_root_delegated_field_names de account) y
+    account_ux los pasa al head de la entidad
+    (_get_legal_entity_delegated_field_names). En los dos casos la copia desde
+    el padre la hace el create() cuando trae parent_id, pero
+    get_store_to_company_mapping crea la branch SIN parent_id (ver el comentario
+    ahi) y lo asigna despues con _write, asi que la branch nace con los
+    defaults (31/12, sin storno, sin cash basis). Las companies matcheadas por
+    nombre tampoco pasan por ese create y conservan los suyos. Cualquiera de
+    las dos queda violando _check_root_delegated_fields /
+    _check_legal_entity_delegated_fields, que salta en el proximo write que
+    toque parent_id o alguno de estos campos.
+
+    Se pisa sin COALESCE a proposito: a diferencia de la direccion, un valor
+    propio de la branch no es mejor que el del padre, es justamente lo que la
+    constraint no admite. currency_id queda afuera: ya se setea en el create y
+    en una company preexistente no se cambia la moneda por SQL.
+
+    Por SQL, como el resto de los sync: write() propagaria y re-dispararia las
+    constraints a mitad de la migracion.
+    """
+    if not branch_company_ids:
+        return
+
+    fnames = _branch_accounting_policy_fields(cr, env)
+    if not fnames:
+        return
+
+    set_clause = ", ".join(f"{fname} = pc.{fname}" for fname in fnames)
+    cr.execute(
+        f"""
+        UPDATE res_company bc
+           SET {set_clause}
+          FROM res_company pc
+         WHERE pc.id = %s
+           AND bc.id IN %s
+        """,
+        (parent_company_id, tuple(branch_company_ids)),
+    )
+    _logger.info(
+        "Synced accounting policy (%s) of %s branch companies with parent company %s",
+        ", ".join(fnames),
+        cr.rowcount,
+        parent_company_id,
+    )
+    env["res.company"].invalidate_model(fnames)
+
+
 def sync_branch_address_with_parent(cr, env, parent_company_id, branch_company_ids):
     """Give every branch created from a res.store the address of its parent.
 
@@ -3442,5 +3496,23 @@ def migrate(cr, version):
         set_users_default_company(env, parent_company_id)
         realign_subcontracting_pointers(env)
         branches = env["res.company"].search([("parent_id", "=", parent_company_id)])
+        # Antes del write del VAT: es lo que termina de meter a cada branch en la
+        # entidad legal del padre, y el recompute de legal_entity_root_id dispara
+        # _check_legal_entity_delegated_fields (account_ux) contra estos campos.
+        # Va a todo el subarbol, no solo a las hijas directas: las branches de
+        # stores anidados tambien heredan el VAT y quedan en la misma entidad.
+        sync_branch_accounting_policy_with_parent(
+            cr,
+            env,
+            parent_company_id,
+            env["res.company"]
+            .search(
+                [
+                    ("id", "child_of", parent_company_id),
+                    ("id", "!=", parent_company_id),
+                ]
+            )
+            .ids,
+        )
         branches.write({"vat": env["res.company"].browse(parent_company_id).vat})
         cr.commit()
