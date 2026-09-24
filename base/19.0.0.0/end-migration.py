@@ -2,6 +2,7 @@ import logging
 import re
 
 from odoo.exceptions import UserError
+from odoo.tools import SQL
 from odoo.tools.safe_eval import safe_eval
 from odoo.upgrade import util
 
@@ -1034,12 +1035,16 @@ def archive_unused_branch_accounts(cr, env, id_a, branches):
         )
 
 
+def _normalize_account_name(name):
+    return " ".join((name or "").split()).casefold()
+
+
 def consolidate_branch_accounts(cr, env, id_a):
     """Consolida el plan de cuentas del árbol de id_a después del re-parenting.
 
     Por cada código repetido en el árbol: fusiona lo que es la misma cuenta en
-    la matriz y en la sucursal (mismo código, tipo y moneda) y renumera lo que
-    quedó repetido a propósito. Al final archiva las cuentas de sucursal que no
+    la matriz y en la sucursal (mismo código, nombre, tipo y moneda) y renumera
+    lo que quedó repetido. Al final archiva las cuentas de sucursal que no
     tienen nada atado (T-73832).
     """
     branches = env["res.company"].browse(id_a).child_ids
@@ -1068,16 +1073,24 @@ def consolidate_branch_accounts(cr, env, id_a):
         if len(same_code) <= 1:
             continue
 
-        # Comparten código: son la misma cuenta solo si además comparten tipo y
-        # moneda.
+        # Comparten código: son la misma cuenta solo si además comparten nombre,
+        # tipo y moneda. El código solo no alcanza: una sucursal que venía de
+        # otra compañía puede tener su plan con los códigos corridos (ej. su
+        # "IVA crédito fiscal" en el código que la matriz usa para "IVA 2do
+        # Parráfo a favor"), y fusionarlas manda sus apuntes e impuestos a
+        # otra cuenta.
         pairs = {}
         for account in same_code:
-            key = (account.account_type, account.currency_id.id)
+            key = (
+                _normalize_account_name(account.name),
+                account.account_type,
+                account.currency_id.id,
+            )
             pairs.setdefault(key, Account)
             pairs[key] |= account
 
         survivors = Account
-        for (account_type, _currency_id), pair in pairs.items():
+        for (_name, account_type, _currency_id), pair in pairs.items():
             kept = merge_same_account(env, id_a, code, account_type, pair)
             if len(kept) < len(pair):
                 merged += 1
@@ -1085,7 +1098,7 @@ def consolidate_branch_accounts(cr, env, id_a):
 
         # Un código no se puede repetir en el árbol: `_ensure_code_is_unique` lo
         # valida contra la compañía, sus padres y sus hijas. Lo que quedó
-        # repetido a propósito (liquidez, tipos distintos) se renumera, y el
+        # repetido (liquidez, nombres o tipos distintos) se renumera, y el
         # código original se lo queda la matriz para no tocar su plan.
         if len(survivors) > 1:
             from_parent = survivors.filtered(lambda a: id_a in a.company_ids.ids)
@@ -1123,7 +1136,100 @@ def consolidate_branch_accounts(cr, env, id_a):
         merged,
         renumbered,
     )
+    share_tax_accounts_with_parent(cr, env, id_a)
     archive_unused_branch_accounts(cr, env, id_a, branches)
+
+
+def share_tax_accounts_with_parent(cr, env, id_a):
+    """Deja visibles desde la matriz las cuentas de los impuestos que subieron.
+
+    `handle_merge_or_move` sube los impuestos de la sucursal a la matriz, pero
+    sus repartition lines siguen apuntando a cuentas que solo son de la
+    sucursal, y `account_id` tiene `check_company` con `parent_of`: desde la
+    matriz esa cuenta no es válida. Si en la matriz hay una cuenta con el
+    mismo nombre (normalizado), tipo y moneda, se fusionan aunque el código
+    sea distinto; si no, se le suma la matriz a `company_ids`.
+    """
+    Account = env["account.account"].with_context(active_test=False)
+    # Por `tax_id.company_id` y no por `company_id`: ese es un related stored
+    # y `handle_merge_or_move` sube los impuestos con `_write`, que no lo
+    # recalcula — las líneas de los impuestos que subieron siguen diciendo la
+    # sucursal y quedarían afuera.
+    orphan_accounts = (
+        env["account.tax.repartition.line"]
+        .search([("tax_id.company_id", "=", id_a), ("account_id", "!=", False)])
+        .account_id.filtered(lambda a: id_a not in a.company_ids.ids)
+    )
+    if not orphan_accounts:
+        return
+
+    parent_by_key = {}
+    for account in Account.search([("company_ids", "in", [id_a])]):
+        key = (
+            _normalize_account_name(account.name),
+            account.account_type,
+            account.currency_id.id,
+        )
+        parent_by_key.setdefault(key, Account)
+        parent_by_key[key] |= account
+
+    to_share = Account
+    merged = 0
+    for account in orphan_accounts:
+        key = (
+            _normalize_account_name(account.name),
+            account.account_type,
+            account.currency_id.id,
+        )
+        candidates = parent_by_key.get(key, Account)
+        if len(candidates) > 1:
+            _logger.warning(
+                "Cuenta de impuesto id=%s '%s': hay %s cuentas equivalentes en la matriz (%s), "
+                "no se fusiona y se comparte con la matriz",
+                account.id,
+                account.name,
+                len(candidates),
+                candidates.ids,
+            )
+        elif candidates:
+            # La de la matriz va primero para que sea la que queda.
+            kept = merge_same_account(
+                env, id_a, account.code, account.account_type, candidates | account
+            )
+            if len(kept) == 1:
+                # Si sobrevivió la de la sucursal (asientos hasheados), la de
+                # la matriz ya no existe: la próxima tiene que ir contra esta.
+                parent_by_key[key] = kept
+                merged += 1
+                continue
+        to_share |= account
+
+    if to_share:
+        # Por SQL por el mismo motivo que `set_account_code_sql`: el ORM
+        # bloquea escribir cuentas de liquidez usadas en diarios con asientos.
+        field = Account._fields["company_ids"]
+        cr.execute(
+            SQL(
+                "INSERT INTO %s (%s, %s) SELECT unnest(%s), %s ON CONFLICT DO NOTHING",
+                SQL.identifier(field.relation),
+                SQL.identifier(field.column1),
+                SQL.identifier(field.column2),
+                to_share.ids,
+                id_a,
+            )
+        )
+        Account.invalidate_model(["company_ids"])
+        _logger.warning(
+            "Cuentas de impuesto compartidas con la matriz %s (sin equivalente): %s",
+            id_a,
+            to_share.ids,
+        )
+
+    _logger.info(
+        "Cuentas de impuesto: %s fusionadas con la matriz, %s compartidas",
+        merged,
+        len(to_share),
+    )
 
 
 # ============================================================================
