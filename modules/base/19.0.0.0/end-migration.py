@@ -1712,8 +1712,8 @@ def consolidate_branch_accounts(cr, env, id_a):
     """Consolida el plan de cuentas del árbol de id_a después del re-parenting.
 
     Por cada código repetido en el árbol: fusiona lo que es la misma cuenta en
-    la matriz y en la sucursal (mismo código, nombre, tipo y moneda) y renumera
-    lo que quedó repetido. Al final archiva las cuentas de sucursal que no
+    la matriz y en la sucursal (mismo código, nombre, tipo, moneda y conciliable) y
+    renumera lo que quedó repetido. Al final archiva las cuentas de sucursal que no
     tienen nada atado (T-73832).
     """
     branches = env["res.company"].browse(id_a).child_ids
@@ -1742,24 +1742,28 @@ def consolidate_branch_accounts(cr, env, id_a):
         if len(same_code) <= 1:
             continue
 
-        # Comparten código: son la misma cuenta solo si además comparten nombre,
-        # tipo y moneda. El código solo no alcanza: una sucursal que venía de
-        # otra compañía puede tener su plan con los códigos corridos (ej. su
-        # "IVA crédito fiscal" en el código que la matriz usa para "IVA 2do
-        # Parráfo a favor"), y fusionarlas manda sus apuntes e impuestos a
-        # otra cuenta.
+        # Comparten código: son la misma cuenta solo si además comparten nombre
+        # y la clave del asistente nativo (`_get_grouping_key`). El código solo no
+        # alcanza: una sucursal que venía de otra compañía puede tener su plan con
+        # los códigos corridos (ej. su "IVA crédito fiscal" en el código que la
+        # matriz usa para "IVA 2do Parráfo a favor"), y fusionarlas manda sus
+        # apuntes e impuestos a otra cuenta. Sin `reconcile`, la que queda puede no
+        # ser conciliable y dejar partidas abiertas colgadas.
         pairs = {}
         for account in same_code:
             key = (
                 _normalize_account_name(account.name),
                 account.account_type,
+                account.non_trade,
                 account.currency_id.id,
+                account.reconcile,
+                account.active,
             )
             pairs.setdefault(key, Account)
             pairs[key] |= account
 
         survivors = Account
-        for (_name, account_type, _currency_id), pair in pairs.items():
+        for (_name, account_type, *_rest), pair in pairs.items():
             kept = merge_same_account(env, id_a, code, account_type, pair)
             if len(kept) < len(pair):
                 merged += 1
