@@ -1038,7 +1038,7 @@ def consolidate_branch_accounts(cr, env, id_a):
     """Consolida el plan de cuentas del árbol de id_a después del re-parenting.
 
     Por cada código repetido en el árbol: fusiona lo que es la misma cuenta en
-    la matriz y en la sucursal (mismo código, tipo y moneda) y renumera lo que
+    la matriz y en la sucursal (mismo código, tipo, moneda y conciliable) y renumera lo que
     quedó repetido a propósito. Al final archiva las cuentas de sucursal que no
     tienen nada atado (T-73832).
     """
@@ -1068,16 +1068,23 @@ def consolidate_branch_accounts(cr, env, id_a):
         if len(same_code) <= 1:
             continue
 
-        # Comparten código: son la misma cuenta solo si además comparten tipo y
-        # moneda.
+        # Comparten código: son la misma cuenta solo si además comparten la
+        # clave del asistente nativo (`_get_grouping_key`). Sin `reconcile`, la
+        # que queda puede no ser conciliable y dejar partidas abiertas colgadas.
         pairs = {}
         for account in same_code:
-            key = (account.account_type, account.currency_id.id)
+            key = (
+                account.account_type,
+                account.non_trade,
+                account.currency_id.id,
+                account.reconcile,
+                account.active,
+            )
             pairs.setdefault(key, Account)
             pairs[key] |= account
 
         survivors = Account
-        for (account_type, _currency_id), pair in pairs.items():
+        for (account_type, *_rest), pair in pairs.items():
             kept = merge_same_account(env, id_a, code, account_type, pair)
             if len(kept) < len(pair):
                 merged += 1
