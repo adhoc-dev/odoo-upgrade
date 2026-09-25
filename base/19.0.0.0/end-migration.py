@@ -352,6 +352,41 @@ def table_exists(cr, table_name):
     return cr.fetchone()[0]
 
 
+def get_parent_equivalent_tax_group(env, group_b, id_a, id_b):
+    """Devuelve el account.tax.group de la matriz (A) equivalente a `group_b` (B).
+
+    Primero por XML ID: el chart crea el mismo grupo para cada compañía con el
+    prefijo de su id (`account.5_tax_group_percepcion_iibb_ba` en B,
+    `account.1_tax_group_percepcion_iibb_ba` en A), y es lo único estable, porque el
+    nombre lo pueden haber cambiado el chart o el usuario. Si no hay XML ID, por
+    nombre, como antes. Si `group_b` ya es de A, es él mismo.
+    """
+    TaxGroup = env["account.tax.group"]
+    if not group_b:
+        return TaxGroup
+    if group_b.company_id.id == id_a:
+        return group_b
+    prefix = f"{id_b}_"
+    xmlids = env["ir.model.data"].search(
+        [("model", "=", "account.tax.group"), ("res_id", "=", group_b.id)]
+    )
+    # startswith en Python: en LIKE el "_" del prefijo es un comodín
+    for xmlid in xmlids.filtered(lambda x: x.name.startswith(prefix)):
+        group_a = env.ref(
+            f"{xmlid.module}.{id_a}_{xmlid.name[len(prefix) :]}",
+            raise_if_not_found=False,
+        )
+        if (
+            group_a
+            and group_a._name == "account.tax.group"
+            and group_a.company_id.id == id_a
+        ):
+            return group_a
+    return TaxGroup.search(
+        [("company_id", "=", id_a), ("name", "=", group_b.name)], limit=1
+    )
+
+
 def handle_merge_or_move(env, model_name, id_a, id_b):
     """
     Intenta fusionar registros de B en A si son equivalentes.
@@ -409,8 +444,40 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
         domain = company_domain.copy()
         valid_criteria = True
 
+        record_criteria = criteria_fields
+        # Un impuesto con jurisdicción se identifica por lo que hace, no por su nombre
+        # ni por el del grupo: la sucursal puede tener "IIBB ARBA 2.5%" y la matriz
+        # "IIBB Bs As 2.5%" en grupos que el chart renombró distinto, y son el mismo
+        # impuesto. Es la misma clave que _check_tax_overlap de l10n_ar_tax.
+        if (
+            model_name == "account.tax"
+            and rec_b._fields.get("l10n_ar_state_id")
+            and rec_b.l10n_ar_state_id
+        ):
+            group_a = get_parent_equivalent_tax_group(
+                env, rec_b.tax_group_id, id_a, id_b
+            )
+            if not group_a:
+                valid_criteria = False
+            domain.extend(
+                [
+                    ("tax_group_id", "=", group_a.id),
+                    ("l10n_ar_state_id", "=", rec_b.l10n_ar_state_id.id),
+                    ("amount_type", "=", rec_b.amount_type),
+                    ("price_include_override", "=", rec_b.price_include_override),
+                    (
+                        "l10n_ar_withholding_payment_type",
+                        "=",
+                        rec_b.l10n_ar_withholding_payment_type,
+                    ),
+                    ("l10n_ar_tax_type", "=", rec_b.l10n_ar_tax_type),
+                ]
+            )
+            if "ratio" in rec_b._fields:
+                domain.append(("ratio", "=", rec_b.ratio))
+            record_criteria = ["amount", "type_tax_use"]
         # Para account.tax, buscar por tax_group además de los criterios
-        if model_name == "account.tax":
+        elif model_name == "account.tax":
             # Buscar por tax_group primero si existe
             if rec_b.tax_group_id:
                 domain.extend(
@@ -437,7 +504,7 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                         ("name", "=", rec_b.name),
                     ]
                 )
-        for field in criteria_fields:
+        for field in record_criteria:
             root_field = field.split(".")[0]
             if root_field not in rec_b._fields:
                 valid_criteria = False
@@ -455,7 +522,11 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
 
         # Search UNA sola vez, fuera del loop, con el dominio completo
         rec_a = (
-            Model.with_context(active_test=False).search(domain, limit=1)
+            Model.with_context(active_test=False).search(
+                domain,
+                limit=1,
+                order="active desc, id" if model_name == "account.tax" else None,
+            )
             if valid_criteria
             else False
         )
