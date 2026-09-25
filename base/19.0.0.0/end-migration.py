@@ -759,6 +759,79 @@ def dedupe_and_move_partner_tax(cr, env, id_a, id_b):
     ).invalidate_recordset(flush=False)
 
 
+def drop_branch_partner_tax_shadowed_by_parent(cr, env, id_a, id_b, branch_tax_ids):
+    """Borra las alícuotas de contacto de un impuesto de la sucursal que
+    repiten una de un impuesto *distinto* de la matriz para la misma
+    jurisdicción.
+
+    Cuando el impuesto de la sucursal no encuentra homónimo en la matriz
+    (otro nombre y otro grupo, ej. "Percepción IIBB ARBA Aplicada 2.5%" vs
+    "Percepción IIBB Bs As Aplicada 2.5%"), se mueve en vez de fusionarse, y
+    sus l10n_ar.partner.tax conviven con las de la matriz. En cuanto los dos
+    impuestos quedan en el mismo grupo, _l10n_ar_add_taxes encuentra dos
+    impuestos vigentes para el contacto y la factura no se puede cargar.
+    dedupe_and_move_partner_tax no lo ve porque agrupa por tax_id.
+
+    Solo se borra la fila de la sucursal cuando la de la matriz es del mismo
+    contacto, misma jurisdicción, mismo uso y exactamente el mismo período.
+    Una superposición parcial no se toca.
+    """
+    if not branch_tax_ids or not table_exists(cr, "l10n_ar_partner_tax"):
+        return
+    if not (
+        util.column_exists(cr, "account_tax", "l10n_ar_state_id")
+        and util.column_exists(cr, "account_tax", "l10n_ar_withholding_payment_type")
+    ):
+        return
+
+    ctx = "sucursal %s -> matriz %s" % (id_b, id_a)
+    branch_tax_ids = tuple(branch_tax_ids)
+    cr.execute(
+        """
+        DELETE FROM l10n_ar_partner_tax pb
+              USING l10n_ar_partner_tax pa,
+                    account_tax tb,
+                    account_tax ta
+              WHERE pb.tax_id = tb.id
+                AND pa.tax_id = ta.id
+                AND pb.tax_id IN %s
+                AND pa.tax_id NOT IN %s
+                AND pb.company_id IN %s
+                AND pa.company_id IN %s
+                AND pa.partner_id = pb.partner_id
+                AND pa.from_date IS NOT DISTINCT FROM pb.from_date
+                AND pa.to_date IS NOT DISTINCT FROM pb.to_date
+                AND tb.l10n_ar_state_id IS NOT NULL
+                AND ta.l10n_ar_state_id = tb.l10n_ar_state_id
+                AND ta.type_tax_use = tb.type_tax_use
+                AND ta.l10n_ar_withholding_payment_type
+                    IS NOT DISTINCT FROM tb.l10n_ar_withholding_payment_type
+          RETURNING pb.id, pa.id, tb.id, ta.id
+        """,
+        (branch_tax_ids, branch_tax_ids, (id_a, id_b), (id_a, id_b)),
+    )
+    deleted = cr.fetchall()
+    if not deleted:
+        _logger.info(
+            "l10n_ar.partner.tax: sin alícuotas de la sucursal repetidas por "
+            "otro impuesto de la matriz [%s]",
+            ctx,
+        )
+        return
+
+    _logger.info(
+        "Eliminando l10n_ar.partner.tax de impuesto de la sucursal repetida "
+        "por otro impuesto de la matriz (misma jurisdicción y período): %s "
+        "fila(s) [%s] (borrada, queda, impuesto borrado, impuesto que queda)=%s",
+        len(deleted),
+        ctx,
+        deleted,
+    )
+    env["l10n_ar.partner.tax"].browse([row[0] for row in deleted]).invalidate_recordset(
+        flush=False
+    )
+
+
 def migrate_json_company_dependent(cr, env, id_a, id_b):
     """Busca y migra campos JSONB company_dependent"""
     id_a_str = str(id_a)
@@ -3148,6 +3221,10 @@ def migrate(cr, version):
             # 1. Movimiento Operativo (SQL)
             migrate_standard_fields(cr, env, id_a, id_b)
 
+            # Impuestos de B antes del merge: después ya cuelgan de A.
+            cr.execute("SELECT id FROM account_tax WHERE company_id = %s", (id_b,))
+            branch_tax_ids = [row[0] for row in cr.fetchall()]
+
             # 2. Fusión de Configuración (ORM)
             merge_models = [
                 m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"
@@ -3160,6 +3237,9 @@ def migrate(cr, version):
             # del merge porque el duplicado lo crea el re-mapeo de tax_id
             # (T-125999).
             dedupe_and_move_partner_tax(cr, env, id_a, id_b)
+            drop_branch_partner_tax_shadowed_by_parent(
+                cr, env, id_a, id_b, branch_tax_ids
+            )
 
             # 3. Propiedades JSONB (SQL)
             migrate_json_company_dependent(cr, env, id_a, id_b)
