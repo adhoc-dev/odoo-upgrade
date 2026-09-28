@@ -160,6 +160,14 @@ MERGE_CRITERIA = {
 # Por cada modelo declaramos las columnas que definen la identidad de la fila; la que
 # se conserva es la que NO vino del re-mapeo (la que ya existía en la matriz), porque
 # la de la sucursal es justamente la que quedó redundante.
+# Relaciones many2many que al fusionar NO se absorben, se descartan: son
+# configuración del registro de B, no uso de él. La posición fiscal de la matriz ya
+# tiene su propio mapeo de impuestos; moverle el de la sucursal le cambiaría el
+# comportamiento a los documentos que ya la usaban.
+M2M_DROP_ON_MERGE = {
+    "account.fiscal.position": {"account_fiscal_position_account_tax_rel"},
+}
+
 DEDUPE_AFTER_REMAP = {
     # l10n_ar.partner.tax: las alícuotas de percepción/retención por contacto. Un
     # contacto puede tener la misma alícuota cargada en la matriz y en la sucursal
@@ -492,6 +500,64 @@ def get_parent_equivalent_tax_group(env, group_b, id_a, id_b):
     )
 
 
+def rename_if_name_taken_in_parent(env, record, id_a, id_b):
+    """Le agrega el nombre de la sucursal al registro de B que se muda a la matriz.
+
+    account.tax valida que no haya dos impuestos con el mismo nombre en una compañía
+    (``_constrains_name``, que además cuenta los archivados), así que un impuesto de B
+    que se muda sin fusionarse choca con su homónimo de A.
+    """
+    Model = env[record._name]
+    fields_to_match = [
+        f
+        for f in ("name", "type_tax_use", "tax_scope", "country_id")
+        if f in record._fields
+    ]
+    domain = [("company_id", "=", id_a), ("id", "!=", record.id)]
+    for fname in fields_to_match:
+        value = record[fname]
+        domain.append((fname, "=", value.id if hasattr(value, "id") else value))
+    if not Model.with_context(active_test=False).search_count(domain):
+        return
+    branch_name = env["res.company"].browse(id_b).name
+    new_name = f"{record.name} ({branch_name})"
+    _logger.info(
+        "RENOMBRANDO: %s '%s' (B) -> '%s' porque la matriz ya tiene uno con ese nombre",
+        record._name,
+        record.display_name,
+        new_name,
+    )
+    record.name = new_name
+
+
+def promote_branch_taxes_mapped_by_parent(env, id_a, id_b):
+    """Sube a la matriz los impuestos que quedaron en la sucursal y que mapea una
+    posición fiscal de la matriz.
+
+    Va después de fusionar las posiciones fiscales, que es cuando se sabe cuáles
+    sobrevivieron: un documento de la matriz no puede llevar un impuesto de la
+    sucursal ("inconsistencias en la empresa"), así que el impuesto que una posición
+    fiscal de la matriz mapea tiene que estar en la matriz.
+    """
+    branch_taxes = (
+        env["account.tax"]
+        .with_context(active_test=False)
+        .search([("company_id", "=", id_b)])
+    )
+    if not branch_taxes:
+        return
+    positions = env["account.fiscal.position"].search([("company_id", "=", id_a)])
+    for tax in positions.tax_ids & branch_taxes:
+        _logger.info(
+            "SUBIENDO A LA MATRIZ: account.tax '%s' (B) lo mapea(n) la(s) posición(es) "
+            "fiscal(es) %s de la matriz",
+            tax.display_name,
+            (positions & tax.fiscal_position_ids).mapped("display_name"),
+        )
+        rename_if_name_taken_in_parent(env, tax, id_a, id_b)
+        tax._write({"company_id": id_a})
+
+
 def handle_merge_or_move(env, model_name, id_a, id_b):
     """
     Intenta fusionar registros de B en A si son equivalentes.
@@ -635,6 +701,29 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             if valid_criteria
             else False
         )
+        # Un impuesto de B que REEMPLAZA a otro no se fusiona. En la 19 el reemplazo
+        # lo declara el impuesto destino, en `original_tax_ids`, y vale en TODA
+        # posición fiscal que contenga a ese impuesto: fusionarlo en el de la matriz
+        # le pega el reemplazo a las posiciones fiscales donde el de la matriz solo
+        # era un impuesto más, que entonces empiezan a reemplazar lo que antes
+        # dejaban pasar. Y si lo archivamos, la posición fiscal de la sucursal se
+        # queda sin impuestos y saca el IVA de la línea en vez de mapearlo.
+        #
+        # Es a propósito más angosto que "está en alguna posición fiscal": en el plan
+        # argentino casi todos los IVA figuran en una, y no fusionarlos deja la
+        # sucursal con un juego de impuestos duplicado.
+        keep_in_branch = False
+        if rec_a and model_name == "account.tax" and rec_b.original_tax_ids:
+            _logger.info(
+                "NO FUSIONA: account.tax '%s' (B) reemplaza a %s; queda en la sucursal "
+                "para no pegarle ese reemplazo a '%s' (A)",
+                rec_b.display_name,
+                rec_b.original_tax_ids.mapped("display_name"),
+                rec_a.display_name,
+            )
+            rec_a = False
+            keep_in_branch = True
+
         if rec_a:
             # Para impuestos inactivos, priorizamos moverlos a la matriz para no dejarlos en la sucursal.
             if (
@@ -812,20 +901,128 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                         fk_table,
                     )
 
+            # Las many2many no las cubre el loop de arriba, que solo mira many2one:
+            # el registro de B se archiva y se mueve a la matriz, pero las filas de
+            # la tabla de relación lo siguen apuntando, y una relación a un registro
+            # archivado no se aplica ni se ve: la posición fiscal de la sucursal
+            # termina mapeando a un impuesto que ya no existe para el usuario.
+            m2m_fields = env["ir.model.fields"].search(
+                [
+                    ("relation", "=", model_name),
+                    ("ttype", "=", "many2many"),
+                    ("store", "=", True),
+                    ("state", "=", "base"),
+                    ("model_id.transient", "=", False),
+                    ("model_id.abstract", "=", False),
+                ]
+            )
+            # Una tabla auto-referenciada (account_tax_alternatives) aparece una vez
+            # por cada lado de la relación, y cada lado re-mapea su propia columna.
+            remapped_relations = set()
+            for m2m in m2m_fields:
+                table = m2m.relation_table
+                own_column = m2m.column2
+                other_column = m2m.column1
+                if m2m.model in skip_models:
+                    continue
+                if not (table and own_column and other_column):
+                    continue
+                if (table, own_column) in remapped_relations:
+                    continue
+                remapped_relations.add((table, own_column))
+                if not table_exists(cr, table) or not column_exists(cr, table, own_column):
+                    _logger.info(
+                        "Saltando M2M: %s.%s porque no existe la tabla %s o su columna %s",
+                        m2m.model,
+                        m2m.name,
+                        table,
+                        own_column,
+                    )
+                    continue
+                if table in M2M_DROP_ON_MERGE.get(model_name, ()):
+                    cr.execute(
+                        f"DELETE FROM {table} WHERE {own_column} = %s", (rec_b.id,)
+                    )
+                    if cr.rowcount:
+                        _logger.warning(
+                            "DESCARTANDO M2M: %s fila(s) de %s de '%s' (B); '%s' (A) "
+                            "conserva su propia configuración",
+                            cr.rowcount,
+                            table,
+                            rec_b.display_name,
+                            rec_a.display_name,
+                        )
+                    continue
+                # Primero las filas que colisionarían con una que ya apunta a A: el par
+                # de columnas es la clave de la tabla, así que el UPDATE las duplicaría.
+                cr.execute(
+                    f"""
+                    DELETE FROM {table}
+                     WHERE {own_column} = %s
+                       AND {other_column} IN (
+                           SELECT {other_column} FROM {table} WHERE {own_column} = %s
+                       )
+                    """,
+                    (rec_b.id, rec_a.id),
+                )
+                deduped = cr.rowcount
+                cr.execute(
+                    f"UPDATE {table} SET {own_column} = %s WHERE {own_column} = %s",
+                    (rec_a.id, rec_b.id),
+                )
+                if cr.rowcount or deduped:
+                    _logger.info(
+                        "Re-mapeando M2M: %s.%s (%s.%s) id=%s -> id=%s (%s fila(s), "
+                        "%s duplicada(s) borrada(s))",
+                        m2m.model,
+                        m2m.name,
+                        table,
+                        own_column,
+                        rec_b.id,
+                        rec_a.id,
+                        cr.rowcount,
+                        deduped,
+                    )
+                if m2m.relation == m2m.model:
+                    # Fusionar los dos lados de una fila auto-referenciada la deja
+                    # apuntando al mismo registro (un impuesto que se reemplaza a sí
+                    # mismo): no dice nada y el ORM no la puede representar.
+                    cr.execute(
+                        f"""
+                        DELETE FROM {table}
+                         WHERE {own_column} = {other_column}
+                           AND {own_column} = %s
+                        """,
+                        (rec_a.id,),
+                    )
+
             # Materializamos los recomputes marcados en flag_remapped_dependents antes
             # de seguir: el resto de la migración trabaja con SQL crudo, así que los
             # stored tienen que quedar escritos ahora y no en un flush implícito
             # posterior.
             env.flush_all()
+            # El re-mapeo de las m2m fue por SQL: la cache del ORM todavía tiene los
+            # valores viejos de los campos que acabamos de mover.
+            env.invalidate_all()
 
             if "name" in rec_b._fields:
                 rec_b.name = f"[DEPRECATED-{rec_b.id}] {rec_b.name}"
             if "active" in rec_b._fields:
                 rec_b.active = False  # Archivamos el de B para que no moleste
                 _move_record_to_parent(rec_b)
+        elif keep_in_branch:
+            # Se queda donde está, activo: así el producto conserva un impuesto por
+            # compañía y la venta parada en la sucursal sigue tomando el mismo que
+            # antes. Si al final resulta que lo mapea una posición fiscal de la
+            # matriz, lo sube promote_branch_taxes_mapped_by_parent().
+            _logger.info(
+                "DEJANDO EN LA SUCURSAL: %s '%s'", model_name, rec_b.display_name
+            )
         else:
             # No hay equivalente, simplemente lo movemos a la matriz
             _logger.info(f"MOVIENDO: {model_name} '{rec_b.display_name}' a compañía A")
+            if model_name == "account.tax" and "name" in rec_b._fields:
+                rename_if_name_taken_in_parent(env, rec_b, id_a, id_b)
             _move_record_to_parent(rec_b)
 
 
@@ -2415,6 +2612,9 @@ def migrate_store_to_branch(cr, env):
                     f"Could not merge {model_name} from {branch_company.name}: {e}"
                 )
 
+        promote_branch_taxes_mapped_by_parent(
+            env, parent_company_id, branch_company.id
+        )
         cr.commit()
 
     # 6. Archivar cuentas de las branches (opcional, dependiendo de la estrategia)
@@ -3480,6 +3680,11 @@ def migrate(cr, version):
             for model_name in merge_models:
                 handle_merge_or_move(env, model_name, id_a, id_b)
                 cr.commit()
+
+            # Va después del merge completo: las posiciones fiscales se fusionan
+            # ahí adentro y recién acá se sabe cuáles sobrevivieron en la matriz.
+            promote_branch_taxes_mapped_by_parent(env, id_a, id_b)
+            cr.commit()
 
             # 2.1 l10n_ar.partner.tax: no está en MODEL_STRATEGY. Va después
             # del merge porque el duplicado lo crea el re-mapeo de tax_id
