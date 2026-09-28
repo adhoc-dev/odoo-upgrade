@@ -494,6 +494,118 @@ def get_parent_equivalent_tax_group(env, group_b, id_a, id_b):
     )
 
 
+# Branch record id -> parent record id it was merged into, per model. Lets a
+# later model compare relations to records that were already merged (e.g. the
+# taxes of a fiscal position).
+MERGED_IDS = {}
+
+
+def _canonical_id(model_name, record_id):
+    return MERGED_IDS.get(model_name, {}).get(record_id, record_id)
+
+
+def _fiscal_position_fingerprint(fpos):
+    """Everything that makes a fiscal position behave the way it does, except
+    its name and company: tax mapping, account mapping, AR perceptions and
+    withholdings and the auto-detection criteria. Returns None when the
+    position configures nothing, so empty placeholders never match."""
+    company_fpos = fpos.with_company(fpos.company_id)
+    taxes = frozenset(
+        (
+            _canonical_id("account.tax", tax.id),
+            frozenset(
+                _canonical_id("account.tax", orig.id) for orig in tax.original_tax_ids
+            ),
+        )
+        for tax in company_fpos.tax_ids
+    )
+    accounts = frozenset(
+        (line.account_src_id.code, line.account_dest_id.code)
+        for line in company_fpos.account_ids
+    )
+    ar_taxes = frozenset()
+    if "l10n_ar_tax_ids" in fpos._fields:
+        ar_taxes = frozenset(
+            (
+                line.webservice,
+                line.tax_type,
+                _canonical_id("account.tax", line.default_tax_id.id),
+            )
+            for line in fpos.l10n_ar_tax_ids
+        )
+    responsibilities = frozenset()
+    if "l10n_ar_afip_responsibility_type_ids" in fpos._fields:
+        responsibilities = frozenset(fpos.l10n_ar_afip_responsibility_type_ids.ids)
+    if not (taxes or accounts or ar_taxes or responsibilities):
+        return None
+    scalars = tuple(
+        fpos[fname].ids if fpos._fields[fname].type == "many2many" else fpos[fname]
+        for fname in (
+            "auto_apply",
+            "vat_required",
+            "country_id",
+            "country_group_id",
+            "state_ids",
+            "zip_from",
+            "zip_to",
+            "foreign_vat",
+            "deduct_price_included_taxes",
+        )
+        if fname in fpos._fields
+    )
+    return (taxes, accounts, ar_taxes, responsibilities, scalars)
+
+
+def _find_equivalent_fiscal_position(env, rec_b, name_domain, company_domain):
+    """Parent fiscal position configured exactly like rec_b, or False. A
+    namesake is preferred, but a namesake with another configuration is never
+    merged; without a namesake, any position with the same configuration is."""
+    FiscalPosition = env["account.fiscal.position"].with_context(active_test=False)
+    fingerprint = _fiscal_position_fingerprint(rec_b)
+    already_merged = set(MERGED_IDS.get("account.fiscal.position", {}))
+
+    def _same_config(fp):
+        return (
+            fp.id not in already_merged
+            and _fiscal_position_fingerprint(fp) == fingerprint
+        )
+
+    def _sort_key(fp):
+        return (not fp.active, fp.sequence, fp.id)
+
+    namesakes = FiscalPosition.search(name_domain)
+    same_name = namesakes.filtered(_same_config).sorted(_sort_key)
+    if same_name:
+        return same_name[:1]
+    if namesakes:
+        _logger.warning(
+            "account.fiscal.position '%s' (B) is not merged into its namesake "
+            "%s in the parent: taxes or configuration differ",
+            rec_b.display_name,
+            namesakes.mapped("display_name"),
+        )
+    if fingerprint is None:
+        return False
+    candidates = FiscalPosition.search(company_domain).filtered(_same_config)
+    candidates = candidates.sorted(_sort_key)
+    if len(candidates) > 1:
+        _logger.warning(
+            "account.fiscal.position '%s' (B) has %s equivalents in the parent "
+            "with the same configuration (%s); merging into the first one",
+            rec_b.display_name,
+            len(candidates),
+            candidates.mapped("display_name"),
+        )
+    if candidates:
+        _logger.info(
+            "account.fiscal.position '%s' (B) has no matching namesake in the "
+            "parent but '%s' has the same configuration",
+            rec_b.display_name,
+            candidates[0].display_name,
+        )
+    return candidates[:1]
+
+
 def handle_merge_or_move(env, model_name, id_a, id_b):
     """
     Intenta fusionar registros de B en A si son equivalentes.
@@ -628,16 +740,22 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                 domain.append((field, "=", field_value))
 
         # Search UNA sola vez, fuera del loop, con el dominio completo
-        rec_a = (
-            Model.with_context(active_test=False).search(
-                domain,
-                limit=1,
-                order="active desc, id" if model_name == "account.tax" else None,
+        if model_name == "account.fiscal.position":
+            rec_a = _find_equivalent_fiscal_position(
+                env, rec_b, domain, company_domain
             )
-            if valid_criteria
-            else False
-        )
+        else:
+            rec_a = (
+                Model.with_context(active_test=False).search(
+                    domain,
+                    limit=1,
+                    order="active desc, id" if model_name == "account.tax" else None,
+                )
+                if valid_criteria
+                else False
+            )
         if rec_a:
+            MERGED_IDS.setdefault(model_name, {})[rec_b.id] = rec_a.id
             # Para impuestos inactivos, priorizamos moverlos a la matriz para no dejarlos en la sucursal.
             if (
                 model_name == "account.tax"
