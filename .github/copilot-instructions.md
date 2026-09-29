@@ -7,8 +7,9 @@ Este repositorio contiene scripts de migración para módulos de Odoo. Los scrip
 ## Estructura de Directorios de Upgrade
 
 ### Repositorio de Upgrades: `odoo-upgrade`
-- Estructura: `nombre_modulo/version/script-tipo.py`
-- Ejemplo: `l10n_ar_withholding/17.0.0.0/pre-migration.py`
+- Estructura: `modules/nombre_modulo/version/script-tipo.py`
+- Ejemplo: `modules/l10n_ar_withholding/17.0.0.0/pre-migration.py`
+- `modules/` es lo que Odoo lee como `--upgrade-path` (solo módulos); `scripts/pre_odoo/` y `scripts/pre_upgrade/` son nuestras fases; `lib/oba/` los helpers (`from oba import ...`, con `lib/` en el `PYTHONPATH`); `tests/` la siembra y el check declarativo
 - Versiones siguen formato: `X.Y.Z.W` (ej: `15.0.0.0`, `17.0.0.0`, `18.0.0.0`)
 
 ### Tipos de Scripts de Migración

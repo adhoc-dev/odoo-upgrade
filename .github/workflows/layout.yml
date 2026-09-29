@@ -1,0 +1,22 @@
+name: Layout
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  root-folders:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # A rebase over the move keeps a PR's new files at their old path, where nothing runs them
+      - name: Only the known folders at the root
+        run: |
+          allowed=".github .gitignore README.md lib modules scripts tests"
+          unexpected=$(git ls-tree --name-only HEAD | grep -vxF -f <(tr ' ' '\n' <<< "$allowed") || true)
+          if [ -n "$unexpected" ]; then
+            echo "::error::Unexpected at the root of the repo, move it under modules/, scripts/, lib/ or tests/:"
+            echo "$unexpected"
+            exit 1
+          fi
