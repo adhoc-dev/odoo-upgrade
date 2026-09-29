@@ -494,6 +494,30 @@ def get_parent_equivalent_tax_group(env, group_b, id_a, id_b):
     )
 
 
+def get_fiscal_positions_keeping_tax(env, tax_b, id_a):
+    """Devuelve las posiciones fiscales activas que van a seguir usando `tax_b`.
+
+    En 19 la posición fiscal ya no mapea impuestos con account.fiscal.position.tax:
+    el impuesto de reemplazo lleva `fiscal_position_ids` (tabla
+    account_fiscal_position_account_tax_rel). Es un many2many, así que el re-mapeo de
+    FK de handle_merge_or_move no lo toca.
+
+    Una posición fiscal de B sigue viva si no tiene homónima en A (MERGE_CRITERIA
+    usa solo "name"): se mueve a la matriz y conserva sus impuestos. Una de A, ya
+    está en la matriz. Las homónimas de A absorben a la de B, que se archiva.
+    """
+    FiscalPosition = env["account.fiscal.position"].with_context(active_test=False)
+    kept = FiscalPosition
+    for fpos in tax_b.with_context(active_test=False).fiscal_position_ids:
+        if not fpos.active:
+            continue
+        if fpos.company_id.id == id_a or not FiscalPosition.search(
+            [("company_id", "=", id_a), ("name", "=", fpos.name)], limit=1
+        ):
+            kept |= fpos
+    return kept
+
+
 def handle_merge_or_move(env, model_name, id_a, id_b):
     """
     Intenta fusionar registros de B en A si son equivalentes.
@@ -637,6 +661,26 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             if valid_criteria
             else False
         )
+        # Un impuesto de B que una posición fiscal viva usa como reemplazo no es un
+        # duplicado del de A: si se fusiona, se archiva y la posición fiscal (que se
+        # mueve a la matriz) queda apuntando a un impuesto inactivo. Se mueve activo.
+        if (
+            rec_a
+            and model_name == "account.tax"
+            and "fiscal_position_ids" in rec_b._fields
+            and rec_b.active
+        ):
+            fiscal_positions = get_fiscal_positions_keeping_tax(env, rec_b, id_a)
+            if fiscal_positions:
+                _logger.info(
+                    "MOVIENDO ACTIVO: %s '%s' (B) -> compañía A, sin fusionar con '%s' (A): "
+                    "lo usan las posiciones fiscales %s",
+                    model_name,
+                    rec_b.display_name,
+                    rec_a.display_name,
+                    fiscal_positions.mapped("display_name"),
+                )
+                rec_a = False
         if rec_a:
             # Para impuestos inactivos, priorizamos moverlos a la matriz para no dejarlos en la sucursal.
             if (
