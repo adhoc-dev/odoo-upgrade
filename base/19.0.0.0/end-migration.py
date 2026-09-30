@@ -1,5 +1,7 @@
+import json
 import logging
 import re
+from contextlib import contextmanager
 
 from odoo.exceptions import UserError
 from odoo.tools import SQL
@@ -1105,6 +1107,63 @@ def set_account_code_sql(cr, account_id, root_id, new_code):
     )
 
 
+@contextmanager
+def without_company_dependent_remap(env, model_name):
+    """Deja el remapeo de los many2one company-dependent fuera del merge del core.
+
+    `_update_reference_fields_generic` (base_partner_merge) reescribe por cada
+    merge la tabla entera de cada campo company-dependent que apunta al modelo
+    (`WHERE campo IS NOT NULL`), cambie o no la fila, y dentro de la transacción
+    del `-u` esas versiones muertas no se reciclan. Mientras corre el wizard la
+    entrada del registry queda vacía; el remapeo lo hace
+    `remap_company_dependent_refs`, acotado a las filas que sí cambian.
+    """
+    collector = env.registry.many2one_company_dependents
+    fields = collector[model_name]
+    collector[model_name] = ()
+    try:
+        yield fields
+    finally:
+        collector[model_name] = fields
+
+
+def remap_company_dependent_refs(env, fields, src_ids, dst_id):
+    """Apunta a `dst_id` los company-dependent que referencian `src_ids`.
+
+    Misma reescritura del jsonb que hace el core, pero solo en las filas donde
+    alguna compañía apunta a una cuenta fusionada.
+    """
+    if not src_ids:
+        return
+    mapping = json.dumps({str(src_id): dst_id for src_id in src_ids})
+    env.flush_all()
+    for field in fields:
+        env.cr.execute(
+            SQL(
+                """
+                UPDATE %(table)s
+                   SET %(field)s = (
+                       SELECT jsonb_object_agg(
+                                  key,
+                                  COALESCE((%(mapping)s::jsonb ->> value)::int, value::int)
+                              )
+                         FROM jsonb_each_text(%(field)s)
+                   )
+                 WHERE %(field)s IS NOT NULL
+                   AND EXISTS (
+                       SELECT 1
+                         FROM jsonb_each_text(%(field)s) AS ref
+                        WHERE %(mapping)s::jsonb ? ref.value
+                   )
+                """,
+                table=SQL.identifier(env[field.model_name]._table),
+                field=SQL.identifier(field.name),
+                mapping=mapping,
+            )
+        )
+        env[field.model_name].invalidate_model([field.name])
+
+
 def merge_same_account(env, id_a, code, account_type, accounts):
     """Fusiona un grupo de cuentas que son la misma cuenta y devuelve la que queda.
 
@@ -1179,7 +1238,9 @@ def merge_same_account(env, id_a, code, account_type, accounts):
         )
         .create({"is_group_by_name": False})
     )
-    wizard._action_merge(ordered)
+    with without_company_dependent_remap(env, "account.account") as fields:
+        wizard._action_merge(ordered)
+        remap_company_dependent_refs(env, fields, ordered[1:].ids, ordered[0].id)
     return ordered[0]
 
 
