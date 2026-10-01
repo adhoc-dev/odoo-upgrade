@@ -20,8 +20,6 @@ import logging
 import os
 import sys
 
-from odoo.modules.migration import VERSION_RE
-
 _logger = logging.getLogger(__name__)
 
 TABLE = "oba_upgrade_customer_note"
@@ -121,6 +119,9 @@ def _caller_location():
     The path is relative so it compares equal between two runs of the same script; the
     absolute one carries the checkout it ran from.
     """
+    # Here and not at the top: the pre_odoo scripts import oba on 15.0 and 16.0, which lack it.
+    from odoo.modules.migration import VERSION_RE
+
     script = _caller_script()
     version_dir = os.path.dirname(script)
     module = os.path.basename(os.path.dirname(version_dir))
