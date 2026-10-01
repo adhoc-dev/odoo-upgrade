@@ -246,6 +246,10 @@ MODEL_STRATEGY = {
     "repair.order": "MOVE_TO_PARENT",
     "quality.check": "MOVE_TO_PARENT",
     "quality.alert": "MOVE_TO_PARENT",
+    "quality.point": "MOVE_TO_PARENT",
+    "quality.alert.team": "MOVE_TO_PARENT",
+    "quality.spreadsheet.template": "MOVE_TO_PARENT",
+    "quality.check.spreadsheet": "MOVE_TO_PARENT",
     "product.supplierinfo": "MOVE_TO_PARENT",
     # --- CONTABILIDAD OPERATIVA (KEEP AND CHECK - Se quedan en la sucursal B) ---
     "account.move": "KEEP_AND_CHECK",
