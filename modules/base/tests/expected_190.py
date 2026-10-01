@@ -1,4 +1,6 @@
-# Test declarativo de la migracion STORE TO BRANCH de base/19.0.0.0.
+# Test declarativo de la migracion STORE TO BRANCH de base/19.0.0.0, y al
+# final los casos de COMPANY MERGE (dos companies A y B; B pasa a branch de A
+# y lo operativo de B se mueve a A).
 #
 # La transformacion: en 18 una sola company con varios res.store; en 19 los
 # stores no existen mas y cada uno pasa a ser una branch (res.company colgada de
@@ -98,6 +100,59 @@ EXPECTED = {
         # (una raiz convertida en branch pierde su cierre fiscal).
         ref("base.main_company"): {
             "parent_id": None,
+        },
+        # COMPANY MERGE, rama que arma la jerarquia: la company sembrada en
+        # tests/pre_odu/base/180_190/040-company_merge_quality.py parte sin
+        # parent y el mapeo de migration_19_end_multicompany la declara B de la
+        # main. Si queda vacio, el modo company merge no corrio (el mapeo no
+        # llego o no se leyo) y los demas casos de esta rama no prueban nada.
+        ref("upgrade_prepare_demo.company_merge_branch"): {
+            "parent_id": ref("base.main_company"),
+        },
+    },
+    "quality.point": {
+        # COMPANY MERGE, rama MOVE_TO_PARENT: el punto de control parte en la
+        # company B. Si queda en B, quality.point quedo afuera de MODEL_STRATEGY
+        # y confirmar una compra en la parent falla por companies incompatibles
+        # al crear el control de calidad.
+        ref("upgrade_prepare_demo.quality_point_company_merge"): {
+            "company_id": ref("base.main_company"),
+        },
+        # Preservacion: punto de la demo, ya en la main company (A). Tiene que
+        # seguir ahi; si aparece en otra, el UPDATE no filtro por la company B.
+        ref("quality_control.quality_point1"): {
+            "company_id": ref("base.main_company"),
+        },
+    },
+    "quality.alert.team": {
+        # COMPANY MERGE, rama MOVE_TO_PARENT: el equipo parte en la company B.
+        # Si queda en B, el punto de control movido a la parent apunta a un
+        # equipo de otra company y el check_company de team_id lo rechaza.
+        ref("upgrade_prepare_demo.quality_team_company_merge"): {
+            "company_id": ref("base.main_company"),
+        },
+    },
+    "quality.spreadsheet.template": {
+        # COMPANY MERGE, rama MOVE_TO_PARENT: la plantilla parte en la company
+        # B. Si queda en B, quality.spreadsheet.template quedo afuera de
+        # MODEL_STRATEGY y un punto de la parent que la use apunta a una
+        # plantilla de otra company.
+        ref("upgrade_prepare_demo.quality_spreadsheet_template_company_merge"): {
+            "company_id": ref("base.main_company"),
+        },
+        # Preservacion: plantilla de la demo, ya en la main company (A). Tiene
+        # que seguir ahi; si aparece en otra, el UPDATE no filtro por la
+        # company B.
+        ref("quality_control.quality_spreadsheet_template_cabinet"): {
+            "company_id": ref("base.main_company"),
+        },
+    },
+    "quality.check.spreadsheet": {
+        # COMPANY MERGE, rama MOVE_TO_PARENT: la planilla del control parte en
+        # la company B. Si queda en B, el control movido a la parent abre una
+        # planilla de otra company (company_id es obligatorio, no queda vacio).
+        ref("upgrade_prepare_demo.quality_check_spreadsheet_company_merge"): {
+            "company_id": ref("base.main_company"),
         },
     },
 }
