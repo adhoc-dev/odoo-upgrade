@@ -7,11 +7,14 @@
         if not context.get("is_last_in_series", True):
             return
 
-The runner of the ``-u`` (``odoo_obaupgrade.py`` of ``saas_provider_upgrade``) writes it to
-a config parameter before the first script runs and drops it when the job ends. Keys:
-``parameters``, ``from_version``, ``aim``, ``is_first_in_series`` and ``is_last_in_series``. Nothing
-about the provider: what a script does there is solved by the controller, on the callback.
-The target version is the running Odoo (``odoo.release``).
+The runners of ``saas_provider_upgrade`` (``odoo_obaupgrade.py`` for the ``-u``,
+``odoo_pre_odoo_scripts.py`` for the pre_odoo scripts) write it to a config parameter before
+the first script runs and drop it when the job ends. Keys: ``parameters``, ``from_version``,
+``to_version``, ``aim``, ``is_first_in_series`` and ``is_last_in_series``. Nothing about the
+provider: what a script does there is solved by the controller, on the callback.
+
+In the ``-u`` the target is also the running Odoo (``odoo.release``). A pre_odoo script runs
+with the Odoo of the source version, so it reads the target from ``to_version``.
 
 Outside a provider run (runbot, a local ``-u``) there is no parameter and the context is
 empty: a script that needs it falls back to its default, or does nothing.
