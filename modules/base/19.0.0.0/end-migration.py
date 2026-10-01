@@ -246,6 +246,10 @@ MODEL_STRATEGY = {
     "repair.order": "MOVE_TO_PARENT",
     "quality.check": "MOVE_TO_PARENT",
     "quality.alert": "MOVE_TO_PARENT",
+    "quality.point": "MOVE_TO_PARENT",
+    "quality.alert.team": "MOVE_TO_PARENT",
+    "quality.spreadsheet.template": "MOVE_TO_PARENT",
+    "quality.check.spreadsheet": "MOVE_TO_PARENT",
     "product.supplierinfo": "MOVE_TO_PARENT",
     # --- CONTABILIDAD OPERATIVA (KEEP AND CHECK - Se quedan en la sucursal B) ---
     "account.move": "KEEP_AND_CHECK",
@@ -3397,6 +3401,30 @@ def realign_subcontracting_pointers(env):
             declared.active = False
 
 
+def _branch_quality_team_ids(cr, id_b):
+    """Ids of the quality teams of company B, read before they move to A."""
+    if not table_exists(cr, "quality_alert_team"):
+        return []
+    cr.execute("SELECT id FROM quality_alert_team WHERE company_id = %s", (id_b,))
+    return [row[0] for row in cr.fetchall()]
+
+
+def sync_quality_team_aliases(env, team_ids):
+    """Resync the mail alias of quality teams moved to the parent by SQL.
+
+    quality.alert.team.write() rewrites alias_defaults when company_id changes,
+    but migrate_standard_fields moves the team by SQL, so the alias would keep
+    creating the alerts it receives by email in the branch.
+    """
+    if not team_ids or "quality.alert.team" not in env:
+        return
+    env.invalidate_all()
+    teams = env["quality.alert.team"].browse(team_ids).exists().filtered("alias_id")
+    for team in teams:
+        team.alias_defaults = team._alias_get_creation_values().get("alias_defaults")
+    _logger.info("Synced the mail alias of %s quality team(s) moved to the parent", len(teams))
+
+
 def _normalized_vat(vat):
     """Strip formatting so '30-12345678-9' and '30123456789' compare as equal."""
     return re.sub(r"[^A-Z0-9]", "", (vat or "").upper())
@@ -3894,7 +3922,9 @@ def migrate(cr, version):
             check_branch_vat_matches_parent(cr, id_a, id_b)
 
             # 1. Movimiento Operativo (SQL)
+            quality_team_ids = _branch_quality_team_ids(cr, id_b)
             migrate_standard_fields(cr, env, id_a, id_b)
+            sync_quality_team_aliases(env, quality_team_ids)
 
             # 2. Fusión de Configuración (ORM)
             merge_models = [
