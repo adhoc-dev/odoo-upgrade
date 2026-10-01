@@ -10,18 +10,17 @@
         apply_module_changes(cr, version, MERGE_MODULES, RENAMED_MODULES, RENAMED_XMLIDS)
 
 The code is the same on every jump; each ``scripts/pre_upgrade/<jump>/merge_and_renames.py``
-only declares its lists. Call it on every jump, even with empty lists: it also runs the
-module auto-discovery and fills ``latest_version``.
+only declares its lists. With empty lists it only runs the module auto-discovery, which
+``base/0.0.0/post-01-modules-auto-discovery.py`` runs anyway.
 
-Public API: :func:`apply_module_changes`. Everything else is internal.
+Public API: :func:`apply_module_changes` and :func:`run_auto_discovery`.
 """
 
 import logging
-import sys
 
-from odoo.tools import SQL
+# No odoo.tools.SQL: post-01 imports this module on every jump, also to versions before 17.
 from odoo.upgrade import util
-from odoo.upgrade.util.modules import _trigger_auto_discovery
+from odoo.upgrade.util import modules as util_modules
 
 _logger = logging.getLogger(__name__)
 
@@ -34,61 +33,49 @@ def apply_module_changes(cr, version, merges=(), renames=(), xmlid_renames=()):
     :param xmlid_renames: ``(old, new)`` xmlid pairs, applied with :func:`util.rename_xmlid`.
     """
     _logger.info("Applying module merges and renames for version %s", version)
-    _auto_discovery_skipping_missing_deps(cr)
+    # Before the discovery: it registers the new name from the addons path, and the rename
+    # would then break the unique module name.
+    for old, new in renames:
+        util.rename_module(cr, old, new)
+    # After it, merges need the target registered.
+    run_auto_discovery(cr)
     for old, into in merges:
         _merge_keeping_target_state(cr, old, into)
-    for old, into in renames:
-        util.rename_module(cr, old, into)
-    for old, into in xmlid_renames:
-        util.rename_xmlid(cr, old, into)
+    for old, new in xmlid_renames:
+        util.rename_xmlid(cr, old, new)
     _fill_latest_version(cr, version)
 
 
-def _auto_discovery_skipping_missing_deps(cr):
-    # Monkey patch new_module to avoid crashing on missing dependencies
-    util_modules = sys.modules["odoo.upgrade.util.modules"]
+def run_auto_discovery(cr):
+    """Register the modules of the addons path, skipping those with a missing dependency.
+
+    ``_trigger_auto_discovery`` raises on a manifest that depends on a module that is not
+    in the addons path.
+    """
     original_new_module = util_modules.new_module
     original_new_module_dep = util_modules.new_module_dep
-
-    def safe_new_module(cr, module, deps=(), *args, **kwargs):
-        try:
-            return original_new_module(cr, module, deps=deps, *args, **kwargs)
-        except util.UnknownModuleError as e:
-            _logger.info(
-                "Skipping module %s due to missing dependencies: %s", module, e
-            )
-            return None
-
-    def safe_new_module_dep(cr, module, new_dep):
-        try:
-            return original_new_module_dep(cr, module, new_dep)
-        except util.UnknownModuleError as e:
-            _logger.info(
-                "Skipping module %s due to missing dependencies: %s", module, e
-            )
-            return None
-
-    util_modules.new_module = safe_new_module
-    util_modules.new_module_dep = safe_new_module_dep
-
+    util_modules.new_module = _skipping_missing_deps(original_new_module)
+    util_modules.new_module_dep = _skipping_missing_deps(original_new_module_dep)
     try:
-        _trigger_auto_discovery(cr)
+        util_modules._trigger_auto_discovery(cr)
     finally:
-        # Restore original function just in case
         util_modules.new_module = original_new_module
         util_modules.new_module_dep = original_new_module_dep
 
 
+def _skipping_missing_deps(func):
+    def wrapper(cr, module, *args, **kwargs):
+        try:
+            return func(cr, module, *args, **kwargs)
+        except util.UnknownModuleError as e:
+            _logger.info("Skipping module %s due to missing dependencies: %s", module, e)
+            return None
+
+    return wrapper
+
+
 def _merge_keeping_target_state(cr, old, into):
-    cr.execute(
-        SQL(
-            """
-            SELECT state FROM ir_module_module
-             WHERE name = %(name)s
-            """,
-            name=old,
-        )
-    )
+    cr.execute("SELECT state FROM ir_module_module WHERE name = %s", [old])
     old_state = cr.fetchone()
     # Skip if the old module is not in the database: there is nothing to merge and
     # we must not touch the target module's state (it is already correctly named).
@@ -103,29 +90,12 @@ def _merge_keeping_target_state(cr, old, into):
     # silently uninstalled active targets (e.g. l10n_ar_tax overwritten by
     # l10n_ar_tax_ratio's 'uninstalled').
     if old_state in ("installed", "to upgrade"):
-        cr.execute(
-            SQL(
-                """
-                UPDATE ir_module_module
-                    SET state = %(upgrade_state)s
-                    WHERE name = %(name)s
-                """,
-                name=into,
-                upgrade_state=old_state,
-            )
-        )
+        cr.execute("UPDATE ir_module_module SET state = %s WHERE name = %s", [old_state, into])
 
 
 def _fill_latest_version(cr, version):
     version = float(".".join(version.split(".")[0:2]))  # Version is str, ex. '18.0.1.3'
-    version_string = f"{version}.0.0"
     cr.execute(
-        SQL(
-            """
-        UPDATE ir_module_module
-        SET latest_version = %(version)s
-        WHERE latest_version IS NULL AND state = 'installed'
-        """,
-            version=version_string,
-        )
+        "UPDATE ir_module_module SET latest_version = %s WHERE latest_version IS NULL AND state = 'installed'",
+        [f"{version}.0.0"],
     )

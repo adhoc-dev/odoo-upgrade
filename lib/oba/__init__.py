@@ -14,7 +14,6 @@ from .request_context import request_context
 
 __all__ = [
     "add_customer_note",
-    "apply_module_changes",
     "log_message",
     "request_context",
     "set_breaks",
@@ -23,9 +22,10 @@ __all__ = [
 
 
 def __getattr__(name):
-    # Lazy: module_changes needs upgrade-util, which add_customer_note callers may not have.
-    if name == "apply_module_changes":
-        from .module_changes import apply_module_changes
+    # Lazy, and out of __all__: module_changes needs upgrade-util, which add_customer_note
+    # callers may not have.
+    if name in ("apply_module_changes", "run_auto_discovery"):
+        from . import module_changes
 
-        return apply_module_changes
+        return getattr(module_changes, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
