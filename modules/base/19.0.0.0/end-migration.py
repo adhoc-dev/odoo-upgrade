@@ -606,6 +606,158 @@ def _find_equivalent_fiscal_position(env, rec_b, name_domain, company_domain):
     return candidates[:1]
 
 
+def _active_equivalent_tax(env, tax, company_ids):
+    """Active tax of company_ids that does the same as the archived tax, or an
+    empty recordset. The tax it was merged into wins; otherwise a tax with the
+    same group, amount and use, preferring the same name when there are many."""
+    Tax = env["account.tax"].with_context(active_test=False)
+    merged_into = Tax.browse(_canonical_id("account.tax", tax.id))
+    if merged_into != tax and merged_into.active:
+        return merged_into
+    domain = [
+        ("id", "!=", tax.id),
+        ("active", "=", True),
+        ("company_id", "in", list(company_ids)),
+        ("type_tax_use", "=", tax.type_tax_use),
+        ("amount_type", "=", tax.amount_type),
+        ("amount", "=", tax.amount),
+        ("price_include_override", "=", tax.price_include_override),
+        ("tax_group_id.name", "=", tax.tax_group_id.name),
+    ]
+    for fname in (
+        "l10n_ar_state_id",
+        "l10n_ar_tax_type",
+        "l10n_ar_withholding_payment_type",
+    ):
+        if fname in tax._fields:
+            value = tax[fname]
+            domain.append((fname, "=", value.id if hasattr(value, "ids") else value))
+    candidates = Tax.search(domain, order="company_id, sequence, id")
+    name = re.sub(r"^\[DEPRECATED-\d+\] ", "", tax.name or "")
+    same_name = candidates.filtered(lambda t: t.name == name)
+    if same_name:
+        return same_name[:1]
+    if len(candidates) == 1:
+        return candidates
+    if candidates:
+        _logger.warning(
+            "account.tax '%s' (archived) has %s active equivalents (%s); "
+            "not replaced in its fiscal positions",
+            tax.display_name,
+            len(candidates),
+            candidates.mapped("display_name"),
+        )
+    return Tax
+
+
+def replace_inactive_fiscal_position_taxes(env, id_a, id_b):
+    """Point the active fiscal positions of A and B to active taxes.
+
+    The tax merge only re-maps many2one fields, so the tax mapping of a fiscal
+    position (tax_ids and the original_tax_ids of those taxes) keeps the
+    archived branch taxes. Runs before the fiscal position merge, so a
+    position that ends up configured like another one is merged into it."""
+    cr = env.cr
+    company_ids = (id_a, id_b)
+    Tax = env["account.tax"].with_context(active_test=False)
+    replacements = {}
+
+    def _replacement(tax_id):
+        if tax_id not in replacements:
+            replacements[tax_id] = _active_equivalent_tax(
+                env, Tax.browse(tax_id), company_ids
+            )
+        return replacements[tax_id]
+
+    def _replace_rows(table, keep_column, tax_column, rows):
+        for keep_id, tax_id in rows:
+            new_tax = _replacement(tax_id)
+            if not new_tax:
+                continue
+            cr.execute(
+                f"""
+                INSERT INTO {table} ({keep_column}, {tax_column}) VALUES (%s, %s)
+                ON CONFLICT DO NOTHING
+                """,
+                (keep_id, new_tax.id),
+            )
+            cr.execute(
+                f"DELETE FROM {table} WHERE {keep_column} = %s AND {tax_column} = %s",
+                (keep_id, tax_id),
+            )
+            _logger.info(
+                "%s: %s=%s, archived tax id=%s -> '%s' (id=%s)",
+                table,
+                keep_column,
+                keep_id,
+                tax_id,
+                new_tax.display_name,
+                new_tax.id,
+            )
+        env.invalidate_all()
+
+    cr.execute(
+        """
+        SELECT rel.account_fiscal_position_id, rel.account_tax_id
+          FROM account_fiscal_position_account_tax_rel rel
+          JOIN account_fiscal_position fp ON fp.id = rel.account_fiscal_position_id
+          JOIN account_tax t ON t.id = rel.account_tax_id
+         WHERE fp.active
+           AND NOT t.active
+           AND fp.company_id IN %s
+        """,
+        (company_ids,),
+    )
+    _replace_rows(
+        "account_fiscal_position_account_tax_rel",
+        "account_fiscal_position_id",
+        "account_tax_id",
+        cr.fetchall(),
+    )
+
+    # The taxes each mapped tax replaces (original_tax_ids) can be archived too.
+    cr.execute(
+        """
+        SELECT DISTINCT alt.dest_tax_id, alt.src_tax_id
+          FROM account_tax_alternatives alt
+          JOIN account_tax src ON src.id = alt.src_tax_id
+          JOIN account_fiscal_position_account_tax_rel rel
+            ON rel.account_tax_id = alt.dest_tax_id
+          JOIN account_fiscal_position fp ON fp.id = rel.account_fiscal_position_id
+         WHERE fp.active
+           AND NOT src.active
+           AND fp.company_id IN %s
+        """,
+        (company_ids,),
+    )
+    _replace_rows(
+        "account_tax_alternatives", "dest_tax_id", "src_tax_id", cr.fetchall()
+    )
+
+    cr.execute(
+        """
+        SELECT fp.id, array_agg(DISTINCT t.id)
+          FROM account_fiscal_position fp
+          JOIN account_fiscal_position_account_tax_rel rel
+            ON rel.account_fiscal_position_id = fp.id
+          LEFT JOIN account_tax_alternatives alt ON alt.dest_tax_id = rel.account_tax_id
+          JOIN account_tax t ON t.id IN (rel.account_tax_id, alt.src_tax_id)
+         WHERE fp.active
+           AND NOT t.active
+           AND fp.company_id IN %s
+         GROUP BY fp.id
+        """,
+        (company_ids,),
+    )
+    for fpos_id, tax_ids in cr.fetchall():
+        _logger.warning(
+            "account.fiscal.position '%s' is active and keeps archived taxes %s: "
+            "no active equivalent was found",
+            env["account.fiscal.position"].browse(fpos_id).display_name,
+            Tax.browse(tax_ids).mapped("display_name"),
+        )
+
+
 def handle_merge_or_move(env, model_name, id_a, id_b):
     """
     Intenta fusionar registros de B en A si son equivalentes.
@@ -613,6 +765,8 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
     """
     Model = env[model_name]
     cr = env.cr
+    if model_name == "account.fiscal.position":
+        replace_inactive_fiscal_position_taxes(env, id_a, id_b)
     # Verificar si el modelo usa company_id o company_ids
     if "company_ids" in Model._fields:
         records_b = Model.with_context(active_test=False).search(
