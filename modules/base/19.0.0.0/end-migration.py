@@ -2110,22 +2110,22 @@ def get_store_to_company_mapping(env):
 
     # Identificar la company parent (la que no tiene parent_id)
     parent_company = False
-    cr.execute(
-        """
-            SELECT DISTINCT(so.company_id) 
-            FROM sale_order so 
-            LEFT JOIN res_store_bu rsb 
-                ON rsb.id=so.store_id_bu 
-            JOIN stock_warehouse sw 
-                ON sw.company_id=so.company_id
-            JOIN res_company rc
-                ON rc.id=sw.company_id
-            WHERE rc.parent_id IS NULL AND rc.active = TRUE
-        """
-    )
-    parent_company_query = cr.fetchall()
-    if parent_company_query and len(parent_company_query) == 1:
-        parent_company = Company.browse(parent_company_query[0][0])
+    # Bases without sale or stock fall back to the root store's company below.
+    if table_exists(cr, "sale_order") and table_exists(cr, "stock_warehouse"):
+        cr.execute(
+            """
+                SELECT DISTINCT(so.company_id)
+                FROM sale_order so
+                JOIN stock_warehouse sw
+                    ON sw.company_id=so.company_id
+                JOIN res_company rc
+                    ON rc.id=sw.company_id
+                WHERE rc.parent_id IS NULL AND rc.active = TRUE
+            """
+        )
+        parent_company_query = cr.fetchall()
+        if parent_company_query and len(parent_company_query) == 1:
+            parent_company = Company.browse(parent_company_query[0][0])
 
     if not parent_company:
         # La parent sale de la company del STORE RAIZ (root_store). Es el
@@ -2653,6 +2653,8 @@ def migrate_warehouse_stock_to_company(cr, env):
     branch pero todo el stock y los movimientos en la compañía padre, lo que
     rompe cualquier pedido de venta por incompatibilidad de compañía.
     """
+    if "stock.warehouse" not in env:
+        return
     Warehouse = env["stock.warehouse"].with_context(active_test=False)
     Location = env["stock.location"].with_context(active_test=False)
 
