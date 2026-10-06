@@ -154,8 +154,27 @@ MERGE_CRITERIA = {
     "account.payment.term": ["name"],
     "account.analytic.account": ["name"],
     "account.group": ["code_prefix_start"],
+    # Two types with the same name but different allocation behaviour are not
+    # the same type: merging them would change how the branch requests time off.
+    "hr.leave.type": ["name", "requires_allocation"],
+    "hr.leave.accrual.plan": ["name"],
+    "hr.leave.mandatory.day": ["name", "start_date", "end_date"],
+    # Same name is not enough for a schedule: merging calendars with different
+    # hours would silently change everybody's working time.
+    "resource.calendar": ["name", "hours_per_day", "tz"],
 }
 
+
+# Modelos cuyo company_id, movido por SQL, deja desactualizado un campo almacenado
+# que lo copia de ellos: hr.employee.company_id es related de
+# resource_id.company_id, y hr.leave / hr.leave.allocation / hr.appraisal /
+# planning.slot lo calculan desde el empleado o desde su recurso. Sin marcar el
+# recompute, el UPDATE crudo deja el origen y la copia en compañías distintas, y el
+# primer recálculo que toque esos registros los devuelve a la sucursal.
+FLAG_COMPANY_DEPENDENTS_ON_MOVE = {
+    "resource.resource",
+    "hr.employee",
+}
 
 # Modelos hijos donde el re-mapeo de FK puede dejar filas duplicadas: si el registro
 # ya tenía una fila apuntando al equivalente en A, el UPDATE del re-mapeo la duplica.
@@ -292,9 +311,6 @@ MODEL_STRATEGY = {
     "res.currency.rate": "KEEP",
     "onboarding.progress": "KEEP",
     "onboarding.progress.step": "KEEP",
-    "resource.calendar": "KEEP",
-    "resource.calendar.leaves": "KEEP",
-    "resource.resource": "KEEP",
     "certificate.key": "KEEP",
     "certificate.certificate": "KEEP",
     "product.combo": "KEEP",
@@ -313,17 +329,41 @@ MODEL_STRATEGY = {
     "account.reconcile.model.line": "KEEP",
     "account.report.external.value": "KEEP",
     "account.invoice.report": "KEEP",
-    # --- RRHH (KEEP AND CHECK) ---
+    # --- RRHH (MOVE TO PARENT) ---
+    # HR goes up to the parent, like sales: the parent holds the employees and
+    # the branches consume them. A branch that is a different employer (its own
+    # VAT) is out of this script and is handled case by case.
     "hr.employee": "MOVE_TO_PARENT",
     # hr.version holds job_id / department_id / resource_calendar_id (all
     # check_company=True) with its own stored company_id; it must follow the
     # employee to the parent or the employee form breaks under the parent alone.
     "hr.version": "MOVE_TO_PARENT",
+    # hr.employee.company_id is a stored related of resource_id.company_id: if
+    # the resource stays in the branch, any recompute drags the employee back
+    # down and undoes the consolidation.
+    "resource.resource": "MOVE_TO_PARENT",
     "hr.job": "MOVE_TO_PARENT",
     "hr.department": "MOVE_TO_PARENT",
-    "hr.leave": "KEEP_AND_CHECK",
-    "hr.applicant": "KEEP_AND_CHECK",
     "hr.work.location": "MOVE_TO_PARENT",
+    # These take their company from the employee or from its resource, so
+    # leaving them in the branch contradicts their own compute.
+    "hr.leave": "MOVE_TO_PARENT",
+    "hr.leave.allocation": "MOVE_TO_PARENT",
+    "hr.appraisal": "MOVE_TO_PARENT",
+    "planning.slot": "MOVE_TO_PARENT",
+    "hr.applicant": "KEEP_AND_CHECK",
+    # Time off settings: same criteria as taxes and fiscal positions. What has
+    # an equivalent in the parent is merged, the rest is moved. Never set to no
+    # company: a type without company is visible to every company of its
+    # country, which is wider than what the branch had.
+    "hr.leave.type": "MERGE_OR_MOVE",
+    "hr.leave.accrual.plan": "MERGE_OR_MOVE",
+    "hr.leave.mandatory.day": "MERGE_OR_MOVE",
+    # The working schedule must be able to follow the employee: if the employee
+    # goes up and its calendar stays in the branch, hr.version check_company
+    # rejects it. Its leaves follow the calendar they belong to.
+    "resource.calendar": "MERGE_OR_MOVE",
+    "resource.calendar.leaves": "MOVE_TO_PARENT",
     # --- PLAN DE CUENTAS (KEEP AND CHECK) ---
     # El plan de la sucursal no sube a la matriz: la hija puede ser otra razón
     # social con otro CUIT. Lo que tiene par se fusiona y el resto se queda
@@ -412,6 +452,30 @@ def flag_remapped_dependents(env, model, field_name, record_ids):
             field_name,
             record_ids,
             e,
+        )
+
+
+def log_unmapped_model_rows(cr, model_name, table, field, id_b):
+    """Deja en el log los modelos sin estrategia declarada que tienen datos en la sucursal.
+
+    Lo que no está en MODEL_STRATEGY cae en el default "CHECK", que no mueve nada y
+    tampoco avisa: los datos se quedan abajo sin que nadie se entere hasta que un
+    usuario parado en la matriz no los ve.
+    """
+    if field.ttype != "many2one":
+        return
+    if not table_exists(cr, table) or not is_integer_column(cr, table, field.name):
+        return
+    cr.execute(f"SELECT count(*) FROM {table} WHERE {field.name} = %s", (id_b,))
+    rows = cr.fetchone()[0]
+    if rows:
+        _logger.warning(
+            "SIN ESTRATEGIA: %s.%s tiene %s registro(s) en la sucursal %s. El modelo "
+            "no está en MODEL_STRATEGY: no se movió ni se chequeó.",
+            model_name,
+            field.name,
+            rows,
+            id_b,
         )
 
 
@@ -611,6 +675,14 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
     Intenta fusionar registros de B en A si son equivalentes.
     Si no hay equivalente, mueve el registro a la compañía A.
     """
+    # MODEL_STRATEGY cubre modelos de módulos que no están instalados en todas
+    # las bases: sin esta guarda, env[model_name] aborta la migración entera.
+    if model_name not in env:
+        _logger.info(
+            "Saltando MERGE_OR_MOVE de %s: el modelo no existe en esta base",
+            model_name,
+        )
+        return
     Model = env[model_name]
     cr = env.cr
     # Verificar si el modelo usa company_id o company_ids
@@ -2929,9 +3001,15 @@ def migrate_standard_fields(cr, env, id_a, id_b):
                          WHERE {field.name} IN (
                                SELECT id FROM res_company WHERE parent_id = %s
                          )
+                        RETURNING id
                         """,
                         (id_a, id_a),
                     )
+                    if model_name in FLAG_COMPANY_DEPENDENTS_ON_MOVE:
+                        moved_ids = [row[0] for row in cr.fetchall()]
+                        flag_remapped_dependents(
+                            env, model_name, field.name, moved_ids
+                        )
                 else:
                     # Otros many2one que apuntan a res.company (no company_id)
                     cr.execute(
@@ -2957,10 +3035,12 @@ def migrate_standard_fields(cr, env, id_a, id_b):
                     f"DELETE FROM {rel_table} WHERE {field.column2} = %s", (id_b,)
                 )
         else:
-            continue
-            _logger.warning(
-                f"Estrategia desconocida '{strategy}' para el modelo '{model_name}'"
-            )
+            log_unmapped_model_rows(cr, model_name, table, field, id_b)
+
+    # Los recomputes marcados arriba se escriben ahora: lo que sigue vuelve a ser
+    # SQL crudo, que no dispara ningún flush.
+    env.flush_all()
+    env.invalidate_all()
     clean_order_type_inconsistent_refs(cr)
 
 
