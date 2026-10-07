@@ -1,6 +1,6 @@
 """The upgrade lines that run on the old database before the pass to Odoo, case by case.
 
-Covers 090 and 100 of ``scripts/pre_odoo/always``. The tests create and drop their own
+Covers 090, 100 and 110 of ``scripts/pre_odoo/always``. The tests create and drop their own
 Postgres database with the tables the scripts touch, so they need no Odoo running, only
 importable (any version: the scripts are plain SQL).
 
@@ -45,6 +45,7 @@ def _load_script(filename):
 
 user_type = _load_script("090-single_user_type_group.py")
 method_lines = _load_script("100-unique_payment_method_line_names.py")
+team_members = _load_script("110-archive_admin_sales_team_members.py")
 
 
 class OldDatabaseCase(unittest.TestCase):
@@ -201,6 +202,40 @@ class TestUniquePaymentMethodLineNames(OldDatabaseCase):
     def test_nothing_without_account(self):
         method_lines.migrate(self.cr, "19.0")
         self.assertEqual(self.names()[1], (2, "Manual"))
+
+
+class TestArchiveAdminSalesTeamMembers(OldDatabaseCase):
+    TABLES = """
+        CREATE TABLE crm_team_member (id serial PRIMARY KEY, user_id integer, active boolean);
+        INSERT INTO crm_team_member (user_id, active) VALUES (2, true), (2, false), (5, true);
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.xmlid("base", "user_admin", "res.users", 2)
+
+    def active(self):
+        return self.rows("SELECT id, active FROM crm_team_member ORDER BY id")
+
+    def test_archives_the_admin_memberships_only(self):
+        team_members.migrate(self.cr, "19.0")
+        self.assertEqual(self.active(), [(1, False), (2, False), (3, True)])
+        self.assertEqual(self.logs(), [("info", "Archived 1 crm.team.member record(s) for the admin user")])
+
+    def test_second_run_says_there_is_nothing_to_do(self):
+        team_members.migrate(self.cr, "19.0")
+        team_members.migrate(self.cr, "19.0")
+        self.assertEqual(self.logs()[1][1], "No active crm.team.member records found for the admin user, nothing to do")
+
+    def test_nothing_without_the_table(self):
+        self.cr.execute("DROP TABLE crm_team_member")
+        team_members.migrate(self.cr, "19.0")
+        self.assertEqual(self.logs(), [])
+
+    def test_nothing_on_an_upgrade_to_19(self):
+        self.write_context(to_version="19.0")
+        team_members.migrate(self.cr, "18.0")
+        self.assertEqual(self.active(), [(1, True), (2, False), (3, True)])
 
 
 if __name__ == "__main__":
