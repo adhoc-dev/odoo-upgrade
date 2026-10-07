@@ -26,15 +26,15 @@ Este repositorio contiene scripts de migración para módulos de Odoo. Los scrip
 **Ejemplo típico:**
 ```python
 from odoo.upgrade import util
+from oba import create_backup
+
+BACKUP_TABLE = "account_payment_tax_withholding_bu"
 
 
 def migrate(cr, version):
-    # Backup de una columna antes de que se elimine
-    util.create_column(
-        cr, "account_payment", "tax_withholding_id_bu",
-        util.column_type(cr, "account_payment", "tax_withholding_id"),
-    )
-    cr.execute("UPDATE account_payment SET tax_withholding_id_bu = tax_withholding_id")
+    # Backup de una columna antes de que se elimine, en una tabla aparte
+    cr.execute("DROP TABLE IF EXISTS %s" % BACKUP_TABLE)
+    create_backup(cr, BACKUP_TABLE, "SELECT id, tax_withholding_id FROM account_payment")
 
     # util.rename_field(cr, 'account.payment', 'old_field', 'new_field')
 ```
@@ -128,7 +128,7 @@ from odoo.upgrade import util
 ### 2. **openupgradelib** (No se usa en scripts nuevos)
 
 Un script nuevo no importa `openupgradelib`. Si un PR la usa, sugerir el equivalente en `util`:
-- ❌ `openupgrade.copy_columns()` → ✅ `util.create_column(cr, table, column_bu, util.column_type(cr, table, column))` + `UPDATE table SET column_bu = column`
+- ❌ `openupgrade.copy_columns()` → ✅ `create_backup(cr, table_bu, "SELECT id, column FROM table")` de `oba`: el dato queda en una tabla de respaldo `<nombre>_bu`
 - ❌ `openupgrade.rename_fields()` → ✅ `util.rename_field()`
 - ❌ `openupgrade.rename_models()` → ✅ `util.rename_model()`
 - ❌ `openupgrade.rename_tables()` → ✅ `util.rename_table()`
@@ -192,8 +192,7 @@ _xmlid_renames = [
 - ✅ Validar que existan verificaciones antes de operaciones riesgosas
 
 ### 7. **Naming Conventions**
-- ✅ Campos backup terminan en `_bu` (ej: `field_name_bu`)
-- ✅ Tablas backup terminan en `_bu` (ej: `table_name_bu`)
+- ✅ Los backups van a una tabla con `create_backup()` de `oba`, que termina en `_bu`
 - ✅ Scripts siguen patrón: `pre-migration.py`, `post-migration.py`, `end-migration.py`
 
 ## Ejemplos de Errores Comunes a Detectar
@@ -261,7 +260,7 @@ def migrate(cr, version):
 - ❌ ¿La función es `migrate(env, version)`? → Cambiar a `migrate(cr, version)`
 - ❌ ¿Usa `openupgrade.rename_*()` o similar? → Sugerir equivalente en `util`
 - ❌ ¿Usa `openupgrade.logged_query()`? → Sugerir `cr.execute()` o `util.parallel_execute()`
-- ❌ ¿Usa `openupgrade.copy_columns()`? → Sugerir `util.create_column()` + `UPDATE`
+- ❌ ¿Usa `openupgrade.copy_columns()`? → Sugerir `create_backup()` de `oba`
 
 #### SUGERENCIAS AUTOMÁTICAS:
 ```python
