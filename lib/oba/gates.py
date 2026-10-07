@@ -18,7 +18,8 @@ version, modules, position in the series, aim and a parameter of the ticket. Wit
 request context (runbot, a local -u) the position and the aim do not filter, and a required
 parameter is missing.
 
-Public API: :func:`should_run`, :func:`should_back_up` and :func:`create_backup`.
+Public API: :func:`should_run`, :func:`should_run_pre_odoo`, :func:`should_back_up` and
+:func:`create_backup`.
 """
 
 import logging
@@ -76,21 +77,30 @@ def should_back_up(cr, table, first_target=FIRST_TARGET_VERSION, last_target=Non
     """Drop ``table`` and say whether a ``scripts/pre_odoo`` script backs up into it.
 
     The drop goes first: a table left by an earlier run must not reach a request that skips.
-    Plain SQL, because it runs on the old database with the Odoo of the source version. The
-    target comes from ``to_version``; outside a provider run there is none, and it backs up.
+    The conditions are the ones of :func:`should_run_pre_odoo`.
 
     :param table: the backup table, a constant of the script
-    :param modules: all of them installed in the old database
     """
     _validate_position(position)
     cr.execute("DROP TABLE IF EXISTS %s" % table)
+    return should_run_pre_odoo(cr, first_target, last_target, modules, position)
 
+
+def should_run_pre_odoo(cr, first_target=FIRST_TARGET_VERSION, last_target=None, modules=(), position=None):
+    """Whether a ``scripts/pre_odoo/always`` script runs on the old database.
+
+    Plain SQL, because it runs with the Odoo of the source version. The target comes from
+    ``to_version``; outside a provider run there is none, and it runs.
+
+    :param modules: all of them installed in the old database
+    """
+    _validate_position(position)
     context = request_context(cr)
     if context:
         # A provider that does not send to_version only upgrades to 19.
         target = re.search(r"\d+", context.get("to_version") or "")
         if not target:
-            _logger.debug("No to_version in the request: %s not backed up", table)
+            _logger.debug("No to_version in the request: skipped")
             return False
         if not _in_target_range(int(target.group()), first_target, last_target):
             return False
@@ -101,7 +111,7 @@ def should_back_up(cr, table, first_target=FIRST_TARGET_VERSION, last_target=Non
             (modules,),
         )
         if cr.fetchone()[0] != len(set(modules)):
-            _logger.info("Not all of %s installed: %s not backed up", ", ".join(modules), table)
+            _logger.info("Not all of %s installed: skipped", ", ".join(modules))
             return False
     return _matches_request(context, position, None, None)
 

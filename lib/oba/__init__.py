@@ -9,7 +9,7 @@ Import from the package, not from the modules inside it:
 """
 
 from .customer_note import add_customer_note
-from .gates import create_backup, should_back_up, should_run
+from .gates import create_backup, should_back_up, should_run, should_run_pre_odoo
 from .output import log_message, set_breaks, set_result
 from .request_context import request_context
 
@@ -22,6 +22,7 @@ __all__ = [
     "set_result",
     "should_back_up",
     "should_run",
+    "should_run_pre_odoo",
 ]
 
 

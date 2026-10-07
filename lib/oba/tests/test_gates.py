@@ -29,7 +29,7 @@ sys.path.insert(0, LIB)
 import psycopg2  # noqa: E402
 from odoo import release  # noqa: E402
 
-from oba import create_backup, should_back_up, should_run  # noqa: E402
+from oba import create_backup, should_back_up, should_run, should_run_pre_odoo  # noqa: E402
 from oba.request_context import PARAMETER  # noqa: E402
 
 TARGET = release.version_info[0]
@@ -77,6 +77,7 @@ class GatesCase(unittest.TestCase):
             "parameters": {},
         }
         context.update(values)
+        self.cr.execute("DELETE FROM ir_config_parameter WHERE key = %s", (PARAMETER,))
         self.cr.execute(
             "INSERT INTO ir_config_parameter (key, value) VALUES (%s, %s)", (PARAMETER, json.dumps(context))
         )
@@ -195,6 +196,27 @@ class TestShouldBackUp(GatesCase):
         self.write_context(is_last_in_series=False)
         self.assertFalse(should_back_up(self.cr, BACKUP_TABLE, first_target=TARGET, position="last"))
         self.assertTrue(should_back_up(self.cr, BACKUP_TABLE, first_target=TARGET, position="first"))
+
+
+class TestShouldRunPreOdoo(GatesCase):
+    def test_runs_without_context_and_drops_nothing(self):
+        self.cr.execute("CREATE TABLE %s (id integer)" % BACKUP_TABLE)
+        self.assertTrue(should_run_pre_odoo(self.cr, first_target=TARGET))
+        self.assertTrue(self.table_exists())
+
+    def test_target_comes_from_the_request(self):
+        self.write_context()
+        self.assertTrue(should_run_pre_odoo(self.cr, first_target=TARGET))
+        self.assertFalse(should_run_pre_odoo(self.cr, first_target=TARGET + 1))
+        self.write_context(to_version=None)
+        self.assertFalse(should_run_pre_odoo(self.cr, first_target=TARGET))
+
+    def test_modules_and_position(self):
+        self.install("account")
+        self.write_context(is_last_in_series=False)
+        self.assertTrue(should_run_pre_odoo(self.cr, first_target=TARGET, modules=["account"]))
+        self.assertFalse(should_run_pre_odoo(self.cr, first_target=TARGET, modules=["account", "crm"]))
+        self.assertFalse(should_run_pre_odoo(self.cr, first_target=TARGET, position="last"))
 
 
 class TestCreateBackup(GatesCase):
