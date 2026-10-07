@@ -1,6 +1,6 @@
 """The upgrade lines that run on the old database before the pass to Odoo, case by case.
 
-Covers 090 of ``scripts/pre_odoo/always``. The tests create and drop their own
+Covers 090 and 100 of ``scripts/pre_odoo/always``. The tests create and drop their own
 Postgres database with the tables the scripts touch, so they need no Odoo running, only
 importable (any version: the scripts are plain SQL).
 
@@ -44,6 +44,7 @@ def _load_script(filename):
 
 
 user_type = _load_script("090-single_user_type_group.py")
+method_lines = _load_script("100-unique_payment_method_line_names.py")
 
 
 class OldDatabaseCase(unittest.TestCase):
@@ -164,6 +165,42 @@ class TestSingleUserTypeGroup(OldDatabaseCase):
         self.write_context(to_version="19.0")
         user_type.migrate(self.cr, "18.0")
         self.assertEqual(self.groups(1), [self.INTERNAL, self.PORTAL, self.BACKEND, self.OTHER])
+
+
+class TestUniquePaymentMethodLineNames(OldDatabaseCase):
+    TABLES = """
+        CREATE TABLE account_payment_method_line (
+            id serial PRIMARY KEY, journal_id integer, payment_method_id integer, name varchar
+        );
+        INSERT INTO account_payment_method_line (journal_id, payment_method_id, name) VALUES
+            (1, 1, 'Manual'), (1, 1, 'Manual'), (1, 1, 'Manual'), (1, 2, 'Manual'),
+            (2, 1, 'Manual'), (NULL, 1, 'Manual'), (NULL, 1, 'Manual');
+    """
+
+    def names(self):
+        return self.rows("SELECT id, name FROM account_payment_method_line ORDER BY id")
+
+    def test_renames_the_repeated_ones_only(self):
+        self.install("account")
+        method_lines.migrate(self.cr, "19.0")
+        self.assertEqual(
+            self.names(),
+            [
+                (1, "Manual"), (2, "Manual - 1"), (3, "Manual - 2"), (4, "Manual"),
+                (5, "Manual"), (6, "Manual"), (7, "Manual"),
+            ],
+        )
+
+    def test_second_run_changes_nothing(self):
+        self.install("account")
+        method_lines.migrate(self.cr, "19.0")
+        before = self.names()
+        method_lines.migrate(self.cr, "19.0")
+        self.assertEqual(self.names(), before)
+
+    def test_nothing_without_account(self):
+        method_lines.migrate(self.cr, "19.0")
+        self.assertEqual(self.names()[1], (2, "Manual"))
 
 
 if __name__ == "__main__":
