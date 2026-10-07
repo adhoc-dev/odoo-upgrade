@@ -10,7 +10,9 @@ Las ramas de trabajo empiezan con la versión de Odoo a la que sube el cambio (`
 - `modules/`: lo que Odoo lee como `--upgrade-path`, un script por módulo y versión
   (`modules/<modulo>/<version>/pre|post|end-*.py`). Solo módulos.
 - `scripts/pre_odoo/`: corre sobre la base de origen antes de mandarla a Odoo.
-- `scripts/pre_upgrade/`: corre antes de cargar `base`, con `--pre-upgrade-scripts`.
+- `scripts/pre_upgrade/`: corre antes de cargar `base`, con `--pre-upgrade-scripts`. Los
+  merges y renombres de módulos de cada salto van en `<salto>/module_changes.json`, una copia
+  de `module_changes.template.json`.
 - `lib/oba/`: los helpers de los scripts. Se importan como `oba`, con `lib/` en el
   `PYTHONPATH` de quien corre los scripts.
 - `tests/pre_odu/` y `tests/post_odu/`: la siembra de la base de prueba y el check

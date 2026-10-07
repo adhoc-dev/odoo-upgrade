@@ -10,12 +10,14 @@ Import from the package, not from the modules inside it:
 
 from .customer_note import add_customer_note
 from .gates import create_backup, should_back_up, should_run, should_run_pre_odoo
+from .jump import jump_versions
 from .output import log_message, set_breaks, set_result
 from .request_context import request_context
 
 __all__ = [
     "add_customer_note",
     "create_backup",
+    "jump_versions",
     "log_message",
     "request_context",
     "set_breaks",
@@ -29,7 +31,7 @@ __all__ = [
 def __getattr__(name):
     # Lazy, and out of __all__: module_changes needs upgrade-util, which add_customer_note
     # callers may not have.
-    if name in ("apply_module_changes", "run_auto_discovery"):
+    if name in ("MODULE_CHANGES_FILE", "apply_module_changes", "load_module_changes", "run_auto_discovery"):
         from . import module_changes
 
         return getattr(module_changes, name)
