@@ -25,19 +25,17 @@ Este repositorio contiene scripts de migración para módulos de Odoo. Los scrip
 
 **Ejemplo típico:**
 ```python
-from openupgradelib import openupgrade
 from odoo.upgrade import util
+from oba import create_backup
 
-# Backup de columnas antes de que se eliminen
-_column_copy = {
-    'account_payment': [('tax_withholding_id', 'tax_withholding_id_bu', None)],
-}
+BACKUP_TABLE = "account_payment_tax_withholding_bu"
+
 
 def migrate(cr, version):
-    # Backup de columnas importantes (SOLO caso para usar openupgrade)
-    openupgrade.copy_columns(cr, _column_copy)
-    
-    # Para otras operaciones usar util
+    # Backup de una columna antes de que se elimine, en una tabla aparte
+    cr.execute("DROP TABLE IF EXISTS %s" % BACKUP_TABLE)
+    create_backup(cr, BACKUP_TABLE, "SELECT id, tax_withholding_id FROM account_payment")
+
     # util.rename_field(cr, 'account.payment', 'old_field', 'new_field')
 ```
 
@@ -78,9 +76,9 @@ def migrate(cr, version):
 
 ## Librerías y Funciones Disponibles
 
-### **PREFERENCIA ADHOC: Usar `odoo.upgrade.util` por defecto**
+### **REGLA ADHOC: solo `odoo.upgrade.util`**
 
-**REGLA PRINCIPAL**: Fomentamos el uso de `from odoo.upgrade import util` como librería principal. Solo usar `openupgradelib` cuando se requiera específicamente `copy_columns` u otras funciones no disponibles en `util`.
+**REGLA PRINCIPAL**: Los scripts usan `from odoo.upgrade import util`. Desde la 20 no se usa `openupgradelib`, tampoco para `copy_columns`. Solo queda en scripts de saltos hasta la 19 que ya la usan.
 
 ### 1. **odoo.upgrade.util** (Librería PREFERIDA)
 ```python
@@ -127,16 +125,10 @@ from odoo.upgrade import util
 - `util.create_column(cr, table, column, definition)`: Crear columna
 - `util.rename_table(cr, old_table, new_table)`: Renombrar tabla ⭐ **PREFERIR sobre openupgrade**
 
-### 2. **openupgradelib** (Solo cuando sea necesario)
+### 2. **openupgradelib** (No se usa en scripts nuevos)
 
-```python
-from openupgradelib import openupgrade
-```
-
-**USAR SOLO PARA:**
-- `openupgrade.copy_columns(cr, column_copy_spec)`: Backup de columnas (NO disponible en util)
-
-**ADVERTENCIA**: Si ves uso de openupgradelib para otras operaciones, sugerir el equivalente en `util`:
+Un script nuevo no importa `openupgradelib`. Si un PR la usa, sugerir el equivalente en `util`:
+- ❌ `openupgrade.copy_columns()` → ✅ `create_backup(cr, table_bu, "SELECT id, column FROM table")` de `oba`: el dato queda en una tabla de respaldo `<nombre>_bu`
 - ❌ `openupgrade.rename_fields()` → ✅ `util.rename_field()`
 - ❌ `openupgrade.rename_models()` → ✅ `util.rename_model()`
 - ❌ `openupgrade.rename_tables()` → ✅ `util.rename_table()`
@@ -147,14 +139,6 @@ from openupgradelib import openupgrade
 
 #### Estructuras de Datos Típicas:
 ```python
-# Para copy_columns
-_column_copy = {
-    'table_name': [
-        ('old_column', 'backup_column', None),
-        ('another_column', 'another_backup', None),
-    ],
-}
-
 # Para rename_fields
 _field_renames = [
     ('model.name', 'table_name', 'old_field', 'new_field'),
@@ -177,7 +161,7 @@ _xmlid_renames = [
 - ✅ Verificar que tenga la función `migrate(cr, version)` (NO usar `@openupgrade.migrate()`)
 - ✅ Confirmar imports correctos (preferir `from odoo.upgrade import util`)
 - ✅ Validar que el tipo de script (pre/post/end) es apropiado para las operaciones
-- ✅ **IMPORTANTE**: Sugerir reemplazar openupgradelib por util cuando sea posible
+- ✅ **IMPORTANTE**: Pedir reemplazar openupgradelib por util
 
 ### 2. **Operaciones Pre-migration**
 - ✅ Verificar backups de columnas antes de eliminarlas
@@ -208,8 +192,7 @@ _xmlid_renames = [
 - ✅ Validar que existan verificaciones antes de operaciones riesgosas
 
 ### 7. **Naming Conventions**
-- ✅ Campos backup terminan en `_bu` (ej: `field_name_bu`)
-- ✅ Tablas backup terminan en `_bu` (ej: `table_name_bu`)
+- ✅ Los backups van a una tabla con `create_backup()` de `oba`, que termina en `_bu`
 - ✅ Scripts siguen patrón: `pre-migration.py`, `post-migration.py`, `end-migration.py`
 
 ## Ejemplos de Errores Comunes a Detectar
@@ -238,15 +221,13 @@ def migrate(cr, version):
     openupgrade.rename_fields(env, [...])  # ❌ util.rename_field() es mejor
 ```
 
-### ✅ **Correcto: Usar util como primera opción**
+### ✅ **Correcto: Usar solo util**
 ```python
-# BUENO - Usar util por defecto
+# BUENO - Solo util
 from odoo.upgrade import util
-from openupgradelib import openupgrade  # Solo para copy_columns
 
 def migrate(cr, version):
     util.rename_field(cr, 'model.name', 'old', 'new')  # ✅
-    openupgrade.copy_columns(cr, _column_copy)  # ✅ Solo caso válido
 ```
 
 ### ❌ **Error: Usar ORM en pre-migration**
@@ -268,9 +249,9 @@ def migrate(cr, version):
 
 ### 🚨 **PREFERENCIAS OBLIGATORIAS DE ADHOC:**
 
-1. **Librería Principal**: `from odoo.upgrade import util` (NO openupgradelib salvo copy_columns)
+1. **Librería**: `from odoo.upgrade import util` (NO openupgradelib, tampoco para copy_columns)
 2. **Función migrate**: `def migrate(cr, version):` (NO usar @openupgrade.migrate())
-3. **Sugiere activamente** reemplazar openupgradelib por util cuando sea posible
+3. **Pedir** reemplazar openupgradelib por util en todo script nuevo
 
 ### 🔍 **CHECKLIST DE REVIEW PRIORITARIO:**
 
@@ -279,7 +260,7 @@ def migrate(cr, version):
 - ❌ ¿La función es `migrate(env, version)`? → Cambiar a `migrate(cr, version)`
 - ❌ ¿Usa `openupgrade.rename_*()` o similar? → Sugerir equivalente en `util`
 - ❌ ¿Usa `openupgrade.logged_query()`? → Sugerir `cr.execute()` o `util.parallel_execute()`
-- ✅ ¿Solo usa `openupgrade.copy_columns()`? → OK, este es el único caso válido
+- ❌ ¿Usa `openupgrade.copy_columns()`? → Sugerir `create_backup()` de `oba`
 
 #### SUGERENCIAS AUTOMÁTICAS:
 ```python
@@ -296,10 +277,9 @@ cr.execute("UPDATE ...")
 
 ## Referencias Adicionales
 
-- **OpenUpgradeLib**: https://github.com/OCA/openupgradelib
 - **Odoo Upgrade Utils**: https://github.com/odoo/upgrade-util
 - **Documentación Oficial**: https://www.odoo.com/documentation/master/developer/reference/upgrades/upgrade_scripts.html
 
 ---
 
-⚠️ **IMPORTANTE**: Estas reglas son específicas de ADHOC. Al hacer review, prioriza sugerir el uso de `util` sobre `openupgradelib` y la estructura de función correcta `migrate(cr, version)` sin decoradores.
+⚠️ **IMPORTANTE**: Estas reglas son específicas de ADHOC. Al hacer review, pide `util` en lugar de `openupgradelib` y la estructura de función correcta `migrate(cr, version)` sin decoradores.
