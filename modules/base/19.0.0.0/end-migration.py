@@ -205,6 +205,10 @@ MODEL_STRATEGY = {
     "sale.order": "MOVE_TO_PARENT",
     "sale.order.line": "MOVE_TO_PARENT",
     "sale.order.template": "MOVE_TO_PARENT",
+    # company_id es related stored de sale_order_template_id.company_id, y el UPDATE
+    # crudo que mueve la plantilla no dispara el recomputo: sin esto la plantilla
+    # queda en la parent y sus lineas en la sucursal.
+    "sale.order.template.line": "MOVE_TO_PARENT",
     "sale.order.type": "MOVE_TO_PARENT",
     "purchase.order": "MOVE_TO_PARENT",
     "purchase.order.type": "MOVE_TO_PARENT",
@@ -280,6 +284,9 @@ MODEL_STRATEGY = {
     # --- MAESTROS (KEEP - No tocamos company_id porque ya funcionaban) ---
     "res.partner": "KEEP",
     "res.company": "KEEP",
+    # KEEP porque la mayoria de sus filas son propiedades contables de modelos que
+    # se quedan (res.partner, product.category). La excepcion la resuelve
+    # move_user_defaults_to_parent: los defaults de un modelo MOVE_TO_PARENT.
     "ir.default": "KEEP",
     "product.template": "MOVE_TO_PARENT",
     "product.product": "MOVE_TO_PARENT",
@@ -3234,6 +3241,92 @@ def migrate_standard_fields(cr, env, id_a, id_b):
     clean_order_type_inconsistent_refs(cr)
 
 
+def move_quotation_documents_to_parent(cr, id_a):
+    """Lleva a la parent los encabezados y pies de pagina de las cotizaciones.
+
+    quotation.document (sale_pdf_quote_builder) hace _inherits de ir.attachment, asi
+    que su company_id es el del adjunto y no una columna propia: el barrido de
+    migrate_standard_fields solo mira campos con relation res.company y store=True,
+    y el de ir.attachment es KEEP_AND_CHECK a proposito. Resultado: la plantilla
+    sube a la parent (sale.order.template es MOVE_TO_PARENT) y su encabezado o pie
+    se queda en la sucursal, donde la cotizacion ya no lo alcanza y se imprime sin
+    el.
+
+    Mueve el adjunto de todo quotation.document que haya quedado en una sucursal
+    directa de id_a, mismo criterio que usa el barrido para los demas modelos.
+    """
+    if not table_exists(cr, "quotation_document"):
+        return
+
+    cr.execute(
+        """
+        UPDATE ir_attachment att
+           SET company_id = %s
+          FROM quotation_document qd
+         WHERE qd.ir_attachment_id = att.id
+           AND att.company_id IN (SELECT id FROM res_company WHERE parent_id = %s)
+        """,
+        (id_a, id_a),
+    )
+    if cr.rowcount:
+        _logger.info(
+            "Movidos a la company %s los adjuntos de %s quotation.document de sucursales",
+            id_a,
+            cr.rowcount,
+        )
+
+
+def move_user_defaults_to_parent(cr, id_a):
+    """Sube a la parent los predeterminados por usuario de los modelos que se mueven.
+
+    ir.default es KEEP porque sus filas mas comunes son propiedades contables de
+    modelos que se quedan donde estan (la cuenta a cobrar de un partner, la
+    valoracion de una categoria). Pero cuando el modelo del campo es
+    MOVE_TO_PARENT, el registro al que el default aplica se fue a la parent y el
+    default se queda en la sucursal, donde ya no lo ve nadie: es el caso de las
+    condiciones comerciales predeterminadas de una orden de compra.
+
+    Solo mueve la fila si la parent no tiene ya un default para el mismo campo,
+    usuario y condicion, y a lo sumo una por esa terna: _get_model_defaults ordena
+    por (user_id, company_id, id) y se queda con la primera, asi que dos filas en la
+    misma company resolverian por id y el default de la parent perderia contra el
+    que subio de una sucursal.
+    """
+    move_models = tuple(
+        sorted(model for model, strategy in MODEL_STRATEGY.items() if strategy == "MOVE_TO_PARENT")
+    )
+    cr.execute(
+        """
+        WITH candidate AS (
+            SELECT DISTINCT ON (d.field_id, d.user_id, d.condition) d.id
+              FROM ir_default d
+              JOIN ir_model_fields f ON f.id = d.field_id
+             WHERE f.model IN %(models)s
+               AND d.company_id IN (SELECT id FROM res_company WHERE parent_id = %(parent)s)
+               AND NOT EXISTS (
+                       SELECT 1
+                         FROM ir_default p
+                        WHERE p.field_id = d.field_id
+                          AND p.company_id = %(parent)s
+                          AND p.user_id IS NOT DISTINCT FROM d.user_id
+                          AND p.condition IS NOT DISTINCT FROM d.condition
+                   )
+             ORDER BY d.field_id, d.user_id, d.condition, d.id
+        )
+        UPDATE ir_default
+           SET company_id = %(parent)s
+         WHERE id IN (SELECT id FROM candidate)
+        """,
+        {"models": move_models, "parent": id_a},
+    )
+    if cr.rowcount:
+        _logger.info(
+            "Movidos a la company %s %s ir.default de sucursales cuyo modelo es MOVE_TO_PARENT",
+            id_a,
+            cr.rowcount,
+        )
+
+
 def align_order_type_invoice_company(cr):
     """Fija invoice_company_id de sale.order.type a la company de su diario.
 
@@ -4165,6 +4258,14 @@ def migrate(cr, version):
 
             # 1. Movimiento Operativo (SQL)
             migrate_standard_fields(cr, env, id_a, id_b)
+
+            # 1.1 quotation.document: su company vive en el adjunto, no en una
+            # columna propia, asi que el barrido de arriba no lo ve.
+            move_quotation_documents_to_parent(cr, id_a)
+
+            # 1.2 ir.default es KEEP, pero los defaults de un modelo que acaba de
+            # subir a la parent tienen que subir con el.
+            move_user_defaults_to_parent(cr, id_a)
 
             # 2. Fusión de Configuración (ORM)
             merge_models = [
