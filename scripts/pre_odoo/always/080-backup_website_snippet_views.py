@@ -1,7 +1,6 @@
 import logging
-import re
 
-from oba import request_context
+from oba import create_backup, should_back_up
 
 _logger = logging.getLogger(__name__)
 
@@ -36,37 +35,25 @@ def migrate(cr, version):
 
     Plain SQL on purpose: this runs on the old database, with the Odoo of the source version.
     """
-    # First: a table left by an earlier run must not reach a request that skips.
-    cr.execute("DROP TABLE IF EXISTS %s" % BACKUP_TABLE)
-
-    # Upgrades to 19 still run the upgrade line. The target comes in the request context; a
-    # provider that does not send it only upgrades to 19. Outside a provider run it backs up.
-    context = request_context(cr)
-    target = re.search(r"\d+", context.get("to_version") or "")
-    if context and (not target or int(target.group()) < FIRST_TARGET_VERSION):
-        _logger.info("Not an upgrade to %s or later: the upgrade line handles it", FIRST_TARGET_VERSION)
-        return
-
-    # Only with website installed, like the upgrade line.
-    cr.execute("SELECT 1 FROM ir_module_module WHERE name = 'website' AND state = 'installed'")
-    if not cr.fetchone():
+    # Drops BACKUP_TABLE first, so a table left by an earlier run does not reach a request
+    # that skips. Upgrades to 19 still run the upgrade line.
+    if not should_back_up(cr, BACKUP_TABLE, FIRST_TARGET_VERSION, modules=["website"]):
         return
 
     _logger.info("Backing up the website copies of the snippet views into %s", BACKUP_TABLE)
 
     # One copy per key and website, as the upgrade line took with its limit=1.
-    cr.execute(
+    create_backup(
+        cr,
+        BACKUP_TABLE,
         """
-        CREATE TABLE %s AS
-            SELECT DISTINCT ON (key, website_id) key, website_id, active
-              FROM ir_ui_view
-             WHERE key IN %%s
-               AND website_id IS NOT NULL
-               AND name NOT ILIKE %%s
-             ORDER BY key, website_id, priority, id
-        """
-        % BACKUP_TABLE,
+        SELECT DISTINCT ON (key, website_id) key, website_id, active
+          FROM ir_ui_view
+         WHERE key IN %s
+           AND website_id IS NOT NULL
+           AND name NOT ILIKE %s
+         ORDER BY key, website_id, priority, id
+        """,
         (TARGET_KEYS, UPGRADE_COPY_NAME),
+        primary_key=("key", "website_id"),
     )
-    # Without a PK, Odoo's test_ensure_has_pk flags it CRITICAL on every run.
-    cr.execute("ALTER TABLE %s ADD PRIMARY KEY (key, website_id)" % BACKUP_TABLE)

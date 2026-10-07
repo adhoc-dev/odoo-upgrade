@@ -5,19 +5,23 @@ the scripts puts ``lib/`` on the ``PYTHONPATH``.
 
 Import from the package, not from the modules inside it:
 
-    from oba import add_customer_note, log_message, request_context
+    from oba import add_customer_note, log_message, request_context, should_run
 """
 
 from .customer_note import add_customer_note
+from .gates import create_backup, should_back_up, should_run
 from .output import log_message, set_breaks, set_result
 from .request_context import request_context
 
 __all__ = [
     "add_customer_note",
+    "create_backup",
     "log_message",
     "request_context",
     "set_breaks",
     "set_result",
+    "should_back_up",
+    "should_run",
 ]
 
 

@@ -7,11 +7,9 @@ In ``modules/base/0.0.0`` so it runs on every jump, after the modules are loaded
 """
 
 import logging
-import re
 
-from odoo import release
 from odoo.upgrade import util
-from oba import log_message
+from oba import log_message, should_run
 
 _logger = logging.getLogger(__name__)
 
@@ -21,11 +19,7 @@ FIRST_TARGET_VERSION = 20
 
 def migrate(cr, version):
     # Only on a major upgrade.
-    match = re.search(r"\d+", version or "")
-    if not match or int(match.group()) >= release.version_info[0]:
-        return
-
-    if release.version_info[0] < FIRST_TARGET_VERSION:
+    if not should_run(cr, version, FIRST_TARGET_VERSION):
         return
 
     views = util.env(cr)["ir.ui.view"].with_context(active_test=False).search(

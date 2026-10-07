@@ -8,12 +8,10 @@ In ``modules/base/0.0.0`` so it runs on every jump, after the modules are loaded
 """
 
 import logging
-import re
 
-from odoo import release
 from odoo.tools import SQL
 from odoo.upgrade import util
-from oba import log_message, request_context
+from oba import log_message, request_context, should_run
 
 _logger = logging.getLogger(__name__)
 
@@ -25,17 +23,11 @@ FIRST_TARGET_VERSION = 20
 def migrate(cr, version):
     # Only on a major upgrade. The table stays until the next pre_odoo run: a repeated -u
     # applies it again, and a later -u of base in the same version does not.
-    match = re.search(r"\d+", version or "")
-    if not match or int(match.group()) >= release.version_info[0]:
-        return
-
-    if release.version_info[0] < FIRST_TARGET_VERSION:
+    # The upgrade line only ran on test requests. Without context (runbot, a local -u) it runs.
+    if not should_run(cr, version, FIRST_TARGET_VERSION, aim="test"):
         return
 
     context = request_context(cr)
-    # The upgrade line only ran on test requests. Without context (runbot, a local -u) it runs.
-    if context and context.get("aim") != "test":
-        return
 
     if not util.table_exists(cr, BACKUP_TABLE):
         # Its pre_odoo script always backs up: in a provider run, no table means it did not run.
