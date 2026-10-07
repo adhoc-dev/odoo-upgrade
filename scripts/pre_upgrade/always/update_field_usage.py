@@ -1,10 +1,10 @@
 import logging
-import os
 
 import requests
 
-from odoo.release import major_version
 from odoo.upgrade import util
+
+from oba import jump_versions
 
 _logger = logging.getLogger(__name__)
 
@@ -12,19 +12,6 @@ _logger = logging.getLogger(__name__)
 # (el dominio .ar redirige ahí).
 CHANGES_URL = "https://adhoc.adhoc.ar/version_changes/%s/%s"
 REQUEST_TIMEOUT = 60
-
-
-def _get_versions(version):
-    """Origen y destino del salto que se está corriendo.
-
-    Las declara el runner del pase (`odoo_obaupgrade.py` de
-    `saas_provider_upgrade`) y llegan en el entorno del proceso. Sin ellas —una
-    corrida local, runbot— se reconstruyen: el destino es el Odoo que corre el
-    `-u` y el origen, la versión de `base` instalada en la base.
-    """
-    from_version = os.environ.get("MYSCRIPT_FROM_VERSION") or "%s.0" % version.split(".")[0]
-    to_version = os.environ.get("MYSCRIPT_TO_VERSION") or major_version
-    return from_version, to_version
 
 
 def _get_version_changes(from_version, to_version):
@@ -70,7 +57,7 @@ def migrate(cr, version):
     _logger.info("Running 'update_field_usage.py' script for version %s", version)
 
     try:
-        from_version, to_version = _get_versions(version)
+        from_version, to_version = jump_versions(version)
         changes = _get_version_changes(from_version, to_version)
     except Exception:
         # Sin catálogo no se aplica ningún renombre, pero la base actualizada

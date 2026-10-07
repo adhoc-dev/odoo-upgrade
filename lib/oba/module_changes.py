@@ -1,28 +1,34 @@
 """Module merges and renames of one major version jump.
 
-    from oba import apply_module_changes
+Each jump declares them in ``scripts/pre_upgrade/<jump>/module_changes.json``, a copy of
+``scripts/pre_upgrade/module_changes.template.json``:
 
-    MERGE_MODULES = [("l10n_ar_tax_ratio", "l10n_ar_tax")]
-    RENAMED_MODULES = []
-    RENAMED_XMLIDS = []
+    {
+        "merge_modules": [["l10n_ar_tax_ratio", "l10n_ar_tax"]],
+        "renamed_modules": [],
+        "renamed_xmlids": []
+    }
 
-    def migrate(cr, version):
-        apply_module_changes(cr, version, MERGE_MODULES, RENAMED_MODULES, RENAMED_XMLIDS)
-
-The code is the same on every jump; each ``scripts/pre_upgrade/<jump>/merge_and_renames.py``
-only declares its lists. With empty lists it only runs the module auto-discovery, which
+and ``scripts/pre_upgrade/always/merge_and_renames.py`` applies the file of the jump in
+course. A jump without the file logs a warning and only runs the module auto-discovery, which
 ``base/0.0.0/post-01-modules-auto-discovery.py`` runs anyway.
 
-Public API: :func:`apply_module_changes` and :func:`run_auto_discovery`.
+Public API: :data:`MODULE_CHANGES_FILE`, :func:`apply_module_changes`,
+:func:`load_module_changes` and :func:`run_auto_discovery`.
 """
 
+import json
 import logging
+import os
 
 # No odoo.tools.SQL: post-01 imports this module on every jump, also to versions before 17.
 from odoo.upgrade import util
 from odoo.upgrade.util import modules as util_modules
 
 _logger = logging.getLogger(__name__)
+
+MODULE_CHANGES_FILE = "module_changes.json"
+MODULE_CHANGES_KEYS = ("merge_modules", "renamed_modules", "renamed_xmlids")
 
 
 def apply_module_changes(cr, version, merges=(), renames=(), xmlid_renames=()):
@@ -44,6 +50,35 @@ def apply_module_changes(cr, version, merges=(), renames=(), xmlid_renames=()):
     for old, new in xmlid_renames:
         util.rename_xmlid(cr, old, new)
     _fill_latest_version(cr, version)
+
+
+def load_module_changes(path):
+    """Read the merges and renames of a ``module_changes.json``.
+
+    :return: the ``merges``, ``renames`` and ``xmlid_renames`` of :func:`apply_module_changes`,
+        as lists of ``(old, new)`` pairs. All empty if the file does not exist.
+    :raise ValueError: on a file that is not an object of lists, an unknown key or a pair that
+        is not two names, so a typo does not skip a merge without notice.
+    """
+    if not os.path.exists(path):
+        # A badly built jump folder (a runbot build of saas~19.4) lands here too.
+        _logger.warning("No module changes file at %s: no module is merged or renamed", path)
+        return ([], [], [])
+    with open(path) as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must hold an object with the keys {list(MODULE_CHANGES_KEYS)}")
+    unknown = sorted(set(data) - set(MODULE_CHANGES_KEYS))
+    if unknown:
+        raise ValueError(f"Unknown keys in {path}: {unknown}")
+    changes = []
+    for key in MODULE_CHANGES_KEYS:
+        pairs = data.get(key, [])
+        is_pair = lambda pair: isinstance(pair, list) and len(pair) == 2 and all(isinstance(n, str) for n in pair)  # noqa: E731
+        if not isinstance(pairs, list) or not all(is_pair(pair) for pair in pairs):
+            raise ValueError(f"{key} in {path} must hold [old, new] pairs of names")
+        changes.append([tuple(pair) for pair in pairs])
+    return tuple(changes)
 
 
 def run_auto_discovery(cr):
