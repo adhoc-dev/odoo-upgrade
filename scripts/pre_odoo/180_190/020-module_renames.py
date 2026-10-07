@@ -7,7 +7,7 @@ _logger = logging.getLogger(__name__)
 # el nombre real, su plataforma actualiza el registro como si fuera el suyo y nuestras vistas
 # quedan referenciando campos que el modulo de Odoo no define. Renombrados no los conoce y
 # los deja intactos; el nombre real se repone del otro lado, en
-# scripts/pre_upgrade/180_190/merge_and_renames.py.
+# scripts/pre_upgrade/180_190/module_changes.json.
 MODULE_RENAMES = [
     ("l10n_ar_stock", "l10n_ar_stock_custom"),
     ("l10n_uy_edi_stock", "l10n_uy_edi_stock_custom"),
