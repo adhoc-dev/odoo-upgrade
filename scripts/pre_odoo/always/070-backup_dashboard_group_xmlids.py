@@ -1,7 +1,6 @@
 import logging
-import re
 
-from oba import request_context
+from oba import create_backup, should_back_up
 
 _logger = logging.getLogger(__name__)
 
@@ -22,40 +21,25 @@ def migrate(cr, version):
 
     Plain SQL on purpose: this runs on the old database, with the Odoo of the source version.
     """
-    # First: a table left by an earlier run must not reach a request that skips.
-    cr.execute("DROP TABLE IF EXISTS %s" % BACKUP_TABLE)
-
-    # Upgrades to 19 still run the upgrade line. The target comes in the request context; a
-    # provider that does not send it only upgrades to 19. Outside a provider run it backs up.
-    context = request_context(cr)
-    target = re.search(r"\d+", context.get("to_version") or "")
-    if context and (not target or int(target.group()) < FIRST_TARGET_VERSION):
-        _logger.info("Not an upgrade to %s or later: the upgrade line handles it", FIRST_TARGET_VERSION)
-        return
-
-    # Only with spreadsheet_dashboard installed, like the upgrade line.
-    cr.execute("SELECT 1 FROM ir_module_module WHERE name = 'spreadsheet_dashboard' AND state = 'installed'")
-    if not cr.fetchone():
+    # Drops BACKUP_TABLE first, so a table left by an earlier run does not reach a request
+    # that skips. Upgrades to 19 still run the upgrade line.
+    if not should_back_up(cr, BACKUP_TABLE, FIRST_TARGET_VERSION, modules=["spreadsheet_dashboard"]):
         return
 
     _logger.info("Backing up the groups of the standard dashboards into %s", BACKUP_TABLE)
-    cr.execute(
+    create_backup(
+        cr,
+        BACKUP_TABLE,
         """
-        CREATE TABLE %s AS
-            SELECT DISTINCT dd.module AS dashboard_module,
-                            dd.name AS dashboard_name,
-                            gd.module AS group_module,
-                            gd.name AS group_name
-              FROM res_groups_spreadsheet_dashboard_rel rel
-              JOIN ir_model_data dd ON dd.model = 'spreadsheet.dashboard'
-                                   AND dd.res_id = rel.spreadsheet_dashboard_id
-              JOIN ir_model_data gd ON gd.model = 'res.groups'
-                                   AND gd.res_id = rel.res_groups_id
-        """
-        % BACKUP_TABLE
-    )
-    # Without a PK, Odoo's test_ensure_has_pk flags it CRITICAL on every run.
-    cr.execute(
-        "ALTER TABLE %s ADD PRIMARY KEY (dashboard_module, dashboard_name, group_module, group_name)"
-        % BACKUP_TABLE
+        SELECT DISTINCT dd.module AS dashboard_module,
+                        dd.name AS dashboard_name,
+                        gd.module AS group_module,
+                        gd.name AS group_name
+          FROM res_groups_spreadsheet_dashboard_rel rel
+          JOIN ir_model_data dd ON dd.model = 'spreadsheet.dashboard'
+                               AND dd.res_id = rel.spreadsheet_dashboard_id
+          JOIN ir_model_data gd ON gd.model = 'res.groups'
+                               AND gd.res_id = rel.res_groups_id
+        """,
+        primary_key=("dashboard_module", "dashboard_name", "group_module", "group_name"),
     )

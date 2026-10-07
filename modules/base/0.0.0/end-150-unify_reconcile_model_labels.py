@@ -15,11 +15,7 @@ Only on the last jump of the request.
 In ``modules/base/0.0.0`` so it runs on every jump, after the modules are loaded.
 """
 
-import re
-
-from odoo import release
-from odoo.upgrade import util
-from oba import log_message, request_context
+from oba import log_message, should_run
 
 # Upgrades to 19 still run the upgrade line 2498.
 FIRST_TARGET_VERSION = 20
@@ -40,17 +36,7 @@ STALE_ITEMS = """
 
 def migrate(cr, version):
     # Only on a major upgrade.
-    match = re.search(r"\d+", version or "")
-    if not match or int(match.group()) >= release.version_info[0]:
-        return
-
-    if release.version_info[0] < FIRST_TARGET_VERSION:
-        return
-
-    if not util.module_installed(cr, "account_accountant"):
-        return
-
-    if not request_context(cr).get("is_last_in_series", True):
+    if not should_run(cr, version, FIRST_TARGET_VERSION, modules=["account_accountant"], position="last"):
         return
 
     cr.execute("SELECT 1 FROM account_reconcile_model_line LIMIT 1")

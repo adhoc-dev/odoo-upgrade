@@ -1,7 +1,6 @@
 import logging
-import re
 
-from oba import request_context
+from oba import create_backup, should_back_up
 
 _logger = logging.getLogger(__name__)
 
@@ -19,30 +18,22 @@ def migrate(cr, version):
 
     Plain SQL on purpose: this runs on the old database, with the Odoo of the source version.
     """
-    # First: a table left by an earlier run must not reach a request that skips.
-    cr.execute("DROP TABLE IF EXISTS %s" % BACKUP_TABLE)
-
-    # Upgrades to 19 still run the upgrade line. The target comes in the request context; a
-    # provider that does not send it only upgrades to 19. Outside a provider run it backs up.
-    context = request_context(cr)
-    target = re.search(r"\d+", context.get("to_version") or "")
-    if context and (not target or int(target.group()) < FIRST_TARGET_VERSION):
-        _logger.info("Not an upgrade to %s or later: the upgrade line handles it", FIRST_TARGET_VERSION)
+    # Drops BACKUP_TABLE first, so a table left by an earlier run does not reach a request
+    # that skips. Upgrades to 19 still run the upgrade line.
+    if not should_back_up(cr, BACKUP_TABLE, FIRST_TARGET_VERSION):
         return
 
     _logger.info("Backing up the manual fields without xmlid into %s", BACKUP_TABLE)
-    cr.execute(
+    create_backup(
+        cr,
+        BACKUP_TABLE,
         """
-        CREATE TABLE %s AS
-            SELECT f.id
-              FROM ir_model_fields f
-             WHERE f.state = 'manual'
-               AND NOT EXISTS (SELECT 1
-                                 FROM ir_model_data d
-                                WHERE d.model = 'ir.model.fields'
-                                  AND d.res_id = f.id)
-        """
-        % BACKUP_TABLE
+        SELECT f.id
+          FROM ir_model_fields f
+         WHERE f.state = 'manual'
+           AND NOT EXISTS (SELECT 1
+                             FROM ir_model_data d
+                            WHERE d.model = 'ir.model.fields'
+                              AND d.res_id = f.id)
+        """,
     )
-    # Without a PK, Odoo's test_ensure_has_pk flags it CRITICAL on every run.
-    cr.execute("ALTER TABLE %s ADD PRIMARY KEY (id)" % BACKUP_TABLE)
