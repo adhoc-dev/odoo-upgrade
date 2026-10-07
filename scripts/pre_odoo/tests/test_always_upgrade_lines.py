@@ -1,6 +1,6 @@
 """The upgrade lines that run on the old database before the pass to Odoo, case by case.
 
-Covers 090, 100 and 110 of ``scripts/pre_odoo/always``. The tests create and drop their own
+Covers 090, 100, 110 and 120 of ``scripts/pre_odoo/always``. The tests create and drop their own
 Postgres database with the tables the scripts touch, so they need no Odoo running, only
 importable (any version: the scripts are plain SQL).
 
@@ -46,6 +46,7 @@ def _load_script(filename):
 user_type = _load_script("090-single_user_type_group.py")
 method_lines = _load_script("100-unique_payment_method_line_names.py")
 team_members = _load_script("110-archive_admin_sales_team_members.py")
+deprecated_views = _load_script("120-drop_deprecated_website_views.py")
 
 
 class OldDatabaseCase(unittest.TestCase):
@@ -236,6 +237,63 @@ class TestArchiveAdminSalesTeamMembers(OldDatabaseCase):
         self.write_context(to_version="19.0")
         team_members.migrate(self.cr, "18.0")
         self.assertEqual(self.active(), [(1, True), (2, False), (3, True)])
+
+
+class TestDropDeprecatedWebsiteViews(OldDatabaseCase):
+    # 1 <- 2 <- 3: a deprecated chain. 4: deprecated, a restrict reference points to it.
+    # 5 <- 6: deprecated with a child that is not. 7: not deprecated. 8: deprecated, with a page.
+    TABLES = """
+        CREATE TABLE ir_ui_view (
+            id integer PRIMARY KEY, key varchar, active boolean DEFAULT true,
+            inherit_id integer REFERENCES ir_ui_view ON DELETE RESTRICT
+        );
+        CREATE TABLE website_page (id serial PRIMARY KEY, view_id integer REFERENCES ir_ui_view ON DELETE CASCADE);
+        CREATE TABLE blocker (id serial PRIMARY KEY, view_id integer REFERENCES ir_ui_view ON DELETE RESTRICT);
+        INSERT INTO ir_ui_view (id, key, inherit_id) VALUES
+            (1, 'website.a_depreciada', NULL), (2, 'website.b_depreciada', 1), (3, 'website.c_depreciada', 2),
+            (4, 'website.d_depreciada', NULL), (5, 'website.e_depreciada', NULL), (6, 'website.f', 5),
+            (7, 'website.g', NULL), (8, 'website.h_depreciada', NULL);
+        INSERT INTO website_page (view_id) VALUES (8);
+        INSERT INTO blocker (view_id) VALUES (4);
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.xmlid("website", "a_depreciada", "ir.ui.view", 1)
+        self.xmlid("website", "g", "ir.ui.view", 7)
+        # The runner runs the scripts in one transaction, and the script uses savepoints.
+        self.cr.execute("BEGIN")
+
+    def tearDown(self):
+        self.cr.execute("ROLLBACK")
+        super().tearDown()
+
+    def views(self):
+        return self.rows("SELECT id, active FROM ir_ui_view ORDER BY id")
+
+    def test_drops_leaves_first_and_archives_what_is_referenced(self):
+        self.install("website")
+        deprecated_views.migrate(self.cr, "19.0")
+        self.assertEqual(self.views(), [(4, False), (5, True), (6, True), (7, True)])
+        self.assertEqual(self.rows("SELECT res_id FROM ir_model_data WHERE model = 'ir.ui.view'"), [(7,)])
+        self.assertEqual(self.rows("SELECT count(*) FROM website_page"), [(0,)])
+
+    def test_second_run_changes_nothing(self):
+        self.install("website")
+        deprecated_views.migrate(self.cr, "19.0")
+        before = self.views()
+        deprecated_views.migrate(self.cr, "19.0")
+        self.assertEqual(self.views(), before)
+
+    def test_nothing_without_website(self):
+        deprecated_views.migrate(self.cr, "19.0")
+        self.assertEqual(len(self.views()), 8)
+
+    def test_nothing_on_an_upgrade_to_19(self):
+        self.install("website")
+        self.write_context(to_version="19.0")
+        deprecated_views.migrate(self.cr, "18.0")
+        self.assertEqual(len(self.views()), 8)
 
 
 if __name__ == "__main__":
