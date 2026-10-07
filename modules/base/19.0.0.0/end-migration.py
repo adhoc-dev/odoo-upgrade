@@ -650,6 +650,147 @@ def _active_equivalent_tax(env, tax, company_ids):
     return Tax
 
 
+def replace_archived_tax_rows(
+    env, company_ids, table, keep_column, tax_column, rows, replacements
+):
+    """Swap the archived tax of each row for its active equivalent.
+
+    `rows` are <owner id, archived tax id> pairs of a many2many table. A row
+    whose tax has no active equivalent is left as it is and reported by the
+    caller. `replacements` caches the lookup across tables."""
+    cr = env.cr
+    Tax = env["account.tax"].with_context(active_test=False)
+    for keep_id, tax_id in rows:
+        if tax_id not in replacements:
+            replacements[tax_id] = _active_equivalent_tax(
+                env, Tax.browse(tax_id), company_ids
+            )
+        new_tax = replacements[tax_id]
+        if not new_tax:
+            continue
+        cr.execute(
+            f"""
+            INSERT INTO {table} ({keep_column}, {tax_column}) VALUES (%s, %s)
+            ON CONFLICT DO NOTHING
+            """,
+            (keep_id, new_tax.id),
+        )
+        cr.execute(
+            f"DELETE FROM {table} WHERE {keep_column} = %s AND {tax_column} = %s",
+            (keep_id, tax_id),
+        )
+        _logger.info(
+            "%s: %s=%s, archived tax id=%s -> '%s' (id=%s)",
+            table,
+            keep_column,
+            keep_id,
+            tax_id,
+            new_tax.display_name,
+            new_tax.id,
+        )
+    env.invalidate_all()
+
+
+def replace_inactive_document_taxes(env, id_a, id_b):
+    """Point the live documents and the products of A and B to active taxes.
+
+    The tax merge only re-maps many2one fields, and the taxes of an order line
+    or of a product live in a many2many. An order that was open when the
+    companies merged keeps the branch tax, archived by now, and the invoice it
+    builds later mixes it with the active tax of the same group: the totals the
+    invoice shows stop matching its own journal entry.
+
+    Posted journal items are left alone on purpose: they are accounting
+    history. Draft ones are re-mapped, they still have to be posted."""
+    cr = env.cr
+    company_ids = (id_a, id_b)
+    replacements = {}
+
+    def _replace(table, keep_column, join_and_where):
+        if not table_exists(cr, table):
+            return
+        cr.execute(
+            f"""
+            SELECT rel.{keep_column}, rel.account_tax_id
+              FROM {table} rel
+              JOIN account_tax t ON t.id = rel.account_tax_id
+              {join_and_where}
+            """,
+            (company_ids,),
+        )
+        replace_archived_tax_rows(
+            env,
+            company_ids,
+            table,
+            keep_column,
+            "account_tax_id",
+            cr.fetchall(),
+            replacements,
+        )
+
+    # Orders with something still to invoice: the invoice takes its taxes from
+    # these lines, so an archived tax here becomes an archived tax on a brand
+    # new invoice.
+    _replace(
+        "account_tax_sale_order_line_rel",
+        "sale_order_line_id",
+        """JOIN sale_order_line sol ON sol.id = rel.sale_order_line_id
+           JOIN sale_order so ON so.id = sol.order_id
+          WHERE NOT t.active
+            AND so.company_id IN %s
+            AND so.state IN ('draft', 'sent', 'sale')
+            AND so.invoice_status != 'invoiced'""",
+    )
+    _replace(
+        "account_tax_purchase_order_line_rel",
+        "purchase_order_line_id",
+        """JOIN purchase_order_line pol ON pol.id = rel.purchase_order_line_id
+           JOIN purchase_order po ON po.id = pol.order_id
+          WHERE NOT t.active
+            AND po.company_id IN %s
+            AND po.state IN ('draft', 'sent', 'purchase')
+            AND po.invoice_status != 'invoiced'""",
+    )
+    _replace(
+        "account_move_line_account_tax_rel",
+        "account_move_line_id",
+        """JOIN account_move_line aml ON aml.id = rel.account_move_line_id
+           JOIN account_move am ON am.id = aml.move_id
+          WHERE NOT t.active
+            AND am.company_id IN %s
+            AND am.state = 'draft'""",
+    )
+
+    # The product masters, or every new line keeps proposing the archived tax.
+    for table in ("product_taxes_rel", "product_supplier_taxes_rel"):
+        if not table_exists(cr, table):
+            continue
+        cr.execute(
+            f"""
+            SELECT rel.prod_id, rel.tax_id
+              FROM {table} rel
+              JOIN account_tax t ON t.id = rel.tax_id
+             WHERE NOT t.active
+               AND t.company_id IN %s
+            """,
+            (company_ids,),
+        )
+        replace_archived_tax_rows(
+            env, company_ids, table, "prod_id", "tax_id", cr.fetchall(), replacements
+        )
+
+    left = [tax_id for tax_id, new_tax in replacements.items() if not new_tax]
+    if left:
+        _logger.warning(
+            "No active equivalent for the archived taxes %s: the documents and "
+            "products that use them keep them",
+            env["account.tax"]
+            .with_context(active_test=False)
+            .browse(left)
+            .mapped("display_name"),
+        )
+
+
 def replace_inactive_fiscal_position_taxes(env, id_a, id_b):
     """Point the active fiscal positions of A and B to active taxes.
 
@@ -662,39 +803,10 @@ def replace_inactive_fiscal_position_taxes(env, id_a, id_b):
     Tax = env["account.tax"].with_context(active_test=False)
     replacements = {}
 
-    def _replacement(tax_id):
-        if tax_id not in replacements:
-            replacements[tax_id] = _active_equivalent_tax(
-                env, Tax.browse(tax_id), company_ids
-            )
-        return replacements[tax_id]
-
     def _replace_rows(table, keep_column, tax_column, rows):
-        for keep_id, tax_id in rows:
-            new_tax = _replacement(tax_id)
-            if not new_tax:
-                continue
-            cr.execute(
-                f"""
-                INSERT INTO {table} ({keep_column}, {tax_column}) VALUES (%s, %s)
-                ON CONFLICT DO NOTHING
-                """,
-                (keep_id, new_tax.id),
-            )
-            cr.execute(
-                f"DELETE FROM {table} WHERE {keep_column} = %s AND {tax_column} = %s",
-                (keep_id, tax_id),
-            )
-            _logger.info(
-                "%s: %s=%s, archived tax id=%s -> '%s' (id=%s)",
-                table,
-                keep_column,
-                keep_id,
-                tax_id,
-                new_tax.display_name,
-                new_tax.id,
-            )
-        env.invalidate_all()
+        replace_archived_tax_rows(
+            env, company_ids, table, keep_column, tax_column, rows, replacements
+        )
 
     cr.execute(
         """
@@ -2774,6 +2886,10 @@ def migrate_store_to_branch(cr, env):
                     f"Could not merge {model_name} from {branch_company.name}: {e}"
                 )
 
+        # Con los impuestos ya fusionados y archivados, redirigir lo que los
+        # documentos vivos y los productos todavía les apuntan.
+        replace_inactive_document_taxes(env, parent_company_id, branch_company.id)
+
         cr.commit()
 
     # 6. Archivar cuentas de las branches (opcional, dependiendo de la estrategia)
@@ -4062,6 +4178,11 @@ def migrate(cr, version):
             # del merge porque el duplicado lo crea el re-mapeo de tax_id
             # (T-125999).
             dedupe_and_move_partner_tax(cr, env, id_a, id_b)
+
+            # 2.2 Con los impuestos ya fusionados y archivados, redirigir lo que
+            # los documentos vivos y los productos todavía les apuntan.
+            replace_inactive_document_taxes(env, id_a, id_b)
+            cr.commit()
 
             # 3. Propiedades JSONB (SQL)
             migrate_json_company_dependent(cr, env, id_a, id_b)
