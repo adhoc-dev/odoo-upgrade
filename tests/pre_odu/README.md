@@ -1,4 +1,4 @@
-# tests/pre_odu — siembra de la base de prueba (lado 18, antes de ODU)
+# tests/pre_odu — siembra de la base de prueba (versión de origen, antes de ODU)
 
 Scripts que preparan la **base candidata** antes de que viaje a ODU: siembran
 los registros que después referencian los tests declarativos de
@@ -14,12 +14,16 @@ testing.
 ## Layout y contrato
 
 ```
-tests/pre_odu/<modulo>/<always|180_190>/NNN-<nombre>.py
+tests/pre_odu/<modulo>/<always|<origen>_<destino>>/NNN-<nombre>.py
 ```
 
 - Cada script expone `migrate(env)` y debe ser **idempotente** (re-correrlo no
   duplica datos).
-- Orden de ejecución: `always/` primero, después el salto (`180_190/`);
+- La carpeta del salto lleva las versiones sin puntos: `180_190/` para 18→19,
+  `190_200/` para 19→20. Ahí va solo la siembra de lo que cambia en ese salto:
+  la del salto anterior no se copia. Lo que sirve en todos los saltos (el
+  canary) va en `always/`.
+- Orden de ejecución: `always/` primero, después el salto;
   dentro de cada grupo, por nombre de archivo (de ahí el prefijo `NNN-`).
 - Los corre el step `run-prepare-demo` de runbot (Fase A) vía `odoo shell`
   sobre la base semilla, antes de `send-db-to-upgrade`.
