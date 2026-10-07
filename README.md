@@ -3,6 +3,8 @@
 Manejamos todos los scripts de actualizacion este unico branch.
 Para que versiones aplica se gestiona utilizando las versiones correspondientes en cada modulo
 
+Las ramas de trabajo empiezan con la versión de Odoo a la que sube el cambio (`19.0-t-12345-abc`), no con `master`: runbot toma la versión de ese prefijo.
+
 ## Estructura
 
 - `modules/`: lo que Odoo lee como `--upgrade-path`, un script por módulo y versión

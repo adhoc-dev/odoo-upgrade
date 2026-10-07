@@ -20,3 +20,17 @@ jobs:
             echo "$unexpected"
             exit 1
           fi
+
+  branch-name:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # Runbot takes the Odoo version from the branch prefix; without it the batch is green with no builds
+      - name: Branch starts with the target Odoo version
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if ! [[ "$HEAD_REF" =~ ^[0-9]+\.0- ]]; then
+            echo "::error::Branch '$HEAD_REF' must start with the Odoo version it upgrades to, e.g. 19.0-t-12345-abc. Runbot reads the version from that prefix."
+            exit 1
+          fi
