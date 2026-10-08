@@ -6,14 +6,12 @@ has its own copy.
 
 import logging
 
-from odoo.addons.base.models.ir_ui_view import IrUiView
-
 from oba import should_run
 
 _logger = logging.getLogger(__name__)
 
 
-_original_check_xml = IrUiView._check_xml
+_original_check_xml = None
 
 
 def _check_xml(self):
@@ -27,4 +25,9 @@ def _check_xml(self):
 def migrate(cr, version):
     if not should_run(cr, version):
         return
+    # Imported here: the folder loads on every jump, and before 19 the class is View
+    from odoo.addons.base.models.ir_ui_view import IrUiView
+
+    global _original_check_xml
+    _original_check_xml = IrUiView._check_xml
     IrUiView._check_xml = _check_xml
