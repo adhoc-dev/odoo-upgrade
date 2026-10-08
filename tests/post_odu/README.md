@@ -43,6 +43,26 @@ De dónde salen los registros que el test referencia con `ref()`:
 `expected_lib.py` trae las primitivas (`ref` / `company_ref`) y el
 descubrimiento de `<modulo>/tests/expected_*.py`.
 
+## Dónde vive cada pieza
+
+| Pieza | Dónde | Qué es |
+|---|---|---|
+| `check_expected.py` | acá | el runner: corre en `odoo shell` y decide el exit code |
+| `expected_lib.py` | acá | el formato: primitivas, validación de lo declarado y descubrimiento, sin Odoo |
+| `test_expected_lib.py` | acá | el arnés de `expected_lib.py` |
+| `expected_*.py` | `modules/<modulo>/tests/` | la data: un archivo por módulo y versión |
+| la siembra | `tests/pre_odu/` | los registros que la data de prueba no trae |
+
+`expected_lib.py` no va a `lib/oba`: `lib/oba` es lo que importan los scripts
+durante la actualización, y nada de este formato lo usa un script. Hoy sus
+únicos consumidores son el runner y su arnés. Se muda cuando aparezca un
+consumidor fuera de `post_odu`, y a un subpaquete propio, no a `oba` directo.
+
+El runner tampoco se mueve solo: el step 31 de runbot (`test-migration-check`)
+busca `tests/post_odu/check_expected.py` y, si no lo encuentra, saltea el
+check con un log y el build sigue verde. Cambiarle el path pide tocar el step
+en el mismo momento.
+
 ## Campos relacionales: el valor también se declara con `ref()`
 
 Un m2o o un x2m se declara con las mismas primitivas que la clave, así el
