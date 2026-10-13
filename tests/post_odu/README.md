@@ -59,9 +59,9 @@ durante la actualización, y nada de este formato lo usa un script. Hoy sus
 consumidor fuera de `post_odu`, y a un subpaquete propio, no a `oba` directo.
 
 El runner tampoco se mueve solo: el step 31 de runbot (`test-migration-check`)
-busca `tests/post_odu/check_expected.py` y, si no lo encuentra, saltea el
-check con un log y el build sigue verde. Cambiarle el path pide tocar el step
-en el mismo momento.
+busca `tests/post_odu/check_expected.py` y, si el checkout de `odoo-upgrade` no
+lo trae, termina el build en `ko`. Cambiarle el path pide tocar el step en el
+mismo momento.
 
 ## Campos relacionales: el valor también se declara con `ref()`
 
