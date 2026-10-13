@@ -1,5 +1,7 @@
 import logging
 
+from oba import should_run_pre_odoo
+
 _logger = logging.getLogger(__name__)
 
 # Modulos que en 18.0 son nuestros y en 19.0 pasaron a existir en Odoo con el mismo nombre
@@ -20,6 +22,9 @@ def migrate(cr, version):
     Equivalente en SQL del rename de `openupgradelib.update_module_names`. Los UPDATE son
     no-op si el modulo no esta en la base, asi que no hace falta chequear la instalacion.
     """
+    # Only on the first hop: a base that already went through Odoo comes back renamed
+    if not should_run_pre_odoo(cr, first_target=19, last_target=19, position="first"):
+        return
     for old, new in MODULE_RENAMES:
         _logger.info("Renaming module %s to %s", old, new)
         cr.execute("UPDATE ir_module_module SET name = %s WHERE name = %s", (new, old))
