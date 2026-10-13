@@ -10,6 +10,8 @@
     ],
     "renamed_modules": [],
     "renamed_xmlids": [
-        ["payment_redsys.redsys_form", "payment_redsys.redirect_form"]
+        ["payment_redsys.redsys_form", "payment_redsys.redirect_form"],
+        ["l10n_ar_stock.arba_cot_enabled", "l10n_ar_stock_ux.arba_cot_enabled"],
+        ["l10n_ar_stock.arba_cot_file_sequence", "l10n_ar_stock_ux.arba_cot_file_sequence"]
     ]
 }
