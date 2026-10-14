@@ -41,4 +41,26 @@ EXPECTED = {
             "name@es_AR": "Producto traducido a mano",
         },
     },
+    # base/0.0.0/end-220-journal_book_groups_to_ledgers.py: pasa los grupos del
+    # libro diario a Ledgers (siembra en
+    # tests/pre_odu/account_journal_book_report/190_200/010-book_group_cases.py).
+    # Fuera de este check: que un diario con grupo reciba su Ledger nuevo, con o
+    # sin sufijo. El Ledger lo crea el script, sin xmlid, y no hay ref() que lo
+    # declare.
+    "account.journal": {
+        # Preservacion: el diario no tenia grupo del libro diario. Si queda con
+        # un Ledger, el script se lo asigno sin grupo, o el pase a Odoo le dio
+        # el Ledger sembrado que lo excluia.
+        ref("upgrade_prepare_demo.journal_book_group_none"): {
+            "journal_group_id": None,
+        },
+    },
+    "account.journal.group": {
+        # Choque de nombre: un grupo se llama como este Ledger, que ya existia.
+        # El script crea otro Ledger con sufijo y a este no lo toca. Si cambia
+        # el nombre, el script reuso o renombro el Ledger del cliente.
+        ref("upgrade_prepare_demo.ledger_book_group_clash"): {
+            "name": "Upgrade case ledger clash",
+        },
+    },
 }
