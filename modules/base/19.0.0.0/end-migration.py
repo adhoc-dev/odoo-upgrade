@@ -1978,20 +1978,6 @@ def share_tax_accounts_with_parent(cr, env, id_a):
 # ============================================================================
 
 
-def table_exists(cr, table_name):
-    """Check if a table exists in the database."""
-    cr.execute(
-        """
-        SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_name = %s
-        )
-    """,
-        (table_name,),
-    )
-    return cr.fetchone()[0]
-
-
 # def rebuild_store_mapping_from_backup(cr, env, parent_company_id, branch_company_ids):
 #     """
 #     Reconstruye el mapeo {store_id: company_id} desde la tabla de backup res_store_bu.
