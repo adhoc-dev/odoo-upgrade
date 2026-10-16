@@ -4,9 +4,10 @@ Personalizations by module (``personalizations`` or ``p13n`` anywhere in the nam
 
 - migrated, installed in the new database: the note tells the customer to check them.
 - not migrated (no code in this version, still ``to upgrade`` or ``to install`` when the
-  load loop ends): the module is removed, a warning with a fixed text goes to the request,
-  and the request stops, unless the ticket parameter ``ignore_personalizations_check`` is
-  set. The customer note validation looks for that text, so it must not change.
+  load loop ends): the module is removed and a warning with a fixed text goes to the request,
+  unless the ticket parameter ``ignore_personalizations_check`` is set. The customer note
+  validation looks for that text, so it must not change. Only a production request stops: a
+  test one goes on, and the upgrade line 2257 tags the ticket as waiting for the module.
 
 Personalizations by interface: read from the "Mi base" dashboard (``saas_client.dashboard``)
 when its module is loaded; if not, only the custom views count, as the upgrade line did when
@@ -78,11 +79,13 @@ def _check_modules(cr):
         _logger.info("Removing the personalization module %s: it has no code in this version", name)
         util.remove_module(cr, name)
 
-    if (request_context(cr).get("parameters") or {}).get("ignore_personalizations_check"):
+    context = request_context(cr)
+    if (context.get("parameters") or {}).get("ignore_personalizations_check"):
         _logger.info("Personalization modules not migrated %s: ignored by the ticket parameter", missing)
         return migrated
     log_message(cr, MISSING_MODULE_WARNING, "warning")
-    set_breaks(cr, MISSING_MODULE_BREAKS)
+    if context.get("aim") != "test":
+        set_breaks(cr, MISSING_MODULE_BREAKS)
     return migrated
 
 
