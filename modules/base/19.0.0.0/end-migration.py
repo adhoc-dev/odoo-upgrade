@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 from contextlib import contextmanager
 
@@ -432,6 +433,41 @@ def table_exists(cr, table_name):
         (table_name,),
     )
     return cr.fetchone()[0]
+
+
+# Los pasos que ya quedaron commiteados, para que una corrida que retoma un -u
+# fallido siga desde el paso que cortó en vez de repetir la fusión (T-77885).
+PROGRESS_PARAM = "migration_19_end_progress"
+# Solo para probar el retome: el paso con esta clave falla después de hacer su trabajo.
+FAIL_AT_STEP_ENV = "MIGRATION_19_END_FAIL_AT_STEP"
+
+
+def _done_steps(env):
+    return json.loads(
+        env["ir.config_parameter"].sudo().get_param(PROGRESS_PARAM) or "[]"
+    )
+
+
+def step_pending(env, key):
+    """Si el paso todavía no lo commiteó una corrida anterior."""
+    if key in _done_steps(env):
+        _logger.info("Paso %s ya commiteado por una corrida anterior: se saltea", key)
+        return False
+    return True
+
+
+def step_done(env, key):
+    """Marca el paso y lo commitea junto con su trabajo.
+
+    La marca va en la misma transacción que el trabajo: si el paso falla se
+    pierden los dos, y la corrida siguiente arranca en él.
+    """
+    if os.environ.get(FAIL_AT_STEP_ENV) == key:
+        raise UserError("Falla forzada en el paso %s (%s)" % (key, FAIL_AT_STEP_ENV))
+    env["ir.config_parameter"].sudo().set_param(
+        PROGRESS_PARAM, json.dumps(_done_steps(env) + [key])
+    )
+    env.cr.commit()
 
 
 def flag_remapped_dependents(env, model, field_name, record_ids):
@@ -2888,39 +2924,47 @@ def migrate_store_to_branch(cr, env):
     # 2.a Stores are branches of the same legal entity as the parent company,
     # so every branch has to carry the parent's VAT and address. Sin el pais no
     # corre la localizacion en la branch (ver sync_branch_address_with_parent).
-    sync_branch_vat_with_parent(cr, parent_company_id, branch_company_ids)
-    # Before the address sync: its flush_all() recomputes legal_entity_root_id
-    # with the VAT just set, and that runs _check_legal_entity_delegated_fields
-    # (account_ux) against these fields. The whole subtree, for nested stores.
-    sync_branch_accounting_policy_with_parent(
-        cr,
-        env,
-        parent_company_id,
-        Company.search(
-            [("id", "child_of", parent_company_id), ("id", "!=", parent_company_id)]
-        ).ids,
-    )
-    sync_branch_address_with_parent(cr, env, parent_company_id, branch_company_ids)
-    create_branch_receiptbooks(env, branch_company_ids)
-    cr.commit()
+    # Cada paso commitea con su marca, como en la fusión de compañías (T-77885)
+    step = "store:%s:" % parent_company_id
+    if step_pending(env, step + "2.a"):
+        sync_branch_vat_with_parent(cr, parent_company_id, branch_company_ids)
+        # Before the address sync: its flush_all() recomputes legal_entity_root_id
+        # with the VAT just set, and that runs _check_legal_entity_delegated_fields
+        # (account_ux) against these fields. The whole subtree, for nested stores.
+        sync_branch_accounting_policy_with_parent(
+            cr,
+            env,
+            parent_company_id,
+            Company.search(
+                [("id", "child_of", parent_company_id), ("id", "!=", parent_company_id)]
+            ).ids,
+        )
+        sync_branch_address_with_parent(cr, env, parent_company_id, branch_company_ids)
+        create_branch_receiptbooks(env, branch_company_ids)
+        step_done(env, step + "2.a")
 
     # 2.b Defensa para builds re-corridos / companies reutilizadas: si quedó
     # algún payment.provider de una branch apuntando a una website de otra
     # company, lo limpiamos antes de tocar nada por ORM (website tiene check
     # de company EXACTO y haría saltar _check_company más adelante).
-    cleanup_branch_provider_websites(env, branch_company_ids)
-    cr.commit()
+    if step_pending(env, step + "2.b"):
+        cleanup_branch_provider_websites(env, branch_company_ids)
+        step_done(env, step + "2.b")
 
-    # 3. Migrar campos store_id a company_id
-    _logger.info("Migrating store_id fields to company_id")
-    migrate_store_fields_to_company(cr, env, mapping)
-    cr.commit()
+    # 3. Migrar campos store_id a company_id. Commitea adentro, antes de mover
+    # los diarios de cada store: si corta, el paso se repite entero, y tanto
+    # los UPDATE como la resolución de códigos de diario se pueden repetir.
+    if step_pending(env, step + "3"):
+        _logger.info("Migrating store_id fields to company_id")
+        migrate_store_fields_to_company(cr, env, mapping)
+        step_done(env, step + "3")
 
     # 3.b Alinear ubicaciones, stock y movimientos de cada warehouse con su
     # company: no tienen store_id propio, así que el paso anterior no los toca.
-    _logger.info("Aligning warehouse locations, stock and moves with their company")
-    migrate_warehouse_stock_to_company(cr, env)
-    cr.commit()
+    if step_pending(env, step + "3.b"):
+        _logger.info("Aligning warehouse locations, stock and moves with their company")
+        migrate_warehouse_stock_to_company(cr, env)
+        step_done(env, step + "3.b")
 
     # 4. Recalcular parent_path para todas las companies
     _logger.info("Recalculating company parent_path")
@@ -2935,6 +2979,8 @@ def migrate_store_to_branch(cr, env):
 
     # Procesar MERGE_OR_MOVE para cada branch
     for branch_company_id in branch_company_ids:
+        if not step_pending(env, step + "5:%s" % branch_company_id):
+            continue
         branch_company = Company.browse(branch_company_id)
         _logger.info(
             f"Processing configuration from branch '{branch_company.name}' to parent"
@@ -2956,34 +3002,37 @@ def migrate_store_to_branch(cr, env):
         # Con los impuestos ya fusionados y archivados, redirigir lo que los
         # documentos vivos y los productos todavía les apuntan.
         replace_inactive_document_taxes(env, parent_company_id, branch_company.id)
-
-        cr.commit()
+        step_done(env, step + "5:%s" % branch_company_id)
 
     # 6. Archivar cuentas de las branches (opcional, dependiendo de la estrategia)
     # Por ahora no archivamos, las dejamos activas en sus branches
 
     # 6.b Limpiar diarios de tax returns que el alta de la company haya creado
     # por branch: el cierre fiscal vive solo en el root.
-    cleanup_branch_tax_return_journals(env, parent_company_id, branch_company_ids)
-    cr.commit()
+    if step_pending(env, step + "6.b"):
+        cleanup_branch_tax_return_journals(env, parent_company_id, branch_company_ids)
+        step_done(env, step + "6.b")
 
     # 7. Dar acceso a los usuarios a las branches que antes tenían vía store_ids
-    _logger.info("Migrating user company access from store_ids to branch companies")
-    migrate_store_user_access_to_company(cr, env, mapping)
-    cr.commit()
+    if step_pending(env, step + "7"):
+        _logger.info("Migrating user company access from store_ids to branch companies")
+        migrate_store_user_access_to_company(cr, env, mapping)
+        step_done(env, step + "7")
 
     # 8. Alinear sale.order.type con la nueva jerarquía: el order type se
     # comparte desde la parent pero factura con el diario de la sucursal.
-    _logger.info("Aligning sale.order.type company references")
-    align_order_type_invoice_company(cr)
-    clean_order_type_inconsistent_refs(cr)
-    cr.commit()
+    if step_pending(env, step + "8"):
+        _logger.info("Aligning sale.order.type company references")
+        align_order_type_invoice_company(cr)
+        clean_order_type_inconsistent_refs(cr)
+        step_done(env, step + "8")
 
     # 9. La branch no hereda las properties contables del parent (ir.default no
     # sube por la jerarquía), así que sin esto no resuelve la cuenta a cobrar.
-    _logger.info("Copying parent account defaults to branch companies")
-    copy_parent_account_defaults_to_branches(env, parent_company_id, branch_company_ids)
-    cr.commit()
+    if step_pending(env, step + "9"):
+        _logger.info("Copying parent account defaults to branch companies")
+        copy_parent_account_defaults_to_branches(env, parent_company_id, branch_company_ids)
+        step_done(env, step + "9")
 
     return parent_company.id
 
@@ -4315,68 +4364,82 @@ def migrate(cr, version):
             ids_b = [ids_b]
 
         for id_b in ids_b:
-            # 0. Establecer Jerarquía Branch
-            cr.execute(
-                "UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b)
-            )
+            # Cada paso commitea con su marca: un -u que retoma sigue desde el
+            # paso que cortó, sin repetir lo que ya quedó grabado (T-77885).
+            step = "merge:%s:%s:" % (id_a, id_b)
 
-            # 0.1 If A and B share the VAT they are already the same legal
-            # entity once B hangs from A — nothing to clear, just log it.
-            check_branch_vat_matches_parent(cr, id_a, id_b)
+            if step_pending(env, step + "0-1.2"):
+                # 0. Establecer Jerarquía Branch
+                cr.execute(
+                    "UPDATE res_company SET parent_id = %s WHERE id = %s", (id_a, id_b)
+                )
 
-            # 1. Movimiento Operativo (SQL)
-            migrate_standard_fields(cr, env, id_a, id_b)
+                # 0.1 If A and B share the VAT they are already the same legal
+                # entity once B hangs from A — nothing to clear, just log it.
+                check_branch_vat_matches_parent(cr, id_a, id_b)
 
-            # 1.1 quotation.document: su company vive en el adjunto, no en una
-            # columna propia, asi que el barrido de arriba no lo ve.
-            move_quotation_documents_to_parent(cr, id_a)
+                # 1. Movimiento Operativo (SQL)
+                migrate_standard_fields(cr, env, id_a, id_b)
 
-            # 1.2 ir.default es KEEP, pero los defaults de un modelo que acaba de
-            # subir a la parent tienen que subir con el.
-            move_user_defaults_to_parent(cr, id_a)
+                # 1.1 quotation.document: su company vive en el adjunto, no en una
+                # columna propia, asi que el barrido de arriba no lo ve.
+                move_quotation_documents_to_parent(cr, id_a)
+
+                # 1.2 ir.default es KEEP, pero los defaults de un modelo que acaba de
+                # subir a la parent tienen que subir con el.
+                move_user_defaults_to_parent(cr, id_a)
+                step_done(env, step + "0-1.2")
 
             # 2. Fusión de Configuración (ORM)
             merge_models = [
                 m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"
             ]
             for model_name in merge_models:
-                handle_merge_or_move(env, model_name, id_a, id_b)
-                cr.commit()
+                if step_pending(env, step + "2:" + model_name):
+                    handle_merge_or_move(env, model_name, id_a, id_b)
+                    step_done(env, step + "2:" + model_name)
 
-            # 2.1 l10n_ar.partner.tax: no está en MODEL_STRATEGY. Va después
-            # del merge porque el duplicado lo crea el re-mapeo de tax_id
-            # (T-125999).
-            dedupe_and_move_partner_tax(cr, env, id_a, id_b)
+            if step_pending(env, step + "2.1-2.2"):
+                # 2.1 l10n_ar.partner.tax: no está en MODEL_STRATEGY. Va después
+                # del merge porque el duplicado lo crea el re-mapeo de tax_id
+                # (T-125999).
+                dedupe_and_move_partner_tax(cr, env, id_a, id_b)
 
-            # 2.2 Con los impuestos ya fusionados y archivados, redirigir lo que
-            # los documentos vivos y los productos todavía les apuntan.
-            replace_inactive_document_taxes(env, id_a, id_b)
-            cr.commit()
+                # 2.2 Con los impuestos ya fusionados y archivados, redirigir lo que
+                # los documentos vivos y los productos todavía les apuntan.
+                replace_inactive_document_taxes(env, id_a, id_b)
+                step_done(env, step + "2.1-2.2")
 
-            # 3. Propiedades JSONB (SQL)
-            migrate_json_company_dependent(cr, env, id_a, id_b)
+            if step_pending(env, step + "3-5.1"):
+                # 3. Propiedades JSONB (SQL)
+                migrate_json_company_dependent(cr, env, id_a, id_b)
 
-            # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
-            env["res.company"].browse(id_b)._write({"parent_id": id_a})
-            # 5.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
-            env["res.company"]._parent_store_compute()
-            cr.commit()
+                # 5. Recomputo correcto de parent_path, metodos y campos almacenados relacionados con la jerarquía de compañías
+                env["res.company"].browse(id_b)._write({"parent_id": id_a})
+                # 5.1. CRÍTICO: Recalcula parent_path para TODAS las compañías desde cero
+                env["res.company"]._parent_store_compute()
+                step_done(env, step + "3-5.1")
 
-            # 6. Consolida el plan de cuentas del árbol
-            consolidate_branch_accounts(cr, env, id_a)
+            if step_pending(env, step + "6-7.2"):
+                # 6. Consolida el plan de cuentas del árbol
+                consolidate_branch_accounts(cr, env, id_a)
 
-            # 7.1. Recomputa campos stored en journals que dependen de la jerarquía
-            journals = env["account.journal"].search([])
-            journals.invalidate_recordset(["branch_order"])
-            journals._compute_branch_order()
-            journals.flush_recordset(["branch_order"])
+                # 7.1. Recomputa campos stored en journals que dependen de la jerarquía
+                journals = env["account.journal"].search([])
+                journals.invalidate_recordset(["branch_order"])
+                journals._compute_branch_order()
+                journals.flush_recordset(["branch_order"])
 
-            # 7.2. Recomputa shared_to_branches en payment method lines (related stored)
-            pmls = env["account.payment.method.line"].search([])
-            if "shared_to_branches" in pmls._fields:
-                pmls.invalidate_recordset(["shared_to_branches"])
-                pmls.flush_recordset(["shared_to_branches"])
+                # 7.2. Recomputa shared_to_branches en payment method lines (related stored)
+                pmls = env["account.payment.method.line"].search([])
+                if "shared_to_branches" in pmls._fields:
+                    pmls.invalidate_recordset(["shared_to_branches"])
+                    pmls.flush_recordset(["shared_to_branches"])
+                step_done(env, step + "6-7.2")
 
+        # Lo que sigue es por mapeo, una vez fusionadas todas sus branches
+        if not step_pending(env, "merge:%s:end" % id_a):
+            continue
         for warehouse in env["stock.warehouse"].search([]):
             for id_b in ids_b:
                 if warehouse.partner_id.name == env["res.company"].browse(id_b).name:
@@ -4461,7 +4524,7 @@ def migrate(cr, version):
             )
 
         clear_auxiliary_branch_vat(env, id_a, ids_b)
-        cr.commit()
+        step_done(env, "merge:%s:end" % id_a)
     # ========================================================================
     # MODE 1: STORE TO BRANCH (Single company with multi-store -> Multi-company branches)
     # ========================================================================
@@ -4479,7 +4542,7 @@ def migrate(cr, version):
     _logger.info("Running STORE TO BRANCH migration")
     parent_company_id = migrate_store_to_branch(cr, env)
 
-    if parent_company_id:
+    if parent_company_id and step_pending(env, "store:%s:end" % parent_company_id):
         # Después de migrar stores a branches, consolidar el plan de cuentas
         consolidate_branch_accounts(cr, env, parent_company_id)
 
@@ -4499,7 +4562,7 @@ def migrate(cr, version):
         )
         set_users_default_company(env, parent_company_id)
         realign_subcontracting_pointers(env)
-        cr.commit()
+        step_done(env, "store:%s:end" % parent_company_id)
     
     env['res.company'].search([('parent_id','!=',False)])._compute_legal_entity_root_id()
     cr.commit()
