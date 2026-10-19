@@ -11,7 +11,9 @@
 # una sola cosa: que lo que pasó por el migration script salga como debe.
 #
 # Reglas anti-falso-verde (nativas del runner, nadie las re-implementa por test):
-#   - 0 archivos expected descubiertos            => FAIL
+#   - expected sin versión en el nombre           => FAIL
+# Un salto sin ningún expected_<ver>.py no es FAIL: sale verde con un AVISO
+# en el log, para no dejar en ko los builds de un salto recién abierto.
 #   - expected ilegible                           => FAIL
 #   - ref que no resuelve / registro desaparecido => FAIL (ver abajo)
 #   - archivo con 0 asserts                       => FAIL
@@ -204,10 +206,23 @@ def _check_field(record, field, want, key, xmlid):
 # Cinturón global: ninguna excepción escapa de este bloque — el resumen y el
 # os._exit de abajo corren siempre, así el log del step termina en la línea
 # "=== check declarativo: ..." también cuando el runner mismo falla.
+skipped, notice = [], None
 try:
-    files = list(X.iter_expected_files(os.path.join(ROOT, "modules")))
+    from odoo import release
+
+    tag = X.version_tag(release.serie)
+    files, skipped, unnamed = X.split_by_version(
+        X.iter_expected_files(os.path.join(ROOT, "modules")), tag)
+    for mod_dir, fname, _path in unnamed:
+        failures.append(
+            "%s: el nombre no dice de qué salto es — se llama "
+            "expected_<ver>.py (expected_%s.py para este)"
+            % (X.data_key(mod_dir, fname), tag))
     if not files:
-        failures.append("0 archivos expected_*.py bajo %s — nada se verificó" % ROOT)
+        # a jump nobody wrote checks for yet must not turn every build ko;
+        # it is said in the log instead of passing silently
+        notice = ("sin expected_%s.py bajo %s: nada que verificar en el salto a %s"
+                  % (tag, ROOT, release.serie))
 
     for mod_dir, fname, path in files:
         key = X.data_key(mod_dir, fname)
@@ -285,6 +300,10 @@ except Exception as exc:
 
 print("")
 print("=== check declarativo: %s OK, %s FAIL ===" % (passed, len(failures)))
+if notice:
+    print("AVISO - %s" % notice)
+for mod_dir, fname, _path in skipped:
+    print("SKIP - %s: es de otro salto" % X.data_key(mod_dir, fname))
 for f in failures:
     print("FAIL - %s" % f)
 

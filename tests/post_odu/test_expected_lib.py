@@ -138,5 +138,38 @@ class TestNamespace(unittest.TestCase):
             ("refs", [X.ref("base.main_company")]))
 
 
+class TestVersion(unittest.TestCase):
+    """El check corre solo los expected del salto que se está probando."""
+
+    def test_version_tag_de_la_serie(self):
+        self.assertEqual(X.version_tag("19.0"), "190")
+        self.assertEqual(X.version_tag("20.0"), "200")
+        self.assertEqual(X.version_tag("saas~18.4"), "184")
+
+    def test_expected_version_del_nombre(self):
+        self.assertEqual(X.expected_version("expected_190.py"), "190")
+        self.assertEqual(X.expected_version("expected_200.py"), "200")
+        for sin_version in ("expected_foo.py", "expected_.py", "expected_190_bis.py"):
+            self.assertIsNone(X.expected_version(sin_version))
+
+    def test_split_reparte_por_salto(self):
+        files = [
+            ("stock", "expected_190.py", "p1"),
+            ("stock", "expected_200.py", "p2"),
+            ("base", "expected_foo.py", "p3"),
+        ]
+        current, others, unnamed = X.split_by_version(files, "200")
+        self.assertEqual(current, [files[1]])
+        self.assertEqual(others, [files[0]])
+        self.assertEqual(unnamed, [files[2]])
+
+    def test_split_sin_expected_del_salto_deja_current_vacio(self):
+        # el runner lo reporta como AVISO: el salto todavía no tiene expected
+        current, others, _unnamed = X.split_by_version(
+            [("stock", "expected_190.py", "p1")], "200")
+        self.assertEqual(current, [])
+        self.assertEqual(len(others), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
