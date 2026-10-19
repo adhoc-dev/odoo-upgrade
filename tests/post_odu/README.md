@@ -43,6 +43,15 @@ De dónde salen los registros que el test referencia con `ref()`:
 `expected_lib.py` trae las primitivas (`ref` / `company_ref`) y el
 descubrimiento de `<modulo>/tests/expected_*.py`.
 
+## Cada salto corre solo sus expected
+
+`expected_<ver>.py` verifica el estado que deja el salto a esa versión:
+`expected_190.py` es el de 18→19. El check corre después del `-u`, así que toma
+la versión de la serie de Odoo que lo ejecuta (`19.0` → `190`, `20.0` → `200`) y
+corre solo esos. Los de otros saltos salen en el log como `SKIP`: un expected de
+un salto anterior mira campos que el siguiente puede renombrar o sacar, y su FAIL
+no diría nada del salto que se prueba.
+
 ## Dónde vive cada pieza
 
 | Pieza | Dónde | Qué es |
@@ -111,7 +120,11 @@ EXPECTED = {
 
 ## Anti-falso-verde (regla del runner, no de cada test)
 
-- 0 archivos descubiertos ⇒ FAIL
+- `expected_*.py` sin la versión en el nombre ⇒ FAIL
+
+Un salto sin ningún `expected_<ver>.py` no es FAIL: el check sale verde con un
+`AVISO - sin expected_<ver>.py ...` en el log. Es el estado de un salto recién
+abierto (la 20, hoy), y dejarlo en rojo pondría en ko todos sus builds.
 - expected ilegible ⇒ FAIL
 - `ref` que no resuelve o registro desaparecido ⇒ **FAIL**
 - archivo con 0 asserts ⇒ FAIL
@@ -155,7 +168,7 @@ conocidos (runbot `/data/build/ingadhoc-odoo-upgrade`, stack local
   ignorar el `before` en silencio.
 - Valores esperados: escalares y relacionales (ver arriba).
 - La parte de `expected_lib.py` que no necesita Odoo tiene arnés propio:
-  `python3 tests/post_odu/test_expected_lib.py` (19 casos, sin base ni
+  `python3 tests/post_odu/test_expected_lib.py` (23 casos, sin base ni
   infra). Lo que sí necesita un `env` —que un `ref()` resuelva, que un id
   crudo FAILee— se prueba sobre una base viva.
 - Verificar data **orgánica** de la base (registros sin xmlid, correlacionando

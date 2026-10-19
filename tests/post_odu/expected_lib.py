@@ -14,6 +14,7 @@
 # odoo shell por igual.
 
 import os
+import re
 
 
 class Ref:
@@ -137,6 +138,37 @@ def iter_expected_files(root):
         for fname in sorted(os.listdir(tests_dir)):
             if fname.startswith("expected_") and fname.endswith(".py"):
                 yield mod_dir, fname, os.path.join(tests_dir, fname)
+
+
+def version_tag(serie):
+    """Sufijo de expected_<ver>.py para la serie de Odoo que corre el check:
+    '19.0' -> '190', 'saas~18.4' -> '184'. El check corre después del -u, así
+    que la serie que corre es la versión destino del salto."""
+    return serie.split("~")[-1].replace(".", "")
+
+
+def expected_version(fname):
+    """El <ver> de expected_<ver>.py, o None si el nombre no dice el salto."""
+    match = re.fullmatch(r"expected_(\d+)\.py", fname)
+    return match.group(1) if match else None
+
+
+def split_by_version(files, tag):
+    """Reparte lo que devuelve iter_expected_files en (del salto, de otros
+    saltos, sin versión en el nombre). Un expected verifica el estado que deja
+    un salto: el de un salto anterior mira campos que el siguiente puede
+    renombrar o sacar, y su FAIL no diría nada de este. El que no dice su
+    versión no se descarta en silencio: el runner lo reporta como FAIL."""
+    current, others, unnamed = [], [], []
+    for item in files:
+        ver = expected_version(item[1])
+        if ver is None:
+            unnamed.append(item)
+        elif ver == tag:
+            current.append(item)
+        else:
+            others.append(item)
+    return current, others, unnamed
 
 
 def load_expected(path):
