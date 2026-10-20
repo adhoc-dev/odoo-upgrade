@@ -435,6 +435,9 @@ def table_exists(cr, table_name):
     return cr.fetchone()[0]
 
 
+# Le dice al runner del -u que los commits de este script no son trabajo a medias:
+# sabe en qué paso quedó, así que la corrida que sigue no se rechaza.
+RESUMABLE = True
 # Los pasos que ya quedaron commiteados, para que una corrida que retoma un -u
 # fallido siga desde el paso que cortó en vez de repetir la fusión (T-77885).
 PROGRESS_PARAM = "migration_19_end_progress"
