@@ -1,3 +1,4 @@
+import collections
 import json
 import logging
 import re
@@ -941,6 +942,97 @@ def replace_inactive_fiscal_position_taxes(env, id_a, id_b):
         )
 
 
+def mark_deprecated(record):
+    """Prefix the name of a merged branch record in every language.
+
+    A translated name keeps one value per language and the ORM writes only the
+    one of the environment (en_US here), so the users of the database kept
+    seeing the archived record under its old name."""
+    prefix = f"[DEPRECATED-{record.id}] "
+    if not record._fields["name"].translate:
+        record.name = prefix + record.name
+        return
+    record.flush_recordset(["name"])
+    record.env.cr.execute(
+        SQL(
+            """
+            UPDATE %s
+               SET name = (SELECT jsonb_object_agg(key, %s || value)
+                             FROM jsonb_each_text(name))
+             WHERE id = %s
+               AND name IS NOT NULL
+            """,
+            SQL.identifier(record._table),
+            prefix,
+            record.id,
+        )
+    )
+    record.invalidate_recordset(["name"])
+
+
+def drop_branch_vat_from_products(env, id_a, branch_tax_ids):
+    """Leave the products with the VAT of the parent only.
+
+    A product carried a VAT of the parent and one of the branch, each for its
+    own company. Once the branch taxes live in the parent the product has two
+    VAT of one company, and l10n_ar allows a single VAT per order or invoice
+    line. The parent one stays: what the branch did with the VAT (none, sales,
+    half) is now the job of its fiscal position. A product whose only VAT
+    came from the branch keeps it, and the archived ones are replaced later by
+    replace_inactive_document_taxes."""
+    cr = env.cr
+    if not column_exists(cr, "account_tax_group", "l10n_ar_vat_afip_code"):
+        return
+    for table, tax_use in (
+        ("product_taxes_rel", "sale"),
+        ("product_supplier_taxes_rel", "purchase"),
+    ):
+        if not table_exists(cr, table):
+            continue
+        cr.execute(
+            f"""
+            DELETE FROM {table} rel
+             USING account_tax t, account_tax_group g
+             WHERE t.id = rel.tax_id
+               AND g.id = t.tax_group_id
+               AND rel.tax_id IN %s
+               AND t.type_tax_use = %s
+               AND g.l10n_ar_vat_afip_code IS NOT NULL
+               AND EXISTS (
+                     SELECT 1
+                       FROM {table} own
+                       JOIN account_tax ot ON ot.id = own.tax_id
+                       JOIN account_tax_group og ON og.id = ot.tax_group_id
+                      WHERE own.prod_id = rel.prod_id
+                        AND own.tax_id NOT IN %s
+                        AND ot.company_id = %s
+                        AND ot.active
+                        AND ot.type_tax_use = %s
+                        AND og.l10n_ar_vat_afip_code IS NOT NULL
+                   )
+            RETURNING rel.tax_id
+            """,
+            (
+                tuple(branch_tax_ids),
+                tax_use,
+                tuple(branch_tax_ids),
+                id_a,
+                tax_use,
+            ),
+        )
+        dropped = collections.Counter(row[0] for row in cr.fetchall())
+        for tax_id, count in dropped.items():
+            _logger.info(
+                "%s: branch VAT id=%s taken off %s products that keep the VAT of "
+                "the parent company %s",
+                table,
+                tax_id,
+                count,
+                id_a,
+            )
+    env.invalidate_all()
+
+
 def handle_merge_or_move(env, model_name, id_a, id_b):
     """
     Intenta fusionar registros de B en A si son equivalentes.
@@ -1054,6 +1146,12 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
                         ("tax_group_id.name", "=", rec_b.tax_group_id.name),
                     ]
                 )
+                # Same rate is not the same tax when one applies always and the
+                # other only through a fiscal position (e.g. an exempt VAT for the
+                # auxiliary vs. the one for exports): merging them moves the
+                # branch history into the parent's foreign sales.
+                if "is_domestic" in rec_b._fields:
+                    domain.append(("is_domestic", "=", rec_b.is_domestic))
             if (
                 rec_b._fields.get("l10n_ar_withholding_payment_type")
                 and rec_b.l10n_ar_withholding_payment_type
@@ -1284,7 +1382,7 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             env.flush_all()
 
             if "name" in rec_b._fields:
-                rec_b.name = f"[DEPRECATED-{rec_b.id}] {rec_b.name}"
+                mark_deprecated(rec_b)
             if "active" in rec_b._fields:
                 rec_b.active = False  # Archivamos el de B para que no moleste
                 _move_record_to_parent(rec_b)
@@ -1292,6 +1390,11 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             # No hay equivalente, simplemente lo movemos a la matriz
             _logger.info(f"MOVIENDO: {model_name} '{rec_b.display_name}' a compañía A")
             _move_record_to_parent(rec_b)
+
+    # Here and not later: once moved, records_b is the only trace of which taxes
+    # came from the branch.
+    if model_name == "account.tax" and records_b:
+        drop_branch_vat_from_products(env, id_a, records_b.ids)
 
 
 def check_consistency_keep(env, model_name, id_b):
