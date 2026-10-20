@@ -123,6 +123,24 @@ class TestParseSpec(unittest.TestCase):
         self.assertIs(X.parse_spec(spec, "k", "mod.rec"), spec)
 
 
+class TestSplitField(unittest.TestCase):
+    def test_sin_idioma_es_el_campo_tal_cual(self):
+        self.assertEqual(X.split_field("name", "k", "mod.rec"), ("name", None))
+
+    def test_con_idioma(self):
+        self.assertEqual(X.split_field("name@es_AR", "k", "mod.rec"), ("name", "es_AR"))
+
+    def test_un_idioma_con_arroba_queda_entero(self):
+        # sr@latin es un código de idioma de Odoo: se corta solo en la primera @
+        self.assertEqual(X.split_field("name@sr@latin", "k", "mod.rec"), ("name", "sr@latin"))
+
+    def test_campo_o_idioma_vacio_es_error_declarado(self):
+        for mal in ("@es_AR", "name@"):
+            with self.assertRaises(ValueError) as ctx:
+                X.split_field(mal, "k", "mod.rec")
+            self.assertIn("campo@idioma", str(ctx.exception))
+
+
 class TestNamespace(unittest.TestCase):
     def test_el_namespace_del_expected_expone_solo_los_dos_helpers(self):
         # un expected_*.py se evalúa con este namespace: si entra algo más,

@@ -118,6 +118,27 @@ EXPECTED = {
   no un `esperaba X, obtuvo Y` que se leería como culpa del migration script.
 - El diff se imprime con el xmlid al lado del id (`[12 (stock.route_mto)]`).
 
+## Traducciones: el campo se declara `campo@idioma`
+
+Sin idioma, el runner lee el campo sin `lang` en el contexto. Para verificar una
+traducción, la clave lleva el idioma después de una `@`:
+
+```python
+EXPECTED = {
+    "ir.ui.menu": {
+        # El script recarga las traducciones con overwrite: el término editado a
+        # mano en es_AR vuelve al del .po. Si sigue editado, no recargó.
+        ref("sale.sale_menu_root"): {
+            "name@es_AR": "Ventas",
+        },
+    },
+}
+```
+
+- Solo aplica a un campo traducible: en otro es FAIL de lo declarado.
+- El idioma tiene que estar **activo** en la base: si no, el ORM leería el campo
+  en `en_US` y el assert compararía otra cosa. También es FAIL de lo declarado.
+
 ## Anti-falso-verde (regla del runner, no de cada test)
 
 - ningún `expected_<ver>.py` descubierto ⇒ FAIL

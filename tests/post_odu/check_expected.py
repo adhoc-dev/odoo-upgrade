@@ -152,10 +152,23 @@ def _check_field(record, field, want, key, xmlid):
     revienta, un typo de campo) se deja escapar y la reporta el llamador."""
     try:
         kind, declared = X.parse_expected_value(want, key, xmlid, field)
+        fname, lang = X.split_field(field, key, xmlid)
     except ValueError as exc:
         raise _DeclError(str(exc))
 
-    fdef = record._fields[field]  # KeyError de un typo: lo agarra el llamador
+    fdef = record._fields[fname]  # KeyError de un typo: lo agarra el llamador
+    if lang:
+        # Un idioma inactivo, o un campo que no se traduce, se leería en en_US
+        # y el assert compararía otra cosa que la traducción declarada.
+        if not fdef.translate:
+            raise _DeclError(
+                "%s: %s: %s no es traducible: 'campo@idioma' solo aplica a un "
+                "campo traducible" % (key, xmlid, fname))
+        if not env["res.lang"].search_count([("code", "=", lang)]):  # noqa: F821
+            raise _DeclError(
+                "%s: %s: %s: el idioma %s no está activo en la base, y el ORM "
+                "leería el campo en en_US" % (key, xmlid, field, lang))
+        record = record.with_context(lang=lang)
     # `relational` es False para many2one_reference y reference, que igual
     # apuntan a un registro. Sin este corte los dos se colaban por la rama
     # escalar: en un many2one_reference (el res_id de mail.activity, de
@@ -174,7 +187,7 @@ def _check_field(record, field, want, key, xmlid):
             raise _DeclError(
                 "%s: %s: %s no es relacional (%s) — ref() del lado del valor "
                 "solo aplica a m2o/o2m/m2m" % (key, xmlid, field, fdef.type))
-        got = _norm(record[field])
+        got = _norm(record[fname])
         if got == _norm(want):
             return None
         return "%s: %s: %s esperaba %r, obtuvo %r" % (key, xmlid, field, want, got)
@@ -196,7 +209,7 @@ def _check_field(record, field, want, key, xmlid):
             "nunca con ids crudos: no son estables entre bases"
             % (key, xmlid, field, fdef.type, comodel, declared))
 
-    got_ids = set(record[field].ids)
+    got_ids = set(record[fname].ids)
     if got_ids == want_ids:
         return None
     return ("%s: %s: %s esperaba %s, obtuvo %s"
