@@ -10,7 +10,7 @@ def migrate(cr, version):
 
     The action is in a noupdate data file, so the -u keeps the code of 19. That
     code called _(), which is not in the evaluation context of server actions, and
-    in 20 the logic moved to saas.database.action_schedule_cluster_migration.
+    in 20 the logic moved to saas.database._schedule_cluster_migration.
     Only the code is reloaded: the rest of the record, its name included, stays
     as the database has it.
     """
