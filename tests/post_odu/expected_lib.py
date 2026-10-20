@@ -88,6 +88,22 @@ def parse_spec(spec, key, xmlid):
     return spec
 
 
+def split_field(field, key, xmlid):
+    """El campo declarado y el idioma en que se lee: 'name@es_AR' -> ('name',
+    'es_AR'), 'name' -> ('name', None). Sirve para verificar una traducción:
+    sin idioma el runner lee el campo sin lang en el contexto. Que el idioma esté
+    activo y que el campo sea traducible lo cruza el runner, que tiene Odoo."""
+    name, sep, lang = field.partition("@")
+    if not sep:
+        return field, None
+    if not name or not lang:
+        raise ValueError(
+            "%s: %s: %r — un campo en un idioma se declara 'campo@idioma', "
+            "por ejemplo 'name@es_AR'" % (key, xmlid, field)
+        )
+    return name, lang
+
+
 def parse_expected_value(want, key, xmlid, field):
     """Clasifica el valor declarado para un campo mirando SOLO su forma: acá
     no hay Odoo, así que contra el tipo real del campo lo cruza el runner.
