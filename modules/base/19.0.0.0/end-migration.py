@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import re
 from contextlib import contextmanager
 
@@ -439,10 +438,8 @@ def table_exists(cr, table_name):
 # sabe en qué paso quedó, así que la corrida que sigue no se rechaza.
 RESUMABLE = True
 # Los pasos que ya quedaron commiteados, para que una corrida que retoma un -u
-# fallido siga desde el paso que cortó en vez de repetir la fusión (T-77885).
+# fallido siga desde el paso que cortó en vez de repetir la fusión.
 PROGRESS_PARAM = "migration_19_end_progress"
-# Solo para probar el retome: el paso con esta clave falla después de hacer su trabajo.
-FAIL_AT_STEP_ENV = "MIGRATION_19_END_FAIL_AT_STEP"
 
 
 def _done_steps(env):
@@ -465,12 +462,15 @@ def step_done(env, key):
     La marca va en la misma transacción que el trabajo: si el paso falla se
     pierden los dos, y la corrida siguiente arranca en él.
     """
-    if os.environ.get(FAIL_AT_STEP_ENV) == key:
-        raise UserError("Falla forzada en el paso %s (%s)" % (key, FAIL_AT_STEP_ENV))
     env["ir.config_parameter"].sudo().set_param(
         PROGRESS_PARAM, json.dumps(_done_steps(env) + [key])
     )
     env.cr.commit()
+
+
+def clear_progress(env):
+    """Borra la marca de los pasos: terminada la fusión no tiene para qué quedar."""
+    env["ir.config_parameter"].sudo().set_param(PROGRESS_PARAM, False)
 
 
 def flag_remapped_dependents(env, model, field_name, record_ids):
@@ -2927,7 +2927,7 @@ def migrate_store_to_branch(cr, env):
     # 2.a Stores are branches of the same legal entity as the parent company,
     # so every branch has to carry the parent's VAT and address. Sin el pais no
     # corre la localizacion en la branch (ver sync_branch_address_with_parent).
-    # Cada paso commitea con su marca, como en la fusión de compañías (T-77885)
+    # Cada paso commitea con su marca, como en la fusión de compañías
     step = "store:%s:" % parent_company_id
     if step_pending(env, step + "2.a"):
         sync_branch_vat_with_parent(cr, parent_company_id, branch_company_ids)
@@ -4368,7 +4368,7 @@ def migrate(cr, version):
 
         for id_b in ids_b:
             # Cada paso commitea con su marca: un -u que retoma sigue desde el
-            # paso que cortó, sin repetir lo que ya quedó grabado (T-77885).
+            # paso que cortó, sin repetir lo que ya quedó grabado.
             step = "merge:%s:%s:" % (id_a, id_b)
 
             if step_pending(env, step + "0-1.2"):
@@ -4539,6 +4539,7 @@ def migrate(cr, version):
     if not store_mapping:
         _logger.info("No store mapping found, skipping store-to-branch migration")
         realign_subcontracting_pointers(env)
+        clear_progress(env)
         cr.commit()
         return
 
@@ -4568,4 +4569,5 @@ def migrate(cr, version):
         step_done(env, "store:%s:end" % parent_company_id)
     
     env['res.company'].search([('parent_id','!=',False)])._compute_legal_entity_root_id()
+    clear_progress(env)
     cr.commit()

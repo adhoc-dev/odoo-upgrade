@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import unittest
-from unittest import mock
 
 PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -53,7 +52,11 @@ class FakeParams:
         return self.db.pending.get(key, default)
 
     def set_param(self, key, value):
-        self.db.pending[key] = value
+        # Odoo borra el parámetro cuando el valor es False
+        if value is False:
+            self.db.pending.pop(key, None)
+        else:
+            self.db.pending[key] = value
 
 
 class FakeCr:
@@ -115,8 +118,8 @@ class TestEndMigrationHelpers(unittest.TestCase):
         self.assertIn("BASE TABLE", cr.query)
 
     def _helpers(self):
-        names = {"_done_steps", "step_pending", "step_done"}
-        constants = {"PROGRESS_PARAM", "FAIL_AT_STEP_ENV"}
+        names = {"_done_steps", "step_pending", "step_done", "clear_progress"}
+        constants = {"PROGRESS_PARAM"}
         nodes = [
             n
             for n in self.tree.body
@@ -127,21 +130,19 @@ class TestEndMigrationHelpers(unittest.TestCase):
                 and n.targets[0].id in constants
             )
         ]
-        namespace = {
-            "json": json,
-            "os": os,
-            "_logger": logging.getLogger("test"),
-            "UserError": FakeUserError,
-        }
+        namespace = {"json": json, "_logger": logging.getLogger("test")}
         exec(compile(ast.Module(nodes, []), PATH, "exec"), namespace)
         return namespace
 
-    def _run(self, h, db, steps, work):
+    def _run(self, h, db, steps, work, fail_at=None):
         """A loop shaped like the merge one: each step does its work and commits with its mark."""
         env = db.env()
         for key in steps:
             if h["step_pending"](env, key):
                 work.append(key)
+                if key == fail_at:
+                    # The step did its work and died before committing it
+                    raise FakeUserError(key)
                 h["step_done"](env, key)
 
     def test_a_failed_run_resumes_at_the_step_that_broke(self):
@@ -149,9 +150,8 @@ class TestEndMigrationHelpers(unittest.TestCase):
         db = FakeDb()
         steps = ["merge:1:2:0-1.2", "merge:1:2:2:account.tax", "merge:1:2:2:account.group", "merge:1:2:2.1-2.2"]
         first = []
-        with mock.patch.dict(os.environ, {h["FAIL_AT_STEP_ENV"]: steps[2]}):
-            with self.assertRaises(FakeUserError):
-                self._run(h, db, steps, first)
+        with self.assertRaises(FakeUserError):
+            self._run(h, db, steps, first, fail_at=steps[2])
         # The failed step did its work, but it was not committed
         self.assertEqual(first, steps[:3])
         self.assertEqual(json.loads(db.committed[h["PROGRESS_PARAM"]]), steps[:2])
@@ -165,6 +165,12 @@ class TestEndMigrationHelpers(unittest.TestCase):
         third = []
         self._run(h, db, steps, third)
         self.assertEqual(third, [])
+
+        # And when the migration ends the mark does not stay in the database
+        env = db.env()
+        h["clear_progress"](env)
+        env.cr.commit()
+        self.assertNotIn(h["PROGRESS_PARAM"], db.committed)
 
     def test_every_step_opened_is_marked_done(self):
         # A step_pending without its step_done never commits: the next run would repeat it
