@@ -11,12 +11,13 @@
 # una sola cosa: que lo que pasó por el migration script salga como debe.
 #
 # Reglas anti-falso-verde (nativas del runner, nadie las re-implementa por test):
+#   - ningún expected_<ver>.py descubierto        => FAIL
 #   - expected sin versión en el nombre           => FAIL
-# Un salto sin ningún expected_<ver>.py no es FAIL: sale verde con un AVISO
-# en el log, para no dejar en ko los builds de un salto recién abierto.
 #   - expected ilegible                           => FAIL
 #   - ref que no resuelve / registro desaparecido => FAIL (ver abajo)
 #   - archivo con 0 asserts                       => FAIL
+# Un salto sin sus expected_<ver>.py, con los de otros saltos, sale verde con
+# un AVISO en el log (ver el README).
 #
 # Un ref ausente es FAIL siempre, del lado de la clave y del lado del valor. El
 # diagnóstico distingue las formas: sin fila en ir_model_data (purga del xmlid,
@@ -218,9 +219,10 @@ try:
             "%s: el nombre no dice de qué salto es — se llama "
             "expected_<ver>.py (expected_%s.py para este)"
             % (X.data_key(mod_dir, fname), tag))
-    if not files:
-        # a jump nobody wrote checks for yet must not turn every build ko;
-        # it is said in the log instead of passing silently
+    missing = X.missing_jump(files, skipped)
+    if missing == "fail":
+        failures.append("ningún expected_<ver>.py bajo %s — nada se verificó" % ROOT)
+    elif missing == "notice":
         notice = ("sin expected_%s.py bajo %s: nada que verificar en el salto a %s"
                   % (tag, ROOT, release.serie))
 
