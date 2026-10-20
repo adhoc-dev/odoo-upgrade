@@ -1,5 +1,7 @@
 {
-    "merge_modules": [],
+    "merge_modules": [
+        ["session_db", "saas_client"]
+    ],
     "renamed_modules": [],
     "renamed_xmlids": []
 }
