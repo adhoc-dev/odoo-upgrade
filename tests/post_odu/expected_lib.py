@@ -148,17 +148,15 @@ def version_tag(serie):
 
 
 def expected_version(fname):
-    """El <ver> de expected_<ver>.py, o None si el nombre no dice el salto."""
-    match = re.fullmatch(r"expected_(\d+)\.py", fname)
+    """El <ver> de expected_<ver>.py (tres dígitos), o None si el nombre no
+    dice el salto."""
+    match = re.fullmatch(r"expected_(\d{3})\.py", fname)
     return match.group(1) if match else None
 
 
 def split_by_version(files, tag):
     """Reparte lo que devuelve iter_expected_files en (del salto, de otros
-    saltos, sin versión en el nombre). Un expected verifica el estado que deja
-    un salto: el de un salto anterior mira campos que el siguiente puede
-    renombrar o sacar, y su FAIL no diría nada de este. El que no dice su
-    versión no se descarta en silencio: el runner lo reporta como FAIL."""
+    saltos, sin versión en el nombre). El porqué, en el README."""
     current, others, unnamed = [], [], []
     for item in files:
         ver = expected_version(item[1])
@@ -169,6 +167,15 @@ def split_by_version(files, tag):
         else:
             others.append(item)
     return current, others, unnamed
+
+
+def missing_jump(current, others):
+    """Qué pasa si el salto no tiene sus expected: None si los tiene,
+    'notice' si hay de otros saltos (salto recién abierto), 'fail' si no hay
+    ninguno."""
+    if current:
+        return None
+    return "notice" if others else "fail"
 
 
 def load_expected(path):

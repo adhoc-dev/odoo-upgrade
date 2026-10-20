@@ -149,7 +149,8 @@ class TestVersion(unittest.TestCase):
     def test_expected_version_del_nombre(self):
         self.assertEqual(X.expected_version("expected_190.py"), "190")
         self.assertEqual(X.expected_version("expected_200.py"), "200")
-        for sin_version in ("expected_foo.py", "expected_.py", "expected_190_bis.py"):
+        for sin_version in ("expected_foo.py", "expected_.py", "expected_190_bis.py",
+                            "expected_19.py", "expected_1900.py"):
             self.assertIsNone(X.expected_version(sin_version))
 
     def test_split_reparte_por_salto(self):
@@ -163,12 +164,11 @@ class TestVersion(unittest.TestCase):
         self.assertEqual(others, [files[0]])
         self.assertEqual(unnamed, [files[2]])
 
-    def test_split_sin_expected_del_salto_deja_current_vacio(self):
-        # el runner lo reporta como AVISO: el salto todavía no tiene expected
-        current, others, _unnamed = X.split_by_version(
-            [("stock", "expected_190.py", "p1")], "200")
-        self.assertEqual(current, [])
-        self.assertEqual(len(others), 1)
+    def test_missing_jump(self):
+        own, other = [("stock", "expected_200.py", "p1")], [("stock", "expected_190.py", "p2")]
+        self.assertIsNone(X.missing_jump(own, other))
+        self.assertEqual(X.missing_jump([], other), "notice")
+        self.assertEqual(X.missing_jump([], []), "fail")
 
 
 if __name__ == "__main__":

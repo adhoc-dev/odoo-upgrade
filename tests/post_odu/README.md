@@ -120,14 +120,16 @@ EXPECTED = {
 
 ## Anti-falso-verde (regla del runner, no de cada test)
 
-- `expected_*.py` sin la versión en el nombre ⇒ FAIL
-
-Un salto sin ningún `expected_<ver>.py` no es FAIL: el check sale verde con un
-`AVISO - sin expected_<ver>.py ...` en el log. Es el estado de un salto recién
-abierto (la 20, hoy), y dejarlo en rojo pondría en ko todos sus builds.
+- ningún `expected_<ver>.py` descubierto ⇒ FAIL
+- `expected_*.py` sin la versión en el nombre (tres dígitos) ⇒ FAIL
 - expected ilegible ⇒ FAIL
 - `ref` que no resuelve o registro desaparecido ⇒ **FAIL**
 - archivo con 0 asserts ⇒ FAIL
+
+Un salto sin sus `expected_<ver>.py`, pero con los de otros saltos, no es FAIL:
+el check sale verde con un `AVISO - sin expected_<ver>.py ...` en el log. Es el
+estado de un salto recién abierto (la 20, hoy), y dejarlo en rojo pondría en ko
+todos sus builds.
 
 Nunca hay skip silencioso — la diferencia deliberada con el carril nativo de
 `odoo.upgrade.testing`, donde un `check` sin su key en `upgrade_test_data`
@@ -168,7 +170,7 @@ conocidos (runbot `/data/build/ingadhoc-odoo-upgrade`, stack local
   ignorar el `before` en silencio.
 - Valores esperados: escalares y relacionales (ver arriba).
 - La parte de `expected_lib.py` que no necesita Odoo tiene arnés propio:
-  `python3 tests/post_odu/test_expected_lib.py` (23 casos, sin base ni
+  `python3 tests/post_odu/test_expected_lib.py` (sin base ni
   infra). Lo que sí necesita un `env` —que un `ref()` resuelva, que un id
   crudo FAILee— se prueba sobre una base viva.
 - Verificar data **orgánica** de la base (registros sin xmlid, correlacionando
