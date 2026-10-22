@@ -2,6 +2,8 @@
     "merge_modules": [
         ["session_db", "saas_client"]
     ],
-    "renamed_modules": [],
+    "renamed_modules": [
+        ["product_catalog_aeroo_report", "product_catalog_report"]
+    ],
     "renamed_xmlids": []
 }
