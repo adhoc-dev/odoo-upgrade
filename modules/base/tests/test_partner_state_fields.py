@@ -49,6 +49,9 @@ def _load_script(name, path):
 backup = _load_script("pre_odoo_220_backup_partner_state_fields", BACKUP)
 check = _load_script("end_220_check_partner_state_fields", CHECK)
 
+# res.partner fields of the loaded code in 20: company_registry is not one of them
+PARTNER_FIELDS = {"name", "email", "phone"}
+
 
 class Cursor:
     """A psycopg2 cursor that also takes the ``SQL`` objects of Odoo, as the migration cursor."""
@@ -123,7 +126,7 @@ class TestPartnerStateFields(PartnerStateFieldsCase):
     def test_a_dropped_field_is_told_to_the_customer(self):
         backup.migrate(self.cr, "19.0.1.0.0")
         self.upgrade("company_registry")
-        check.run(self.cr)
+        check.run(self.cr, PARTNER_FIELDS)
         notes = self.notes()
         self.assertEqual(notes["partner_state_campos_perdidos_total"], 1)
         self.assertEqual(
@@ -143,17 +146,26 @@ class TestPartnerStateFields(PartnerStateFieldsCase):
         self.assertEqual(log["type"], "warning")
         self.assertIn("['company_registry']", log["message"])
 
+    def test_a_field_dropped_after_the_end_scripts_is_told_too(self):
+        """The field of a module that leaves in 20 is still in ir_model_fields here:
+        _process_end and end-900 drop it, and the line, after this script."""
+        backup.migrate(self.cr, "19.0.1.0.0")
+        check.run(self.cr, PARTNER_FIELDS)
+        notes = self.notes()
+        self.assertEqual(notes["partner_state_campos_perdidos_total"], 1)
+        self.assertEqual([line["campo"] for line in notes["partner_state_campos_perdidos"]], ["company_registry"])
+
     def test_nothing_lost_is_still_emitted(self):
         """The backup was there, so zero is a result the message may want to show."""
         backup.migrate(self.cr, "19.0.1.0.0")
-        check.run(self.cr)
+        check.run(self.cr, PARTNER_FIELDS | {"company_registry"})
         self.assertEqual(self.notes(), {"partner_state_campos_perdidos": [], "partner_state_campos_perdidos_total": 0})
         self.assertEqual(self.logs(), [])
 
     def test_no_backup_emits_nothing(self):
         """Nobody looked: a zero here would tell the customer all is fine without checking."""
         self.upgrade("company_registry")
-        check.run(self.cr)
+        check.run(self.cr, PARTNER_FIELDS)
         self.assertEqual(self.notes(), {})
 
     def test_no_backup_without_the_module(self):
@@ -165,9 +177,9 @@ class TestPartnerStateFields(PartnerStateFieldsCase):
     def test_a_second_run_gives_the_same_note(self):
         backup.migrate(self.cr, "19.0.1.0.0")
         self.upgrade("company_registry")
-        check.run(self.cr)
+        check.run(self.cr, PARTNER_FIELDS)
         first = self.notes()
-        check.run(self.cr)
+        check.run(self.cr, PARTNER_FIELDS)
         self.assertEqual(self.notes(), first)
 
 

@@ -1,7 +1,9 @@
 """Tell the customer which partner_state configuration lines the upgrade removed.
 
 Reads what scripts/pre_odoo/always/220-backup_partner_state_fields.py backed up on the old
-database. A line is lost when the upgrade drops its res.partner field (ON DELETE CASCADE).
+database. A line is lost when the upgrade drops its res.partner field (ON DELETE CASCADE):
+already gone when this runs, or about to go, because no loaded module defines its field
+any more and _process_end and end-900 drop it after the end- scripts.
 Only a report: which field replaces it, if any, is decided by hand.
 
 In ``modules/base/0.0.0`` so it runs on every jump, after the modules are loaded.
@@ -22,10 +24,11 @@ FIRST_TARGET_VERSION = 20
 def migrate(cr, version):
     if not should_run(cr, version, FIRST_TARGET_VERSION, modules=["partner_state"]):
         return
-    run(cr)
+    run(cr, set(util.env(cr)["res.partner"]._fields))
 
 
-def run(cr):
+def run(cr, partner_fields):
+    """:param partner_fields: the res.partner fields the loaded code defines"""
     if not util.table_exists(cr, BACKUP_TABLE):
         # Not "nothing was lost": nobody looked. Emitting zero would say all is fine.
         _logger.warning("No %s: the partner state fields were not checked. Did the pre_odoo run?", BACKUP_TABLE)
@@ -37,10 +40,13 @@ def run(cr):
             SELECT bu.field_name, bu.field_label, bu.approval, bu.block_edition, bu.track, bu.changes
               FROM %s bu
               LEFT JOIN res_partner_state_field s ON s.id = bu.id
+              LEFT JOIN ir_model_fields f ON f.id = s.field_id
              WHERE s.id IS NULL
+                OR NOT f.name = ANY(%s)
              ORDER BY bu.field_name
             """,
             SQL.identifier(BACKUP_TABLE),
+            sorted(partner_fields),
         )
     )
     lost = [
