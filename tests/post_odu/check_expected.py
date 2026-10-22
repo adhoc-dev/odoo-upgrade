@@ -16,8 +16,10 @@
 #   - expected ilegible                           => FAIL
 #   - ref que no resuelve / registro desaparecido => FAIL (ver abajo)
 #   - archivo con 0 asserts                       => FAIL
+#   - desde el salto a 20, script sin su check    => FAIL (ADR 0037)
 # Un salto sin sus expected_<ver>.py, con los de otros saltos, sale verde con
-# un AVISO en el log (ver el README).
+# un AVISO en el log (ver el README). Lo que no se puede verificar acá se
+# declara con NO_CHECK y su motivo, y sale en el log como SIN CHECK.
 #
 # Un ref ausente es FAIL siempre, del lado de la clave y del lado del valor. El
 # diagnóstico distingue las formas: sin fila en ir_model_data (purga del xmlid,
@@ -220,7 +222,7 @@ def _check_field(record, field, want, key, xmlid):
 # Cinturón global: ninguna excepción escapa de este bloque — el resumen y el
 # os._exit de abajo corren siempre, así el log del step termina en la línea
 # "=== check declarativo: ..." también cuando el runner mismo falla.
-skipped, notice = [], None
+skipped, notice, no_checks = [], None, []
 try:
     from odoo import release
 
@@ -238,13 +240,23 @@ try:
     elif missing == "notice":
         notice = ("sin expected_%s.py bajo %s: nada que verificar en el salto a %s"
                   % (tag, ROOT, release.serie))
+    if X.enforced(tag):
+        failures.extend(X.missing_checks(os.path.join(ROOT, "modules"), tag))
 
     for mod_dir, fname, path in files:
         key = X.data_key(mod_dir, fname)
         try:
-            expected = X.load_expected(path)
+            decl = X.load_declaration(path)
         except Exception as exc:
             failures.append("%s: expected ilegible (%s)" % (key, exc))
+            continue
+        if decl.whole_no_check:
+            no_checks.append("%s: %s" % (key, decl.no_check))
+        elif decl.no_check:
+            no_checks.extend("%s: %s: %s" % (key, script, reason)
+                             for script, reason in sorted(decl.no_check.items()))
+        expected = decl.expected
+        if expected is None:
             continue
 
         file_asserts = 0
@@ -317,6 +329,8 @@ print("")
 print("=== check declarativo: %s OK, %s FAIL ===" % (passed, len(failures)))
 if notice:
     print("AVISO - %s" % notice)
+for n in no_checks:
+    print("SIN CHECK - %s" % n)
 for mod_dir, fname, _path in skipped:
     print("SKIP - %s: es de otro salto" % X.data_key(mod_dir, fname))
 for f in failures:

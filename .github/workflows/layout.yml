@@ -21,6 +21,14 @@ jobs:
             exit 1
           fi
 
+  missing-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Runbot does not run every jump on every PR; this stops a script without its check on each push
+      - name: Every script has its declarative check
+        run: python3 tests/post_odu/missing_checks.py
+
   branch-name:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

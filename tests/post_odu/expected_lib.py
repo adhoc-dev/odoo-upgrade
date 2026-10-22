@@ -194,7 +194,28 @@ def missing_jump(current, others):
     return "notice" if others else "fail"
 
 
-def load_expected(path):
+class Declaration:
+    """Lo que declara un expected_<ver>.py: qué verifica (EXPECTED), qué
+    scripts de 0.0.0 cubre ese EXPECTED (SCRIPTS) y qué queda sin check y por
+    qué (NO_CHECK). El porqué de cada uno, en el README."""
+
+    def __init__(self, expected=None, no_check=None, scripts=None):
+        self.expected = expected
+        self.no_check = no_check
+        self.scripts = scripts
+
+    @property
+    def whole_no_check(self):
+        """True si NO_CHECK es un motivo para todo el archivo."""
+        return isinstance(self.no_check, str)
+
+
+def _check_reason(reason, path, what):
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("%s: %s tiene que decir el motivo, recibí %r" % (path, what, reason))
+
+
+def load_declaration(path):
     """Evalúa un expected_*.py con las primitivas ya en el namespace: el
     archivo queda 100% declarativo, sin imports."""
     ns = dict(NAMESPACE)
@@ -202,9 +223,135 @@ def load_expected(path):
         code = f.read()
     exec(compile(code, path, "exec"), ns)  # noqa: S102 — archivo del repo, no input externo
     expected = ns.get("EXPECTED")
-    if not isinstance(expected, dict) or not expected:
-        raise ValueError("%s no define un EXPECTED no vacío" % path)
-    return expected
+    no_check = ns.get("NO_CHECK")
+    scripts = ns.get("SCRIPTS")
+
+    if expected is not None and (not isinstance(expected, dict) or not expected):
+        raise ValueError("%s: EXPECTED tiene que ser un dict no vacío" % path)
+    if expected is None and no_check is None:
+        raise ValueError("%s no define un EXPECTED no vacío ni un NO_CHECK" % path)
+    if isinstance(no_check, dict):
+        if not no_check:
+            raise ValueError("%s: NO_CHECK vacío — sacalo, o nombrá los scripts" % path)
+        for script, reason in no_check.items():
+            _check_reason(reason, path, "NO_CHECK[%r]" % script)
+    elif no_check is not None:
+        _check_reason(no_check, path, "NO_CHECK")
+        if expected is not None:
+            raise ValueError(
+                "%s: NO_CHECK = <motivo> dice que el archivo no verifica nada, y "
+                "trae un EXPECTED — para un script de 0.0.0 sin check, "
+                "NO_CHECK = {<script>: <motivo>}" % path)
+    if scripts is not None:
+        if expected is None:
+            raise ValueError("%s: SCRIPTS nombra lo que verifica el EXPECTED, y no hay EXPECTED" % path)
+        if (not isinstance(scripts, (list, tuple)) or not scripts
+                or not all(isinstance(x, str) for x in scripts)):
+            raise ValueError("%s: SCRIPTS tiene que ser una lista de nombres de script" % path)
+        dupes = sorted({x for x in scripts if list(scripts).count(x) > 1})
+        if dupes:
+            raise ValueError("%s: SCRIPTS repite %s" % (path, ", ".join(dupes)))
+        both = sorted(set(scripts) & set(no_check if isinstance(no_check, dict) else ()))
+        if both:
+            raise ValueError("%s: %s está en SCRIPTS y en NO_CHECK" % (path, ", ".join(both)))
+    return Declaration(expected, no_check, scripts)
+
+
+# --- qué script tiene su check (ADR 0037 de actua-20) -----------------------
+
+# Desde este salto todo script de modules/ lleva su check. Los saltos
+# anteriores tienen scripts sin check, de antes de la regla.
+FIRST_ENFORCED = 200
+ALWAYS = "0.0.0"
+
+
+def enforced(tag):
+    return int(tag) >= FIRST_ENFORCED
+
+
+def folder_tag(name):
+    """El salto de una carpeta de versión de un módulo: '20.0.1.0.0' -> '200'.
+    None para 0.0.0 (corre en todos los saltos) y para lo que no es una
+    versión (tests/)."""
+    match = re.fullmatch(r"([1-9]\d*)\.0(?:\.\d+)+", name)
+    return "%s0" % match.group(1) if match else None
+
+
+def _module_dirs(root):
+    if not os.path.isdir(root):
+        return
+    for mod in sorted(os.listdir(root)):
+        mod_dir = os.path.join(root, mod)
+        if os.path.isdir(mod_dir):
+            yield mod, mod_dir
+
+
+def enforced_tags(root):
+    """Los saltos que se controlan: el primero que se exige y cualquier otro
+    posterior que ya tenga carpetas o expected en el repo."""
+    tags = {str(FIRST_ENFORCED)}
+    for _mod, mod_dir in _module_dirs(root):
+        for name in os.listdir(mod_dir):
+            tag = folder_tag(name)
+            if tag:
+                tags.add(tag)
+    for _mod, fname, _path in iter_expected_files(root):
+        tag = expected_version(fname)
+        if tag:
+            tags.add(tag)
+    return sorted((t for t in tags if enforced(t)), key=int)
+
+
+def missing_checks(root, tag):
+    """Lo que corre en el salto `tag` sin su check, como mensajes. root es la
+    carpeta modules/. Una carpeta de versión la cubre el expected_<tag>.py del
+    módulo; un script de 0.0.0 tiene que estar nombrado en ese archivo, en
+    SCRIPTS o en NO_CHECK."""
+    problems = []
+    fname = "expected_%s.py" % tag
+    for mod, mod_dir in _module_dirs(root):
+        own = sorted(n for n in os.listdir(mod_dir) if folder_tag(n) == tag)
+        always_dir = os.path.join(mod_dir, ALWAYS)
+        always = sorted(
+            n for n in os.listdir(always_dir) if n.endswith(".py")
+        ) if os.path.isdir(always_dir) else []
+        if not own and not always:
+            continue
+        where = "modules/%s/tests/%s" % (mod, fname)
+        path = os.path.join(mod_dir, "tests", fname)
+        if not os.path.isfile(path):
+            for name in own:
+                problems.append(
+                    "modules/%s/%s/: sin check — falta %s, con su EXPECTED o con "
+                    "NO_CHECK = \"<motivo>\"" % (mod, name, where))
+            for name in always:
+                problems.append(
+                    "modules/%s/%s/%s: sin check en el salto a %s — falta %s, que "
+                    "lo nombre en SCRIPTS o en NO_CHECK" % (mod, ALWAYS, name, tag, where))
+            continue
+        try:
+            decl = load_declaration(path)
+        except Exception as exc:
+            problems.append("%s: ilegible (%s)" % (where, exc))
+            continue
+        if decl.whole_no_check:
+            continue
+        if own and decl.expected is None:
+            problems.append(
+                "%s: no trae EXPECTED ni NO_CHECK = \"<motivo>\" para %s"
+                % (where, ", ".join("modules/%s/%s/" % (mod, n) for n in own)))
+        named = set(decl.scripts or ()) | set(decl.no_check or ())
+        for name in sorted(named - set(always)):
+            problems.append(
+                "%s: nombra %s, que no está en modules/%s/%s/ — ¿se renombró o "
+                "se borró?" % (where, name, mod, ALWAYS))
+        for name in always:
+            if name not in named:
+                problems.append(
+                    "modules/%s/%s/%s: sin check en el salto a %s — sumalo a SCRIPTS "
+                    "de %s si su EXPECTED lo verifica, o a NO_CHECK con el motivo"
+                    % (mod, ALWAYS, name, tag, where))
+    return problems
 
 
 def data_key(mod_dir, fname):

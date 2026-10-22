@@ -59,6 +59,7 @@ no diría nada del salto que se prueba.
 | `check_expected.py` | acá | el runner: corre en `odoo shell` y decide el exit code |
 | `expected_lib.py` | acá | el formato: primitivas, validación de lo declarado y descubrimiento, sin Odoo |
 | `test_expected_lib.py` | acá | el arnés de `expected_lib.py` |
+| `missing_checks.py` | acá | el control de scripts sin check que corre el job de GitHub |
 | `expected_*.py` | `modules/<modulo>/tests/` | la data: un archivo por módulo y versión |
 | la siembra | `tests/pre_odu/` | los registros que la data de prueba no trae |
 
@@ -146,6 +147,7 @@ EXPECTED = {
 - expected ilegible ⇒ FAIL
 - `ref` que no resuelve o registro desaparecido ⇒ **FAIL**
 - archivo con 0 asserts ⇒ FAIL
+- desde el salto a 20, un script sin su check ⇒ FAIL (ver abajo)
 
 Un salto sin sus `expected_<ver>.py`, pero con los de otros saltos, no es FAIL:
 el check sale verde con un `AVISO - sin expected_<ver>.py ...` en el log. Es el
@@ -161,6 +163,48 @@ hipótesis abiertas —lo borró la actualización, o nunca estuvo cargado en la
 fuente—. Sin gate previo no se pueden distinguir desde acá, y no hay forma de
 declarar una ausencia como esperada: un caso donde el registro debe desaparecer
 se verifica por otra vía.
+
+## Todo script lleva su check, desde el salto a 20
+
+El ADR 0037 de actua-20 pide que todo script de `modules/` vaya con su check, y
+desde el salto a 20 lo controlan dos lugares con la misma función
+(`missing_checks` de `expected_lib.py`):
+
+- el job `missing-checks` de `.github/workflows/layout.yml`, en cada push y sin
+  levantar Odoo (`python3 tests/post_odu/missing_checks.py`), para todos los
+  saltos desde el 20;
+- `check_expected.py` en runbot, para el salto que prueba.
+
+Qué cuenta como cubierto:
+
+- **Una carpeta de versión** `modules/<modulo>/20.0.x/`: la cubre
+  `modules/<modulo>/tests/expected_200.py`, con su `EXPECTED` o con
+  `NO_CHECK = "<motivo>"`.
+- **Un script de `0.0.0`**, que corre en todos los saltos: cada uno tiene que
+  estar nombrado en el `expected_<ver>.py` de su módulo, en `SCRIPTS` (los que
+  verifica el `EXPECTED`) o en `NO_CHECK = {"<script>": "<motivo>"}`. Un nombre
+  que ya no está en `0.0.0` también es FAIL: si un script se renombra, su check
+  no queda apuntando a nada sin aviso.
+
+```python
+# modules/base/tests/expected_200.py
+SCRIPTS = ["end-110-reload_translations.py"]
+NO_CHECK = {
+    "pre-0-disable-check-views.py": "Parchea un metodo en memoria mientras corre el -u: ...",
+}
+```
+
+`NO_CHECK` parte de una necesidad concreta: el script toca algo que no tiene
+sentido o no se puede verificar con este carril, por ejemplo el arch de una
+vista o un parche en memoria (la tabla de la skill
+`odoo-upgrade-declarative-checks`). Siempre lleva el motivo. Que falte tiempo
+para escribir el check no es un motivo; la excepción son los scripts de
+`base/0.0.0` anteriores a la regla, que quedan como pendientes. El runner lo muestra
+como `SIN CHECK - <archivo>: <motivo>` en el log del build. Los saltos anteriores
+al 20 no se controlan: tienen scripts de antes de la regla.
+
+Fuera de este control: `scripts/pre_odoo/` y `scripts/pre_upgrade/`, que corren
+antes del `-u` y no tienen este carril.
 
 ## Correrlo (local, sobre una base post-ODU restaurada)
 
