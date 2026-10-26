@@ -1,6 +1,7 @@
 {
     "merge_modules": [
-        ["session_db", "saas_client"]
+        ["session_db", "saas_client"],
+        ["product_catalog_aeroo_report_public_categ", "product_catalog_report_public_categ"]
     ],
     "renamed_modules": [
         ["product_catalog_aeroo_report", "product_catalog_report"]
