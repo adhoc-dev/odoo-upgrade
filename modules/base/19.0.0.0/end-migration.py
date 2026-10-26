@@ -3326,8 +3326,56 @@ def migrate_store_user_access_to_company(cr, env, mapping):
 # ============================================================================
 
 
+def release_duplicated_employee_users(cr, id_a):
+    """Frees the user link of the branch employee before HR goes up to the parent.
+
+    hr.employee has a unique (user_id, company_id): the same person with an
+    employee in the parent and a copy in the branch -- the workaround so a
+    branch user could see their own HR -- breaks the UPDATE that moves the
+    employees to the parent. The employee that stays with the user is the one
+    already in the parent (or the oldest, when every copy comes from a branch);
+    the rest go up without user_id, with their own history, and the two files
+    are unified by hand afterwards.
+    """
+    cr.execute(
+        """
+        UPDATE hr_employee emp
+           SET user_id = NULL
+          FROM hr_employee keeper
+         WHERE emp.user_id IS NOT NULL
+           AND keeper.user_id = emp.user_id
+           AND keeper.id != emp.id
+           AND emp.company_id IN (
+                 SELECT id FROM res_company WHERE parent_id = %s
+               )
+           AND (
+                 keeper.company_id = %s
+                 OR (
+                      keeper.company_id IN (
+                            SELECT id FROM res_company WHERE parent_id = %s
+                      )
+                      AND keeper.id < emp.id
+                 )
+               )
+        RETURNING emp.id, keeper.id, keeper.user_id
+        """,
+        (id_a, id_a, id_a),
+    )
+    for employee_id, keeper_id, user_id in cr.fetchall():
+        _logger.warning(
+            "COLISIÓN hr.employee: el empleado %s de la sucursal sube a la matriz "
+            "sin user_id=%s, que ya tiene el empleado %s; unificar las dos fichas "
+            "a mano",
+            employee_id,
+            user_id,
+            keeper_id,
+        )
+
+
 def preprocess_unique_move_conflicts(cr, model_name, id_a, id_b):
     """Resuelve colisiones conocidas antes de mover registros de compañía."""
+    if model_name == "hr.employee":
+        release_duplicated_employee_users(cr, id_a)
     queries = UNIQUE_MOVE_PREPROCESSORS.get(model_name, ())
     for query in queries:
         _logger.info("Preprocesando colisiones UNIQUE para %s", model_name)
