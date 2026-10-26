@@ -1275,7 +1275,14 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             # por qué tener las credenciales cargadas (ticket 122841). Las líneas quedan
             # en el registro de B, que se archiva y se mueve a la matriz, así que la
             # configuración no se pierde: queda inerte y recuperable.
+            #
+            # account.payment.term.line: re-mapearlas sumaba las cuotas de B al plazo
+            # homónimo de A, y el recompute de value_amount (100 - suma de porcentajes)
+            # rompía _check_percent.
             SKIP_FK_REMAP_MODELS = {
+                "account.payment.term": {
+                    "account.payment.term.line",
+                },
                 "account.tax": {
                     "account.tax.repartition.line",
                 },
