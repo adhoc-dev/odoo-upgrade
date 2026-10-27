@@ -2,12 +2,12 @@
 
 The Odoo upgrade posts its release note in the general channel once per jump
 (``util.announce_release_note``). The newest one takes our message, from
-``success_upgrade_message.html`` with ``{version}`` replaced by the target version, and the
-ones of the other jumps of this request are deleted, as many as the request jumps. Release
-notes of earlier upgrades stay. Without a request context, only the newest is replaced.
+``success_upgrade_message.html`` with ``{version}`` replaced by the target version, and every
+other release note of Odoo in the channel is deleted: one message stays, whatever the jumps
+of the request or the series.
 
-The release notes are found by the text of their template, not by date: other messages of
-the channel are not touched.
+The release notes are found by the text of their template, not by date or position: our
+messages of earlier upgrades and the other messages of the channel are not touched.
 
 Only on the last jump of the request.
 
@@ -16,13 +16,12 @@ In ``modules/base/0.0.0`` so it runs on every jump, after the modules are loaded
 
 import logging
 import os
-import re
 
 from markupsafe import Markup
 
 from odoo import release
 from odoo.upgrade import util
-from oba import log_message, request_context, should_run
+from oba import log_message, should_run
 
 _logger = logging.getLogger(__name__)
 
@@ -60,22 +59,13 @@ def migrate(cr, version):
         _logger.info("No release note of Odoo in the general channel")
         return
 
-    # Odoo posts one per jump: this request's are the newest, as many as it jumps.
-    jumps = _jumps(request_context(cr))
-    to_drop = messages[1:jumps]
+    to_drop = messages[1:]
     try:
         with cr.savepoint():
             messages[0].write({"body": body})
             to_drop.unlink()
     except Exception as e:
-        log_message(cr, "Could not replace the release notes %s: %s" % (messages[:jumps].ids, e), "warning")
+        log_message(cr, "Could not replace the release notes %s: %s" % (messages.ids, e), "warning")
         return
     _logger.info("Release note %s replaced, %s dropped", messages[0].id, to_drop.ids)
 
-
-def _jumps(context):
-    """How many major versions this request jumps, 1 when the context does not say."""
-    origin = re.search(r"\d+", context.get("from_version") or "")
-    if not origin:
-        return 1
-    return max(release.version_info[0] - int(origin.group()), 1)
