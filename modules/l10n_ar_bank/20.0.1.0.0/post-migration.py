@@ -38,16 +38,22 @@ def _warn(cr, message):
 
 
 def _restore_banks(cr):
-    """Return {old bank id: bank id in 20}."""
+    """Return {old bank id: bank id in 20}, also kept in the new_id column of BANK_TABLE.
+
+    The migration of l10n_latam_check_ux reads new_id to put back the bank of the checks.
+    """
+    if not util.column_exists(cr, BANK_TABLE, "new_id"):
+        util.create_column(cr, BANK_TABLE, "new_id", "int4")
     cr.execute(
         SQL(
             """
             SELECT bu.id, bu.xmlid_module, bu.xmlid_name, bu.bank_number,
-                   d.res_id, b.id
+                   d.res_id, b.id, nb.id
               FROM %(bu)s bu
               LEFT JOIN ir_model_data d
                 ON d.model = 'res.bank' AND d.module = bu.xmlid_module AND d.name = bu.xmlid_name
               LEFT JOIN res_bank b ON b.id = bu.id AND b.name = bu.name
+              LEFT JOIN res_bank nb ON nb.id = bu.new_id
              ORDER BY bu.id
             """,
             bu=SQL.identifier(BANK_TABLE),
@@ -61,8 +67,12 @@ def _restore_banks(cr):
         bank_number,
         xmlid_res_id,
         same_id,
+        saved_id,
     ) in cr.fetchall():
-        if xmlid_module and xmlid_res_id:
+        if saved_id:
+            # Already restored by an earlier run on this database: do not create it twice.
+            mapping[old_id] = saved_id
+        elif xmlid_module and xmlid_res_id:
             mapping[old_id] = xmlid_res_id
         elif same_id:
             # The upgrade kept the table: the bank is still there.
@@ -94,6 +104,8 @@ def _restore_banks(cr):
             )
         )
         mapping[old_id] = cr.fetchone()[0]
+    for old_id, new_id in mapping.items():
+        cr.execute(SQL("UPDATE %s SET new_id = %s WHERE id = %s", SQL.identifier(BANK_TABLE), new_id, old_id))
     _logger.info("Banks: %s mapped, %s created again", len(mapping) - len(missing), len(missing))
     return mapping
 

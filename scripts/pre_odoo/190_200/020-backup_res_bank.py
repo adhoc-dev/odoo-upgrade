@@ -10,7 +10,8 @@ _logger = logging.getLogger(__name__)
 # modules/l10n_ar_bank/20.0.1.0.0/post-migration.py, on the other side of the upgrade.
 BANK_TABLE = "res_bank_bu"
 ACCOUNT_TABLE = "res_partner_bank_bank_id_bu"
-# The bank of the checks is restored by the migration of l10n_latam_check_ux, not here.
+# The bank of the checks is restored by the migration of l10n_latam_check_ux, not here: it
+# maps each old bank with the new_id column that the post-migration adds to BANK_TABLE.
 CHECK_TABLE = "l10n_latam_check_bank_id_bu"
 
 
