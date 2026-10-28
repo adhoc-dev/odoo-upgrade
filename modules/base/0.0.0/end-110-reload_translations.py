@@ -28,6 +28,8 @@ def migrate(cr, version):
         with cr.savepoint():
             env["base.language.install"].create({"lang_ids": [(6, 0, langs.ids)], "overwrite": True}).lang_install()
     except Exception as e:
-        log_message(cr, "Could not reload the translations of %s: %s" % (langs.mapped("code"), e), "warning")
+        log_message(
+            cr, "Could not reload the translations of %s: %s" % (langs.mapped("code"), e), "warning", module="base",
+        )
         return
     _logger.info("Translations reloaded for %s", langs.mapped("code"))

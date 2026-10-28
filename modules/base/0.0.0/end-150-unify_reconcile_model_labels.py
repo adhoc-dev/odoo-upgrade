@@ -77,7 +77,9 @@ def migrate(cr, version):
                 (lang_code, line_ids),
             )
         detail = " | ".join('%s: "%s" -> "%s" (%s)' % (row[3], row[4], row[2][0], row[1][0]) for row in to_unify)
-        log_message(cr, "Reconcile model labels unified (%s lines): %s" % (len(to_unify), detail), "info")
+        log_message(
+            cr, "Reconcile model labels unified (%s lines): %s" % (len(to_unify), detail), "info", module="account",
+        )
     if ambiguous:
         detail = " | ".join(
             "%s (line %s): %s"
@@ -89,6 +91,7 @@ def migrate(cr, version):
             "Reconcile model labels edited in more than one language, left as they are because the right"
             " one cannot be told (%s lines): %s" % (len(ambiguous), detail),
             "warning",
+            module="account",
         )
 
     # Runs after unifying, so the right label of each line is already the en_US one.
@@ -126,6 +129,7 @@ def migrate(cr, version):
             cr,
             "Journal items of reconcile models fixed (%s items): %s" % (sum(row[3] for row in items), detail),
             "info",
+            module="account",
         )
     if hashed:
         log_message(
@@ -133,6 +137,7 @@ def migrate(cr, version):
             "%s of the fixed journal items belong to moves with an inalterability hash. The label is part of"
             " the hash, so the inalterability report will show those moves as altered." % hashed,
             "warning",
+            module="account",
         )
     if skipped:
         log_message(
@@ -140,4 +145,5 @@ def migrate(cr, version):
             "%s journal items keep a label different from their model and are not fixed: the model has more"
             " than one line and the item stores the model, not the line." % skipped,
             "info",
+            module="account",
         )

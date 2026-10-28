@@ -70,7 +70,7 @@ def migrate(cr, version):
             messages[0].write({"body": body})
             to_drop.unlink()
     except Exception as e:
-        log_message(cr, "Could not replace the release notes %s: %s" % (messages.ids, e), "warning")
+        log_message(cr, "Could not replace the release notes %s: %s" % (messages.ids, e), "warning", module="base")
         return
     _logger.info("Release note %s replaced, %s dropped", messages[0].id, to_drop.ids)
 

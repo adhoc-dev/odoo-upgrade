@@ -31,7 +31,9 @@ def migrate(cr, version):
     view_ids = [view_id for view_id in parameter if isinstance(view_id, int) and not isinstance(view_id, bool)]
     discarded = [view_id for view_id in parameter if view_id not in view_ids]
     if discarded:
-        log_message(cr, "deactivate_views_ids: ignored values that are not view ids: %s" % discarded, "warning")
+        log_message(
+            cr, "deactivate_views_ids: ignored values that are not view ids: %s" % discarded, "warning", module="base",
+        )
     if not view_ids:
         return
 

@@ -32,6 +32,10 @@ def migrate(cr, version):
         with cr.savepoint():
             views.unlink()
     except Exception as e:
-        log_message(cr, "Could not drop the view copies created by the upgrade %s: %s" % (view_ids, e), "warning")
+        log_message(
+            cr, "Could not drop the view copies created by the upgrade %s: %s" % (view_ids, e),
+            "warning",
+            module="base",
+        )
         return
     _logger.info("Dropped %s view copies created by the upgrade: %s", len(view_ids), view_ids)

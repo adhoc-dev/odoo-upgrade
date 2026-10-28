@@ -29,7 +29,7 @@ def migrate(cr, version):
     for xmlid in USER_XMLIDS:
         user = env.ref(xmlid, raise_if_not_found=False)
         if not user:
-            log_message(cr, "User %s not found: its companies are not set" % xmlid, "warning")
+            log_message(cr, "User %s not found: its companies are not set" % xmlid, "warning", module="base")
             continue
         if user.company_ids == companies and user.company_id == default_company:
             continue
@@ -37,6 +37,6 @@ def migrate(cr, version):
             with cr.savepoint():
                 user.write({"company_ids": [(6, 0, companies.ids)], "company_id": default_company.id})
         except Exception as e:
-            log_message(cr, "Could not set the companies of %s: %s" % (xmlid, e), "warning")
+            log_message(cr, "Could not set the companies of %s: %s" % (xmlid, e), "warning", module="base")
             continue
         _logger.info("%s now has companies %s, default %s", xmlid, companies.ids, default_company.id)

@@ -3,13 +3,14 @@
     from oba import log_message, set_breaks, set_result
 
     def migrate(cr, version):
-        log_message(cr, "Se desinstalaron 3 módulos", "warning")
+        log_message(cr, "Se desinstalaron 3 módulos", "warning", module="base")
 
-The counterpart of ``log_message``, ``result`` and ``breaks`` of an upgrade line. Each call
-leaves a row in ``saas_upgrade_output``; the runner of the ``-u`` delivers the rows in its
-callback when the job ends and the provider records them on the request. ``result`` is
-posted on the request and ``breaks`` stops it, both after the ``-u`` finishes: the script
-itself keeps running, and the last call of each wins.
+The counterpart of ``log_message``, ``result`` and ``breaks`` of an upgrade line. A warning
+or error carries its ``module``, from which the provider gets the product; ``info`` goes only
+to the log of the process. Each other call leaves a row in ``saas_upgrade_output``; the runner
+of the ``-u`` delivers the rows in its callback when the job ends and the provider records them
+on the request. ``result`` is posted on the request and ``breaks`` stops it, both after the
+``-u`` finishes: the script itself keeps running, and the last call of each wins.
 
 Without the runner (runbot, a local ``-u``) there is no table and nobody to deliver to: the
 message goes to the log of the process and nothing else happens.
@@ -31,16 +32,23 @@ _THIS_FILE = os.path.abspath(__file__)
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(_THIS_FILE)))
 
 
-def log_message(cr, message, type="info"):
-    """Leave a log line on the request, as ``log_message`` of an upgrade line does.
+def log_message(cr, message, type="info", module=None):
+    """Warnings and errors reach the request with their module; ``info`` only the process log.
 
     :param cr: migration cursor, on the customer's database
     :param message: what to say
     :param type: ``info``, ``warning`` or ``error``
+    :param module: technical name of the module the message is about
     """
     if type not in LOG_TYPES:
         raise ValueError("log_message: type must be one of %s, got %r" % (LOG_TYPES, type))
-    _write(cr, "log", {"message": message, "type": type})
+    if type == "info":
+        _logger.info("%s: %s", _caller_script(), message)
+        return
+    payload = {"message": message, "type": type}
+    if module is not None:
+        payload["module"] = module
+    _write(cr, "log", payload)
 
 
 def set_result(cr, message):
