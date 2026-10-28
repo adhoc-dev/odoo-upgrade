@@ -441,6 +441,19 @@ RESUMABLE = True
 # Los pasos que ya quedaron commiteados, para que una corrida que retoma un -u
 # fallido siga desde el paso que cortó en vez de repetir la fusión.
 PROGRESS_PARAM = "migration_19_end_progress"
+# Lo que la fusión arma en memoria y un paso posterior necesita. Sin esto, la
+# corrida que retoma arranca sin saber qué se fusionó antes.
+MERGE_STATE_PARAM = "migration_19_end_merge_state"
+# Solo de estos modelos, y no de todos los MERGE_OR_MOVE: el estado se lee y se
+# reescribe entero con cada registro, y account.analytic.line puede traer cien
+# mil. Se persiste lo que un paso posterior consulta de verdad: las
+# equivalencias que _canonical_id usa para comparar posiciones fiscales.
+MERGE_STATE_MODELS = {"account.tax", "account.fiscal.position"}
+# Modelos cuyo cierre necesita todos los registros que vinieron de la sucursal,
+# no solo los que falten por procesar (account.tax, por
+# drop_branch_vat_from_products). Para el resto alcanza con que el search de la
+# corrida siguiente traiga lo que quedó: lo fusionado ya está en la matriz.
+MERGE_FROZEN_SCOPE_MODELS = {"account.tax"}
 
 
 def _done_steps(env):
@@ -472,6 +485,52 @@ def step_done(env, key):
 def clear_progress(env):
     """Borra la marca de los pasos: terminada la fusión no tiene para qué quedar."""
     env["ir.config_parameter"].sudo().set_param(PROGRESS_PARAM, False)
+    env["ir.config_parameter"].sudo().set_param(MERGE_STATE_PARAM, False)
+
+
+def _merge_state(env):
+    return json.loads(
+        env["ir.config_parameter"].sudo().get_param(MERGE_STATE_PARAM) or "{}"
+    )
+
+
+def _save_merge_state(env, state):
+    """Guarda sin commitear: lo commitea el step_done del registro que lo escribió."""
+    env["ir.config_parameter"].sudo().set_param(MERGE_STATE_PARAM, json.dumps(state))
+
+
+def merge_scope(env, key, records):
+    """Los registros que este paso recorre, congelados en la primera corrida.
+
+    Fusionado el registro, queda en la compañía de la matriz y el search que
+    armó ``records`` ya no lo trae: sin congelar el conjunto, la corrida que
+    retoma no ve lo que ya se procesó y los pasos que cierran el modelo
+    (``drop_branch_vat_from_products``) trabajan sobre menos registros de los
+    que hubo.
+    """
+    if not key:
+        return records
+    state = _merge_state(env)
+    scopes = state.setdefault("scope", {})
+    if key in scopes:
+        return records.browse(scopes[key]).exists()
+    scopes[key] = records.ids
+    _save_merge_state(env, state)
+    return records
+
+
+@contextmanager
+def merge_step(env, key):
+    """Commitea con su marca el registro que se acaba de fusionar.
+
+    Marcar de a un registro, y no de a un modelo entero, es lo que deja avanzar
+    a la corrida siguiente: la fusión de impuestos de una base grande no entra
+    en el tiempo del job, y sin marcas intermedias cada reintento vuelve a
+    empezar por el primero y se corta en el mismo lugar.
+    """
+    yield
+    if key:
+        step_done(env, key)
 
 
 def flag_remapped_dependents(env, model, field_name, record_ids):
@@ -613,6 +672,23 @@ MERGED_IDS = {}
 
 def _canonical_id(model_name, record_id):
     return MERGED_IDS.get(model_name, {}).get(record_id, record_id)
+
+
+def load_merged_ids(env):
+    """Repone en memoria las equivalencias que fusionaron corridas anteriores."""
+    MERGED_IDS.clear()
+    for model_name, pairs in _merge_state(env).get("merged", {}).items():
+        MERGED_IDS[model_name] = {int(b_id): a_id for b_id, a_id in pairs.items()}
+
+
+def remember_merged(env, model_name, b_id, a_id):
+    """Anota la equivalencia en memoria y, si alguien la consulta después, también en la base."""
+    MERGED_IDS.setdefault(model_name, {})[b_id] = a_id
+    if model_name not in MERGE_STATE_MODELS:
+        return
+    state = _merge_state(env)
+    state.setdefault("merged", {}).setdefault(model_name, {})[str(b_id)] = a_id
+    _save_merge_state(env, state)
 
 
 def _fiscal_position_fingerprint(fpos):
@@ -1072,10 +1148,14 @@ def drop_branch_vat_from_products(env, id_a, branch_tax_ids):
     env.invalidate_all()
 
 
-def handle_merge_or_move(env, model_name, id_a, id_b):
+def handle_merge_or_move(env, model_name, id_a, id_b, step=None):
     """
     Intenta fusionar registros de B en A si son equivalentes.
     Si no hay equivalente, mueve el registro a la compañía A.
+
+    Con ``step``, cada registro se commitea con su marca apenas se fusiona: una
+    corrida que se corta a mitad del modelo no pierde lo hecho y la siguiente
+    sigue por donde iba.
     """
     # MODEL_STRATEGY cubre modelos de módulos que no están instalados en todas
     # las bases: sin esta guarda, env[model_name] aborta la migración entera.
@@ -1084,6 +1164,8 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             "Saltando MERGE_OR_MOVE de %s: el modelo no existe en esta base",
             model_name,
         )
+        return
+    if step and not step_pending(env, step):
         return
     Model = env[model_name]
     cr = env.cr
@@ -1101,6 +1183,9 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
         )
         company_domain = [("company_id", "=", id_a)]
 
+    if model_name in MERGE_FROZEN_SCOPE_MODELS:
+        records_b = merge_scope(env, step, records_b)
+
     criteria_fields = MERGE_CRITERIA.get(
         model_name, ["name"]
     )  # Por defecto, intentamos usar 'name' o 'display_name' como criterio de equivalencia
@@ -1113,334 +1198,341 @@ def handle_merge_or_move(env, model_name, id_a, id_b):
             record._write({"company_id": id_a})
 
     for rec_b in records_b:
-        # --- CASO account.tax.group: eliminar si no tiene impuestos asociados y no tiene campo active ---
-        if model_name == "account.tax.group":
-            # Si no tiene campo active y no tiene impuestos asociados, eliminar
-            has_active = "active" in rec_b._fields
-            taxes = (
-                env["account.tax"]
-                .with_context(active_test=False)
-                .search([("tax_group_id", "=", rec_b.id)])
-            )
-            if not has_active and not taxes:
-                _logger.info(
-                    f"ELIMINANDO account.tax.group '{rec_b.display_name}' (B) sin impuestos asociados y sin campo active"
+        rec_step = "%s:%s" % (step, rec_b.id) if step else None
+        if rec_step and not step_pending(env, rec_step):
+            continue
+        with merge_step(env, rec_step):
+            # --- CASO account.tax.group: eliminar si no tiene impuestos asociados y no tiene campo active ---
+            if model_name == "account.tax.group":
+                # Si no tiene campo active y no tiene impuestos asociados, eliminar
+                has_active = "active" in rec_b._fields
+                taxes = (
+                    env["account.tax"]
+                    .with_context(active_test=False)
+                    .search([("tax_group_id", "=", rec_b.id)])
                 )
-                try:
-                    rec_b.unlink()
-                except Exception as e:
-                    _logger.error(
-                        f"Error al eliminar account.tax.group '{rec_b.display_name}' (B): {e}"
+                if not has_active and not taxes:
+                    _logger.info(
+                        f"ELIMINANDO account.tax.group '{rec_b.display_name}' (B) sin impuestos asociados y sin campo active"
                     )
+                    try:
+                        rec_b.unlink()
+                    except Exception as e:
+                        _logger.error(
+                            f"Error al eliminar account.tax.group '{rec_b.display_name}' (B): {e}"
+                        )
+                        continue
                     continue
-                continue
 
-        # --- Construir dominio de búsqueda para el equivalente en A ---
-        domain = company_domain.copy()
-        valid_criteria = True
+            # --- Construir dominio de búsqueda para el equivalente en A ---
+            domain = company_domain.copy()
+            valid_criteria = True
 
-        record_criteria = criteria_fields
-        # Un impuesto con jurisdicción se identifica por lo que hace, no por su nombre
-        # ni por el del grupo: la sucursal puede tener "IIBB ARBA 2.5%" y la matriz
-        # "IIBB Bs As 2.5%" en grupos que el chart renombró distinto, y son el mismo
-        # impuesto. Es la misma clave que _check_tax_overlap de l10n_ar_tax.
-        if (
-            model_name == "account.tax"
-            and rec_b._fields.get("l10n_ar_state_id")
-            and rec_b.l10n_ar_state_id
-        ):
-            group_a = get_parent_equivalent_tax_group(
-                env, rec_b.tax_group_id, id_a, id_b
-            )
-            if not group_a:
-                valid_criteria = False
-            domain.extend(
-                [
-                    ("tax_group_id", "=", group_a.id),
-                    ("l10n_ar_state_id", "=", rec_b.l10n_ar_state_id.id),
-                    ("amount_type", "=", rec_b.amount_type),
-                    ("price_include_override", "=", rec_b.price_include_override),
-                    (
-                        "l10n_ar_withholding_payment_type",
-                        "=",
-                        rec_b.l10n_ar_withholding_payment_type,
-                    ),
-                    ("l10n_ar_tax_type", "=", rec_b.l10n_ar_tax_type),
-                ]
-            )
-            if "ratio" in rec_b._fields:
-                domain.append(("ratio", "=", rec_b.ratio))
-            record_criteria = ["amount", "type_tax_use"]
-        # Para account.tax, buscar por tax_group además de los criterios
-        elif model_name == "account.tax":
-            # Buscar por tax_group primero si existe
-            if rec_b.tax_group_id:
-                domain.extend(
-                    [
-                        ("type_tax_use", "=", rec_b.type_tax_use),
-                        ("amount", "=", rec_b.amount),
-                        ("price_include_override", "=", rec_b.price_include_override),
-                        "|",
-                        ("name", "=", rec_b.name),
-                        ("tax_group_id.name", "=", rec_b.tax_group_id.name),
-                    ]
-                )
-                # Same rate is not the same tax when one applies always and the
-                # other only through a fiscal position (e.g. an exempt VAT for the
-                # auxiliary vs. the one for exports): merging them moves the
-                # branch history into the parent's foreign sales.
-                if "is_domestic" in rec_b._fields:
-                    domain.append(("is_domestic", "=", rec_b.is_domestic))
+            record_criteria = criteria_fields
+            # Un impuesto con jurisdicción se identifica por lo que hace, no por su nombre
+            # ni por el del grupo: la sucursal puede tener "IIBB ARBA 2.5%" y la matriz
+            # "IIBB Bs As 2.5%" en grupos que el chart renombró distinto, y son el mismo
+            # impuesto. Es la misma clave que _check_tax_overlap de l10n_ar_tax.
             if (
-                rec_b._fields.get("l10n_ar_withholding_payment_type")
-                and rec_b.l10n_ar_withholding_payment_type
+                model_name == "account.tax"
+                and rec_b._fields.get("l10n_ar_state_id")
+                and rec_b.l10n_ar_state_id
             ):
+                group_a = get_parent_equivalent_tax_group(
+                    env, rec_b.tax_group_id, id_a, id_b
+                )
+                if not group_a:
+                    valid_criteria = False
                 domain.extend(
                     [
+                        ("tax_group_id", "=", group_a.id),
+                        ("l10n_ar_state_id", "=", rec_b.l10n_ar_state_id.id),
+                        ("amount_type", "=", rec_b.amount_type),
+                        ("price_include_override", "=", rec_b.price_include_override),
                         (
                             "l10n_ar_withholding_payment_type",
                             "=",
                             rec_b.l10n_ar_withholding_payment_type,
                         ),
-                        ("name", "=", rec_b.name),
+                        ("l10n_ar_tax_type", "=", rec_b.l10n_ar_tax_type),
                     ]
                 )
-        for field in record_criteria:
-            root_field = field.split(".")[0]
-            if root_field not in rec_b._fields:
-                valid_criteria = False
-                break
-
-            # Navegar rutas con punto (ej. 'tax_group_id.name')
-            field_value = rec_b
-            for part in field.split("."):
-                field_value = getattr(field_value, part, None)
-                if field_value is None:
+                if "ratio" in rec_b._fields:
+                    domain.append(("ratio", "=", rec_b.ratio))
+                record_criteria = ["amount", "type_tax_use"]
+            # Para account.tax, buscar por tax_group además de los criterios
+            elif model_name == "account.tax":
+                # Buscar por tax_group primero si existe
+                if rec_b.tax_group_id:
+                    domain.extend(
+                        [
+                            ("type_tax_use", "=", rec_b.type_tax_use),
+                            ("amount", "=", rec_b.amount),
+                            ("price_include_override", "=", rec_b.price_include_override),
+                            "|",
+                            ("name", "=", rec_b.name),
+                            ("tax_group_id.name", "=", rec_b.tax_group_id.name),
+                        ]
+                    )
+                    # Same rate is not the same tax when one applies always and the
+                    # other only through a fiscal position (e.g. an exempt VAT for the
+                    # auxiliary vs. the one for exports): merging them moves the
+                    # branch history into the parent's foreign sales.
+                    if "is_domestic" in rec_b._fields:
+                        domain.append(("is_domestic", "=", rec_b.is_domestic))
+                if (
+                    rec_b._fields.get("l10n_ar_withholding_payment_type")
+                    and rec_b.l10n_ar_withholding_payment_type
+                ):
+                    domain.extend(
+                        [
+                            (
+                                "l10n_ar_withholding_payment_type",
+                                "=",
+                                rec_b.l10n_ar_withholding_payment_type,
+                            ),
+                            ("name", "=", rec_b.name),
+                        ]
+                    )
+            for field in record_criteria:
+                root_field = field.split(".")[0]
+                if root_field not in rec_b._fields:
+                    valid_criteria = False
                     break
 
-            if field_value is not None:
-                domain.append((field, "=", field_value))
+                # Navegar rutas con punto (ej. 'tax_group_id.name')
+                field_value = rec_b
+                for part in field.split("."):
+                    field_value = getattr(field_value, part, None)
+                    if field_value is None:
+                        break
 
-        # Search UNA sola vez, fuera del loop, con el dominio completo
-        if model_name == "account.fiscal.position":
-            rec_a = _find_equivalent_fiscal_position(
-                env, rec_b, domain, company_domain
-            )
-        else:
-            rec_a = (
-                Model.with_context(active_test=False).search(
-                    domain,
-                    limit=1,
-                    order="active desc, id" if model_name == "account.tax" else None,
+                if field_value is not None:
+                    domain.append((field, "=", field_value))
+
+            # Search UNA sola vez, fuera del loop, con el dominio completo
+            if model_name == "account.fiscal.position":
+                rec_a = _find_equivalent_fiscal_position(
+                    env, rec_b, domain, company_domain
                 )
-                if valid_criteria
-                else False
-            )
-        if rec_a:
-            MERGED_IDS.setdefault(model_name, {})[rec_b.id] = rec_a.id
-            # Para impuestos inactivos, priorizamos moverlos a la matriz para no dejarlos en la sucursal.
-            if (
-                model_name == "account.tax"
-                and "active" in rec_b._fields
-                and not rec_b.active
-            ):
-                _logger.info(
-                    "MOVIENDO INACTIVO: %s '%s' (B) -> compañía A",
-                    model_name,
-                    rec_b.display_name,
+            else:
+                rec_a = (
+                    Model.with_context(active_test=False).search(
+                        domain,
+                        limit=1,
+                        order="active desc, id" if model_name == "account.tax" else None,
+                    )
+                    if valid_criteria
+                    else False
                 )
-                _move_record_to_parent(rec_b)
-                continue
-
-            if "active" in rec_b._fields and not rec_a.active:
-                rec_a.active = True
-            _logger.info(
-                f"FUSIONANDO: {model_name} '{rec_b.display_name}' (B) -> '{rec_a.display_name}' (A)"
-            )
-
-            # Re-mapear FK antes de archivar
-            # Modelos cuyas FKs NO deben remapearse porque son "hijos propios"
-            # del registro y deben seguir apuntando a él (no al equivalente en A).
-            # Ej: account.tax.repartition.line.tax_id debe quedarse en el impuesto
-            # original de B (que luego se archiva y se mueve a A), no moverse a
-            # los repartition lines del impuesto A.
-            #
-            # account.fiscal.position.l10n_ar_tax son las retenciones/percepciones AR
-            # configuradas en la posición fiscal. Re-mapearlas metía en la posición
-            # fiscal de A retenciones que solo estaban configuradas en la de B: si las
-            # dos compañías tenían una posición fiscal con el mismo nombre (criterio de
-            # equivalencia de MERGE_CRITERIA), la de la matriz terminaba aplicando las
-            # retenciones de la sucursal. Con webservice provincial seteado (arba, agip,
-            # rentas_cordoba) eso rompe el registro de pagos en la matriz, que no tiene
-            # por qué tener las credenciales cargadas (ticket 122841). Las líneas quedan
-            # en el registro de B, que se archiva y se mueve a la matriz, así que la
-            # configuración no se pierde: queda inerte y recuperable.
-            #
-            # account.payment.term.line: re-mapearlas sumaba las cuotas de B al plazo
-            # homónimo de A, y el recompute de value_amount (100 - suma de porcentajes)
-            # rompía _check_percent.
-            SKIP_FK_REMAP_MODELS = {
-                "account.payment.term": {
-                    "account.payment.term.line",
-                },
-                "account.tax": {
-                    "account.tax.repartition.line",
-                },
-                "account.fiscal.position": {
-                    "account.fiscal.position.l10n_ar_tax",
-                },
-            }
-            skip_models = SKIP_FK_REMAP_MODELS.get(model_name, set())
-
-            # l10n_ar.payment.withholding.tax_id NO es "hijo propio": es una
-            # referencia al impuesto aplicado, igual que account.move.line.
-            # tax_line_id. Saltear su remap (como se hacía antes) deja las
-            # líneas de retención apuntando al impuesto archivado de B mientras
-            # el apunte contable ya quedó en A: _compute_withholding
-            # (l10n_ar_tax/models/account_move_line.py) no encuentra el match
-            # y rompe la exportación de SIFERE/SICORE/SIRCAR (T-125999).
-            # Remapeamos con guarda: si el mismo pago ya tiene una línea con
-            # el impuesto destino (A), el UPDATE violaría el unique(tax_id,
-            # payment_id) de l10n_ar.payment.withholding (caso real: PR #142,
-            # ticket #120212) — esas quedan sin remapear y logueadas como
-            # warning para revisión manual, en vez de abortar la migración.
-            if model_name == "account.tax" and table_exists(
-                cr, "l10n_ar_payment_withholding"
-            ):
-                cr.execute(
-                    """
-                    UPDATE l10n_ar_payment_withholding w
-                       SET tax_id = %s
-                     WHERE w.tax_id = %s
-                       AND NOT EXISTS (
-                             SELECT 1
-                               FROM l10n_ar_payment_withholding w2
-                              WHERE w2.payment_id = w.payment_id
-                                AND w2.tax_id = %s
-                           )
-                    """,
-                    (rec_a.id, rec_b.id, rec_a.id),
-                )
-                if cr.rowcount:
+            if rec_a:
+                remember_merged(env, model_name, rec_b.id, rec_a.id)
+                # Para impuestos inactivos, priorizamos moverlos a la matriz para no dejarlos en la sucursal.
+                if (
+                    model_name == "account.tax"
+                    and "active" in rec_b._fields
+                    and not rec_b.active
+                ):
                     _logger.info(
-                        "Re-mapeando FK: l10n_ar.payment.withholding.tax_id id=%s -> id=%s (%s líneas)",
-                        rec_b.id,
-                        rec_a.id,
-                        cr.rowcount,
-                    )
-                cr.execute(
-                    "SELECT payment_id FROM l10n_ar_payment_withholding WHERE tax_id = %s",
-                    (rec_b.id,),
-                )
-                colliding_payments = [row[0] for row in cr.fetchall()]
-                if colliding_payments:
-                    _logger.warning(
-                        "COLISIÓN l10n_ar.payment.withholding: %s pago(s) mantienen "
-                        "tax_id=%s (impuesto archivado de B) porque ya tienen otra "
-                        "línea con tax_id=%s (A); revisar manualmente payment_id=%s",
-                        len(colliding_payments),
-                        rec_b.id,
-                        rec_a.id,
-                        colliding_payments,
-                    )
-                skip_models = skip_models | {"l10n_ar.payment.withholding"}
-
-            # Excluimos campos custom / Studio (state='manual'): no remapeamos FKs
-            # sobre ellos. Sus columnas pueden tener el nombre con mayúsculas
-            # (ej. x_studio_related_field_lCHOL), y el UPDATE sin comillas que
-            # arma este script pliega el identificador a minúsculas, rompiendo
-            # con "column does not exist". Además, no es responsabilidad de la
-            # migración base reconciliar relaciones definidas por el cliente.
-            fk_fields = env["ir.model.fields"].search(
-                [
-                    ("relation", "=", model_name),
-                    ("ttype", "=", "many2one"),
-                    ("store", "=", True),
-                    ("state", "=", "base"),
-                    ("model_id.transient", "=", False),
-                    ("model_id.abstract", "=", False),
-                ]
-            )
-            for fk in fk_fields:
-                fk_table = fk.model.replace(".", "_")
-                if fk.model in skip_models:
-                    # Contamos lo que queda en B para que el registro sea revisable:
-                    # si había configuración, es un cambio de comportamiento respecto
-                    # de la versión anterior y alguien lo tiene que mirar.
-                    kept = 0
-                    if table_exists(cr, fk_table) and is_integer_column(
-                        cr, fk_table, fk.name
-                    ):
-                        cr.execute(
-                            f"SELECT count(*) FROM {fk_table} WHERE {fk.name} = %s",
-                            (rec_b.id,),
-                        )
-                        kept = cr.fetchone()[0]
-                    log = _logger.warning if kept else _logger.info
-                    log(
-                        "Saltando FK: %s.%s (modelo hijo propio, no se redirige al equivalente en A). "
-                        "Quedan %s registro(s) en '%s' (B), que se archiva",
-                        fk.model,
-                        fk.name,
-                        kept,
+                        "MOVIENDO INACTIVO: %s '%s' (B) -> compañía A",
+                        model_name,
                         rec_b.display_name,
                     )
+                    _move_record_to_parent(rec_b)
                     continue
-                if table_exists(cr, fk_table):
-                    if is_integer_column(cr, fk_table, fk.name):
+
+                if "active" in rec_b._fields and not rec_a.active:
+                    rec_a.active = True
+                _logger.info(
+                    f"FUSIONANDO: {model_name} '{rec_b.display_name}' (B) -> '{rec_a.display_name}' (A)"
+                )
+
+                # Re-mapear FK antes de archivar
+                # Modelos cuyas FKs NO deben remapearse porque son "hijos propios"
+                # del registro y deben seguir apuntando a él (no al equivalente en A).
+                # Ej: account.tax.repartition.line.tax_id debe quedarse en el impuesto
+                # original de B (que luego se archiva y se mueve a A), no moverse a
+                # los repartition lines del impuesto A.
+                #
+                # account.fiscal.position.l10n_ar_tax son las retenciones/percepciones AR
+                # configuradas en la posición fiscal. Re-mapearlas metía en la posición
+                # fiscal de A retenciones que solo estaban configuradas en la de B: si las
+                # dos compañías tenían una posición fiscal con el mismo nombre (criterio de
+                # equivalencia de MERGE_CRITERIA), la de la matriz terminaba aplicando las
+                # retenciones de la sucursal. Con webservice provincial seteado (arba, agip,
+                # rentas_cordoba) eso rompe el registro de pagos en la matriz, que no tiene
+                # por qué tener las credenciales cargadas (ticket 122841). Las líneas quedan
+                # en el registro de B, que se archiva y se mueve a la matriz, así que la
+                # configuración no se pierde: queda inerte y recuperable.
+                #
+                # account.payment.term.line: re-mapearlas sumaba las cuotas de B al plazo
+                # homónimo de A, y el recompute de value_amount (100 - suma de porcentajes)
+                # rompía _check_percent.
+                SKIP_FK_REMAP_MODELS = {
+                    "account.payment.term": {
+                        "account.payment.term.line",
+                    },
+                    "account.tax": {
+                        "account.tax.repartition.line",
+                    },
+                    "account.fiscal.position": {
+                        "account.fiscal.position.l10n_ar_tax",
+                    },
+                }
+                skip_models = SKIP_FK_REMAP_MODELS.get(model_name, set())
+
+                # l10n_ar.payment.withholding.tax_id NO es "hijo propio": es una
+                # referencia al impuesto aplicado, igual que account.move.line.
+                # tax_line_id. Saltear su remap (como se hacía antes) deja las
+                # líneas de retención apuntando al impuesto archivado de B mientras
+                # el apunte contable ya quedó en A: _compute_withholding
+                # (l10n_ar_tax/models/account_move_line.py) no encuentra el match
+                # y rompe la exportación de SIFERE/SICORE/SIRCAR (T-125999).
+                # Remapeamos con guarda: si el mismo pago ya tiene una línea con
+                # el impuesto destino (A), el UPDATE violaría el unique(tax_id,
+                # payment_id) de l10n_ar.payment.withholding (caso real: PR #142,
+                # ticket #120212) — esas quedan sin remapear y logueadas como
+                # warning para revisión manual, en vez de abortar la migración.
+                if model_name == "account.tax" and table_exists(
+                    cr, "l10n_ar_payment_withholding"
+                ):
+                    cr.execute(
+                        """
+                        UPDATE l10n_ar_payment_withholding w
+                           SET tax_id = %s
+                         WHERE w.tax_id = %s
+                           AND NOT EXISTS (
+                                 SELECT 1
+                                   FROM l10n_ar_payment_withholding w2
+                                  WHERE w2.payment_id = w.payment_id
+                                    AND w2.tax_id = %s
+                               )
+                        """,
+                        (rec_a.id, rec_b.id, rec_a.id),
+                    )
+                    if cr.rowcount:
                         _logger.info(
-                            "Re-mapeando FK: %s.%s id=%s -> id=%s",
-                            fk.model,
-                            fk.name,
+                            "Re-mapeando FK: l10n_ar.payment.withholding.tax_id id=%s -> id=%s (%s líneas)",
                             rec_b.id,
                             rec_a.id,
+                            cr.rowcount,
                         )
-                        cr.execute(
-                            f"UPDATE {fk_table} SET {fk.name} = %s WHERE {fk.name} = %s RETURNING id",
-                            (rec_a.id, rec_b.id),
+                    cr.execute(
+                        "SELECT payment_id FROM l10n_ar_payment_withholding WHERE tax_id = %s",
+                        (rec_b.id,),
+                    )
+                    colliding_payments = [row[0] for row in cr.fetchall()]
+                    if colliding_payments:
+                        _logger.warning(
+                            "COLISIÓN l10n_ar.payment.withholding: %s pago(s) mantienen "
+                            "tax_id=%s (impuesto archivado de B) porque ya tienen otra "
+                            "línea con tax_id=%s (A); revisar manualmente payment_id=%s",
+                            len(colliding_payments),
+                            rec_b.id,
+                            rec_a.id,
+                            colliding_payments,
                         )
-                        remapped_ids = [row[0] for row in cr.fetchall()]
-                        dedupe_columns = DEDUPE_AFTER_REMAP.get(fk.model)
-                        if dedupe_columns:
-                            deleted_ids = dedupe_after_remap(
-                                cr, fk.model, fk_table, dedupe_columns, remapped_ids
+                    skip_models = skip_models | {"l10n_ar.payment.withholding"}
+
+                # Excluimos campos custom / Studio (state='manual'): no remapeamos FKs
+                # sobre ellos. Sus columnas pueden tener el nombre con mayúsculas
+                # (ej. x_studio_related_field_lCHOL), y el UPDATE sin comillas que
+                # arma este script pliega el identificador a minúsculas, rompiendo
+                # con "column does not exist". Además, no es responsabilidad de la
+                # migración base reconciliar relaciones definidas por el cliente.
+                fk_fields = env["ir.model.fields"].search(
+                    [
+                        ("relation", "=", model_name),
+                        ("ttype", "=", "many2one"),
+                        ("store", "=", True),
+                        ("state", "=", "base"),
+                        ("model_id.transient", "=", False),
+                        ("model_id.abstract", "=", False),
+                    ]
+                )
+                for fk in fk_fields:
+                    fk_table = fk.model.replace(".", "_")
+                    if fk.model in skip_models:
+                        # Contamos lo que queda en B para que el registro sea revisable:
+                        # si había configuración, es un cambio de comportamiento respecto
+                        # de la versión anterior y alguien lo tiene que mirar.
+                        kept = 0
+                        if table_exists(cr, fk_table) and is_integer_column(
+                            cr, fk_table, fk.name
+                        ):
+                            cr.execute(
+                                f"SELECT count(*) FROM {fk_table} WHERE {fk.name} = %s",
+                                (rec_b.id,),
                             )
-                            remapped_ids = [i for i in remapped_ids if i not in deleted_ids]
-                        flag_remapped_dependents(env, fk.model, fk.name, remapped_ids)
-                    else:
-                        _logger.info(
-                            "Saltando FK: %s.%s porque la columna no es integer",
+                            kept = cr.fetchone()[0]
+                        log = _logger.warning if kept else _logger.info
+                        log(
+                            "Saltando FK: %s.%s (modelo hijo propio, no se redirige al equivalente en A). "
+                            "Quedan %s registro(s) en '%s' (B), que se archiva",
                             fk.model,
                             fk.name,
+                            kept,
+                            rec_b.display_name,
                         )
-                else:
-                    _logger.info(
-                        "Saltando FK: %s.%s porque la tabla %s no existe",
-                        fk.model,
-                        fk.name,
-                        fk_table,
-                    )
+                        continue
+                    if table_exists(cr, fk_table):
+                        if is_integer_column(cr, fk_table, fk.name):
+                            _logger.info(
+                                "Re-mapeando FK: %s.%s id=%s -> id=%s",
+                                fk.model,
+                                fk.name,
+                                rec_b.id,
+                                rec_a.id,
+                            )
+                            cr.execute(
+                                f"UPDATE {fk_table} SET {fk.name} = %s WHERE {fk.name} = %s RETURNING id",
+                                (rec_a.id, rec_b.id),
+                            )
+                            remapped_ids = [row[0] for row in cr.fetchall()]
+                            dedupe_columns = DEDUPE_AFTER_REMAP.get(fk.model)
+                            if dedupe_columns:
+                                deleted_ids = dedupe_after_remap(
+                                    cr, fk.model, fk_table, dedupe_columns, remapped_ids
+                                )
+                                remapped_ids = [i for i in remapped_ids if i not in deleted_ids]
+                            flag_remapped_dependents(env, fk.model, fk.name, remapped_ids)
+                        else:
+                            _logger.info(
+                                "Saltando FK: %s.%s porque la columna no es integer",
+                                fk.model,
+                                fk.name,
+                            )
+                    else:
+                        _logger.info(
+                            "Saltando FK: %s.%s porque la tabla %s no existe",
+                            fk.model,
+                            fk.name,
+                            fk_table,
+                        )
 
-            # Materializamos los recomputes marcados en flag_remapped_dependents antes
-            # de seguir: el resto de la migración trabaja con SQL crudo, así que los
-            # stored tienen que quedar escritos ahora y no en un flush implícito
-            # posterior.
-            env.flush_all()
+                # Materializamos los recomputes marcados en flag_remapped_dependents antes
+                # de seguir: el resto de la migración trabaja con SQL crudo, así que los
+                # stored tienen que quedar escritos ahora y no en un flush implícito
+                # posterior.
+                env.flush_all()
 
-            if "name" in rec_b._fields:
-                mark_deprecated(rec_b)
-            if "active" in rec_b._fields:
-                rec_b.active = False  # Archivamos el de B para que no moleste
+                if "name" in rec_b._fields:
+                    mark_deprecated(rec_b)
+                if "active" in rec_b._fields:
+                    rec_b.active = False  # Archivamos el de B para que no moleste
+                    _move_record_to_parent(rec_b)
+            else:
+                # No hay equivalente, simplemente lo movemos a la matriz
+                _logger.info(f"MOVIENDO: {model_name} '{rec_b.display_name}' a compañía A")
                 _move_record_to_parent(rec_b)
-        else:
-            # No hay equivalente, simplemente lo movemos a la matriz
-            _logger.info(f"MOVIENDO: {model_name} '{rec_b.display_name}' a compañía A")
-            _move_record_to_parent(rec_b)
 
     # Here and not later: once moved, records_b is the only trace of which taxes
     # came from the branch.
     if model_name == "account.tax" and records_b:
         drop_branch_vat_from_products(env, id_a, records_b.ids)
+
+    if step:
+        step_done(env, step)
 
 
 def check_consistency_keep(env, model_name, id_b):
@@ -4440,6 +4532,9 @@ def create_branch_receiptbooks(env, branch_company_ids):
 
 def migrate(cr, version):
     env = util.env(cr)
+    # Una corrida que retoma necesita las equivalencias de las anteriores: el
+    # merge de posiciones fiscales compara contra impuestos ya fusionados.
+    load_merged_ids(env)
 
     if len(env["res.company"].search([])) == 1 and not table_exists(cr, "res_store_bu"):
         return
@@ -4508,9 +4603,9 @@ def migrate(cr, version):
                 m for m, s in MODEL_STRATEGY.items() if s == "MERGE_OR_MOVE"
             ]
             for model_name in merge_models:
-                if step_pending(env, step + "2:" + model_name):
-                    handle_merge_or_move(env, model_name, id_a, id_b)
-                    step_done(env, step + "2:" + model_name)
+                handle_merge_or_move(
+                    env, model_name, id_a, id_b, step=step + "2:" + model_name
+                )
 
             if step_pending(env, step + "2.1-2.2"):
                 # 2.1 l10n_ar.partner.tax: no está en MODEL_STRATEGY. Va después
