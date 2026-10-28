@@ -1,6 +1,6 @@
 import logging
 
-from oba import log_message, should_run_pre_odoo
+from oba import should_run_pre_odoo
 
 _logger = logging.getLogger(__name__)
 
@@ -39,12 +39,6 @@ def migrate(cr, version):
     )
     archived = cr.rowcount
     if archived:
-        log_message(
-            cr, "Archived %d crm.team.member record(s) for the admin user" % archived, "info", module="sales_team",
-        )
+        _logger.info("Archived %d crm.team.member record(s) for the admin user", archived)
     else:
-        log_message(
-            cr, "No active crm.team.member records found for the admin user, nothing to do",
-            "info",
-            module="sales_team",
-        )
+        _logger.info("No active crm.team.member records found for the admin user, nothing to do")

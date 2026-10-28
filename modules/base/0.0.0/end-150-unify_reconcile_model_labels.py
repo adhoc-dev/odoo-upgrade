@@ -15,7 +15,11 @@ Only on the last jump of the request.
 In ``modules/base/0.0.0`` so it runs on every jump, after the modules are loaded.
 """
 
+import logging
+
 from oba import log_message, should_run
+
+_logger = logging.getLogger(__name__)
 
 # Upgrades to 19 still run the upgrade line 2498.
 FIRST_TARGET_VERSION = 20
@@ -77,9 +81,7 @@ def migrate(cr, version):
                 (lang_code, line_ids),
             )
         detail = " | ".join('%s: "%s" -> "%s" (%s)' % (row[3], row[4], row[2][0], row[1][0]) for row in to_unify)
-        log_message(
-            cr, "Reconcile model labels unified (%s lines): %s" % (len(to_unify), detail), "info", module="account",
-        )
+        _logger.info("Reconcile model labels unified (%s lines): %s", len(to_unify), detail)
     if ambiguous:
         detail = " | ".join(
             "%s (line %s): %s"
@@ -125,12 +127,7 @@ def migrate(cr, version):
             (ambiguous_ids,),
         )
         detail = " | ".join('%s: %s items "%s" -> "%s"' % (row[0], row[3], row[1], row[2]) for row in items)
-        log_message(
-            cr,
-            "Journal items of reconcile models fixed (%s items): %s" % (sum(row[3] for row in items), detail),
-            "info",
-            module="account",
-        )
+        _logger.info("Journal items of reconcile models fixed (%s items): %s", sum(row[3] for row in items), detail)
     if hashed:
         log_message(
             cr,
@@ -140,10 +137,8 @@ def migrate(cr, version):
             module="account",
         )
     if skipped:
-        log_message(
-            cr,
+        _logger.info(
             "%s journal items keep a label different from their model and are not fixed: the model has more"
-            " than one line and the item stores the model, not the line." % skipped,
-            "info",
-            module="account",
+            " than one line and the item stores the model, not the line.",
+            skipped,
         )
