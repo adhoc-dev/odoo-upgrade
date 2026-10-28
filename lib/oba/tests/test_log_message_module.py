@@ -1,6 +1,7 @@
-"""Every ``log_message`` call in the scripts that run on every jump names its module.
+"""Every ``log_message`` call in the scripts that run on every jump is a warning or an error that names its module.
 
-The provider gets the product of a warning from ``module``. Needs no database:
+The provider gets the product of a warning from ``module``. An ``info`` goes to ``_logger.info``,
+which ends in the process log. Needs no database:
 
     /home/odoo/venv/bin/python lib/oba/tests/test_log_message_module.py
 """
@@ -22,7 +23,7 @@ def _is_log_message(node):
 
 
 class TestLogMessageModule(unittest.TestCase):
-    def test_every_call_has_a_literal_module(self):
+    def test_every_call_has_a_type_and_a_literal_module(self):
         files = [f for pattern in PATTERNS for f in sorted(glob.glob(os.path.join(REPO, pattern)))]
         self.assertTrue(files, "no scripts found")
         bad = []
@@ -32,16 +33,15 @@ class TestLogMessageModule(unittest.TestCase):
             for node in ast.walk(tree):
                 if not (isinstance(node, ast.Call) and _is_log_message(node)):
                     continue
-                ok = any(
-                    kw.arg == "module"
-                    and isinstance(kw.value, ast.Constant)
-                    and isinstance(kw.value.value, str)
-                    and kw.value.value
-                    for kw in node.keywords
-                )
-                if not ok:
-                    bad.append("%s:%s" % (os.path.relpath(path, REPO), node.lineno))
-        self.assertEqual(bad, [], "log_message without module=<literal>:\n" + "\n".join(bad))
+                kwargs = {kw.arg: kw.value for kw in node.keywords}
+                type_ = kwargs.get("type", node.args[2] if len(node.args) > 2 else None)
+                module = kwargs.get("module")
+                where = "%s:%s" % (os.path.relpath(path, REPO), node.lineno)
+                if not (isinstance(type_, ast.Constant) and type_.value in ("warning", "error")):
+                    bad.append("%s: an info goes to _logger.info" % where)
+                elif not (isinstance(module, ast.Constant) and isinstance(module.value, str) and module.value):
+                    bad.append("%s: without module=<literal>" % where)
+        self.assertEqual(bad, [], "\n".join(bad))
 
 
 if __name__ == "__main__":

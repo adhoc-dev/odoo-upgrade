@@ -84,12 +84,9 @@ def run(cr, context, to_version=None, catalog=None, remove=util.remove_module):
         return
 
     if pending_install:
-        log_message(
-            cr,
-            "Módulos usables en la versión destino, pendientes de instalar por el fixdb (no se analizan): %s"
-            % pending_install,
-            "info",
-            module="base",
+        _logger.info(
+            "Módulos usables en la versión destino, pendientes de instalar por el fixdb (no se analizan): %s",
+            pending_install,
         )
 
     # 1. discarded or migrating: handled cases, they can be removed
@@ -101,7 +98,7 @@ def run(cr, context, to_version=None, catalog=None, remove=util.remove_module):
         message = ["Módulos desinstalados: %s" % to_remove]
         if dependents:
             message.append("Dependientes desinstalados: %s" % dependents)
-        log_message(cr, "\n".join(message), "info", module="base")
+        _logger.info("\n".join(message))
 
     # 2. not available but migrating: tell the customer
     if migrating:
