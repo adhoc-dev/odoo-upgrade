@@ -75,4 +75,6 @@ def migrate(cr, version):
         if copied:
             _logger.info("Website views copied again: %s", ", ".join(copied))
         if failed:
-            log_message(cr, "Website views that could not be restored: %s" % "; ".join(failed), "warning")
+            log_message(
+                cr, "Website views that could not be restored: %s" % "; ".join(failed), "warning", module="website",
+            )

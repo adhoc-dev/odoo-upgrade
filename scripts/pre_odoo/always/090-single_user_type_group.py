@@ -70,6 +70,7 @@ def migrate(cr, version):
                 for login, gid in conflicts
             ),
             "warning",
+            module="base",
         )
 
     cr.execute(

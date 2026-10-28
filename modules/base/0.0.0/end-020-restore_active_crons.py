@@ -30,7 +30,7 @@ def migrate(cr, version):
         context = request_context(cr)
         message = "No %s: no crons to re-activate" % BACKUP_TABLE
         if context and context.get("is_last_in_series", True):
-            log_message(cr, message, "warning")
+            log_message(cr, message, "warning", module="base")
         else:
             _logger.info(message)
         return

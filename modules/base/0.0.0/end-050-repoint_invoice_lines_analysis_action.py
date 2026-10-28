@@ -39,7 +39,10 @@ def migrate(cr, version):
         new_action = env["ir.actions.actions"].search([("name", "in", NEW_NAMES)], limit=1)
         if not new_action:
             log_message(
-                cr, "There are old action ids, but no new Invoices Analysis action: nothing repointed", "warning"
+                cr,
+                "There are old action ids, but no new Invoices Analysis action: nothing repointed",
+                "warning",
+                module="account",
             )
         else:
             repointed, failed = [], []
@@ -59,4 +62,9 @@ def migrate(cr, version):
             if repointed:
                 _logger.info("Repointed to action %s the custom dashboards %s", new_action.id, repointed)
             if failed:
-                log_message(cr, "Custom dashboards that could not be repointed: %s" % "; ".join(failed), "warning")
+                log_message(
+                    cr,
+                    "Custom dashboards that could not be repointed: %s" % "; ".join(failed),
+                    "warning",
+                    module="account",
+                )

@@ -33,7 +33,7 @@ def migrate(cr, version):
         # Its pre_odoo script always backs up: in a provider run, no table means it did not run.
         message = "No %s: no generated xmlids to drop" % BACKUP_TABLE
         if context:
-            log_message(cr, message, "warning")
+            log_message(cr, message, "warning", module="base")
         else:
             _logger.info(message)
         return

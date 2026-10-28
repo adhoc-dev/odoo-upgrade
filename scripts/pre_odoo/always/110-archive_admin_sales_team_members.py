@@ -39,6 +39,12 @@ def migrate(cr, version):
     )
     archived = cr.rowcount
     if archived:
-        log_message(cr, "Archived %d crm.team.member record(s) for the admin user" % archived, "info")
+        log_message(
+            cr, "Archived %d crm.team.member record(s) for the admin user" % archived, "info", module="sales_team",
+        )
     else:
-        log_message(cr, "No active crm.team.member records found for the admin user, nothing to do", "info")
+        log_message(
+            cr, "No active crm.team.member records found for the admin user, nothing to do",
+            "info",
+            module="sales_team",
+        )

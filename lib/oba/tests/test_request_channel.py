@@ -103,9 +103,19 @@ class TestOutput(RequestChannelCase):
         # The caller, relative to the repo: here the test itself
         self.assertEqual(payload["migration_script"], "lib/oba/tests/test_request_channel.py")
 
-    def test_info_is_the_default_type(self):
-        log_message(self.cr, "todo bien")
-        self.assertEqual(self.rows()[0][1]["type"], "info")
+    def test_info_leaves_no_row_and_goes_to_the_log(self):
+        with self.assertLogs("oba.output", "INFO") as logs:
+            log_message(self.cr, "todo bien")
+        self.assertEqual(self.rows(), [])
+        self.assertIn("todo bien", logs.output[0])
+
+    def test_module_travels_in_the_payload(self):
+        log_message(self.cr, "x", "warning", module="account")
+        self.assertEqual(self.rows()[0][1]["module"], "account")
+
+    def test_without_module_the_key_is_absent(self):
+        log_message(self.cr, "x", "error")
+        self.assertNotIn("module", self.rows()[0][1])
 
     def test_the_type_is_one_the_provider_knows(self):
         with self.assertRaises(ValueError):

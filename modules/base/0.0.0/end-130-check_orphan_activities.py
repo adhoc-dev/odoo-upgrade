@@ -39,4 +39,4 @@ def migrate(cr, version):
         if found != len(res_ids):
             orphans.append("%s: target=%s, qty=%s" % (table, len(res_ids), found))
     if orphans:
-        log_message(cr, "Activities linked to documents that no longer exist: %s" % orphans, "warning")
+        log_message(cr, "Activities linked to documents that no longer exist: %s" % orphans, "warning", module="mail")

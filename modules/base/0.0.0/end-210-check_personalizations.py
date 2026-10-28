@@ -83,7 +83,7 @@ def _check_modules(cr):
     if (context.get("parameters") or {}).get("ignore_personalizations_check"):
         _logger.info("Personalization modules not migrated %s: ignored by the ticket parameter", missing)
         return migrated
-    log_message(cr, MISSING_MODULE_WARNING, "warning")
+    log_message(cr, MISSING_MODULE_WARNING, "warning", module="base")
     if context.get("aim") != "test":
         set_breaks(cr, MISSING_MODULE_BREAKS)
     return migrated
@@ -114,7 +114,7 @@ def _check_interface(cr):
             _logger.info("Archived %s custom views that fail in this version: %s", len(broken), broken)
         return False, True, len(broken)
     if broken:
-        log_message(cr, "Revisar vistas Personalizadas para ajustarlas %s" % broken, "warning")
+        log_message(cr, "Revisar vistas Personalizadas para ajustarlas %s" % broken, "warning", module="base")
     return True, False, 0
 
 
@@ -128,7 +128,9 @@ def _from_dashboard(env):
             dashboard = env["saas_client.dashboard"].create({})
             return bool(dashboard.has_interface_personalizations), dashboard.view_ids.ids
     except Exception:
-        log_message(env.cr, "No se pudo leer 'Mi base' en la new, se detecta solo por vistas.", "warning")
+        log_message(
+            env.cr, "No se pudo leer 'Mi base' en la new, se detecta solo por vistas.", "warning", module="base",
+        )
         return None, None
 
 

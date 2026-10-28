@@ -29,7 +29,7 @@ def migrate(cr, version):
         # Its pre_odoo script always backs up: in a provider run, no table means it did not run.
         message = "No %s: no related fields to restore" % BACKUP_TABLE
         if request_context(cr):
-            log_message(cr, message, "warning")
+            log_message(cr, message, "warning", module="base")
         else:
             _logger.info(message)
         return
@@ -66,4 +66,4 @@ def migrate(cr, version):
         if fixed:
             _logger.info("Restored related: %s", ", ".join(fixed))
         if failed:
-            log_message(cr, "Related that could not be restored: %s" % "; ".join(failed), "warning")
+            log_message(cr, "Related that could not be restored: %s" % "; ".join(failed), "warning", module="base")

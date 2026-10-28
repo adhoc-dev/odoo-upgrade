@@ -47,4 +47,5 @@ def migrate(cr, version):
             cr,
             "%s credit card journals changed their type in the upgrade: %s" % (len(journal_ids), journal_ids),
             "warning",
+            module="account",
         )
