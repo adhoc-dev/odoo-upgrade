@@ -1967,6 +1967,66 @@ def remap_company_dependent_refs(env, fields, src_ids, dst_id):
         env[field.model_name].invalidate_model([field.name])
 
 
+def fix_parent_branch_account_refs(env, id_a):
+    """Point the company-dependent values of id_a away from branch accounts.
+
+    `migrate_json_company_dependent` copies the value of B to A when A had none,
+    and if that account was not merged by `consolidate_branch_accounts`, A is left
+    with an account it can not use (cross-company error on invoices). Replace it
+    with the account of A with the same code; if there is none, keep it and warn:
+    clearing it would leave, e.g., a category without stock valuation account.
+    """
+    env = env(context=dict(env.context, allowed_company_ids=[id_a]))
+    Account = env["account.account"].with_context(active_test=False)
+    key = str(id_a)
+    env.flush_all()
+    for field in env.registry.many2one_company_dependents["account.account"]:
+        table = env[field.model_name]._table
+        if not util.column_exists(env.cr, table, field.name):
+            continue
+        env.cr.execute(
+            SQL(
+                "SELECT (%(field)s ->> %(key)s)::int, array_agg(id) FROM %(table)s"
+                " WHERE %(field)s ->> %(key)s IS NOT NULL GROUP BY 1",
+                table=SQL.identifier(table),
+                field=SQL.identifier(field.name),
+                key=key,
+            )
+        )
+        rows = dict(env.cr.fetchall())
+        for account in Account.browse(list(rows)).exists():
+            if id_a in account.company_ids.ids:
+                continue
+            ids = rows[account.id]
+            same_code = Account.search(
+                [("code", "=", account.code), ("company_ids", "in", [id_a])], limit=1
+            )
+            if not same_code:
+                _logger.warning(
+                    "%s.%s: %s records of company %s use the branch account %s %s and "
+                    "the company has no account with that code; left as they are. Ids: %s",
+                    field.model_name, field.name, len(ids), id_a,
+                    account.code, account.name, ids[:20],
+                )
+                continue
+            env.cr.execute(
+                SQL(
+                    "UPDATE %(table)s SET %(field)s = jsonb_set(%(field)s, %(path)s::text[],"
+                    " to_jsonb(%(new)s)) WHERE id = ANY(%(ids)s)",
+                    table=SQL.identifier(table),
+                    field=SQL.identifier(field.name),
+                    path="{%s}" % key,
+                    new=same_code.id,
+                    ids=ids,
+                )
+            )
+            _logger.info(
+                "%s.%s: branch account %s replaced by %s in %s records of company %s",
+                field.model_name, field.name, account.id, same_code.id, len(ids), id_a,
+            )
+        env[field.model_name].invalidate_model([field.name])
+
+
 def merge_same_account(env, id_a, code, account_type, accounts):
     """Fusiona un grupo de cuentas que son la misma cuenta y devuelve la que queda.
 
@@ -4730,6 +4790,9 @@ def migrate(cr, version):
             if step_pending(env, step + "6-7.2"):
                 # 6. Consolida el plan de cuentas del árbol
                 consolidate_branch_accounts(cr, env, id_a)
+
+                # 6.1 Branch accounts that step 3 copied to A and were not merged
+                fix_parent_branch_account_refs(env, id_a)
 
                 # 7.1. Recomputa campos stored en journals que dependen de la jerarquía
                 journals = env["account.journal"].search([])
