@@ -1,4 +1,4 @@
-"""Restore the bank catalog and the bank of each bank account after the upgrade to 20.
+"""Restore the bank catalog and the bank of each bank account and check after the upgrade to 20.
 
 Reads what scripts/pre_odoo/190_200/020-backup_res_bank.py backed up on the old database.
 Odoo 20 removes res.bank from base and l10n_ar_bank defines it again: the banks of the module
@@ -15,6 +15,7 @@ _logger = logging.getLogger(__name__)
 
 BANK_TABLE = "res_bank_bu"
 ACCOUNT_TABLE = "res_partner_bank_bank_id_bu"
+CHECK_TABLE = "l10n_latam_check_bank_id_bu"
 BANK_FIELDS = [
     "name",
     "street",
@@ -38,10 +39,7 @@ def _warn(cr, message):
 
 
 def _restore_banks(cr):
-    """Return {old bank id: bank id in 20}, also kept in the new_id column of BANK_TABLE.
-
-    The migration of l10n_latam_check_ux reads new_id to put back the bank of the checks.
-    """
+    """Return {old bank id: bank id in 20}, also kept in the new_id column of BANK_TABLE."""
     if not util.column_exists(cr, BANK_TABLE, "new_id"):
         util.create_column(cr, BANK_TABLE, "new_id", "int4")
     cr.execute(
@@ -145,6 +143,26 @@ def _restore_accounts(cr, mapping):
     )
 
 
+def _restore_checks(cr, mapping):
+    if not util.table_exists(cr, CHECK_TABLE):
+        # Only backed up when l10n_latam_check was installed.
+        return
+    cr.execute(SQL("SELECT id, bank_id FROM %s", SQL.identifier(CHECK_TABLE)))
+    restored = 0
+    for check_id, old_bank_id in cr.fetchall():
+        if old_bank_id not in mapping:
+            continue
+        cr.execute(
+            SQL(
+                "UPDATE l10n_latam_check SET bank_id = %s WHERE id = %s AND bank_id IS NULL",
+                mapping[old_bank_id],
+                check_id,
+            )
+        )
+        restored += cr.rowcount
+    _logger.info("Checks: %s with their bank again", restored)
+
+
 def migrate(cr, version):
     if not util.table_exists(cr, BANK_TABLE):
         # Its pre_odoo script always backs up when l10n_ar_bank is installed.
@@ -152,3 +170,4 @@ def migrate(cr, version):
         return
     mapping = _restore_banks(cr)
     _restore_accounts(cr, mapping)
+    _restore_checks(cr, mapping)
