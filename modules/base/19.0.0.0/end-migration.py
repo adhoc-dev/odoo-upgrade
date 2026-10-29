@@ -2,6 +2,7 @@ import collections
 import json
 import logging
 import re
+import time
 from contextlib import contextmanager
 
 from odoo.exceptions import UserError
@@ -520,17 +521,93 @@ def merge_scope(env, key, records):
 
 
 @contextmanager
-def merge_step(env, key):
-    """Commitea con su marca el registro que se acaba de fusionar.
+def merge_step(env, key, label=""):
+    """Commitea con su marca el registro que se acaba de fusionar, y lo cronometra.
 
     Marcar de a un registro, y no de a un modelo entero, es lo que deja avanzar
     a la corrida siguiente: la fusión de impuestos de una base grande no entra
     en el tiempo del job, y sin marcas intermedias cada reintento vuelve a
     empezar por el primero y se corta en el mismo lugar.
+
+    El tiempo se loguea pase lo que pase: una corrida que el job corta por
+    tiempo tiene que dejar dicho cuánto costó cada registro.
     """
-    yield
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        if label:
+            _logger.info("MERGE %s: %.1fs", label, time.monotonic() - started)
     if key:
         step_done(env, key)
+
+
+# Lo que un re-mapeo deja desactualizado y se puede escribir de una, en vez de
+# recomputarlo registro por registro. account.move.line.tax_group_id es
+# related="tax_line_id.tax_group_id" con store=True, así que re-mapear
+# tax_line_id marca para recomputar todas las líneas del impuesto: en una base
+# con 62.000 líneas por impuesto, eso es el grueso del tiempo de la fusión. El
+# valor final no depende de nada más que del impuesto destino, así que sale de
+# un UPDATE. %(id)s es el id del registro al que se re-mapeó.
+SQL_RECOMPUTE_AFTER_REMAP = {
+    ("account.move.line", "tax_line_id"): (
+        "account_move_line",
+        ["tax_group_id"],
+        """
+        UPDATE account_move_line l
+           SET tax_group_id = t.tax_group_id
+          FROM account_tax t
+         WHERE l.tax_line_id = t.id
+           AND l.tax_line_id = %(id)s
+           AND l.tax_group_id IS DISTINCT FROM t.tax_group_id
+        """,
+    ),
+}
+
+
+def sql_recompute_after_remap(env, model, field_name, new_id):
+    """Materializa por SQL lo que depende del campo re-mapeado. True si lo hizo."""
+    rule = SQL_RECOMPUTE_AFTER_REMAP.get((model, field_name))
+    if not rule:
+        return False
+    table, columns, query = rule
+    if not table_exists(env.cr, table) or any(
+        not column_exists(env.cr, table, column) for column in columns
+    ):
+        # La base no tiene el campo: nada que actualizar, y el ORM tampoco lo
+        # habría recomputado.
+        return True
+    env.cr.execute(query, {"id": new_id})
+    _logger.info(
+        "Recomputo por SQL: %s.%s -> %s fila(s) de %s",
+        model,
+        ", ".join(columns),
+        env.cr.rowcount,
+        table,
+    )
+    return True
+
+
+def has_stored_dependents(env, model, field_name):
+    """Si algún campo almacenado depende del campo: lo único que hay que recomputar.
+
+    Sin esto marcamos recomputes sobre recordsets enormes para después no tener
+    nada que escribir: el ORM recorre el árbol de dependencias igual, y para los
+    campos sin almacenar que tenga en caché resuelve cada nivel con un search
+    sobre todos los ids re-mapeados.
+
+    Un modelo o un campo que el registry no tiene cargado cuenta como que sí
+    tiene dependientes: el barrido de FKs sale de ir.model.fields, que puede
+    nombrar más de lo que esta base instaló, y ante la duda hacemos lo de antes.
+    """
+    try:
+        field = env[model]._fields[field_name]
+    except KeyError:
+        return True
+    tree = env.registry.get_trigger_tree(
+        [field], select=lambda f: f.compute and f.store
+    )
+    return bool(tree)
 
 
 def flag_remapped_dependents(env, model, field_name, record_ids):
@@ -546,6 +623,8 @@ def flag_remapped_dependents(env, model, field_name, record_ids):
     if not record_ids:
         return
     try:
+        if not has_stored_dependents(env, model, field_name):
+            return
         records = env[model].browse(record_ids)
         records.invalidate_recordset([field_name])
         records.modified([field_name])
@@ -1197,11 +1276,13 @@ def handle_merge_or_move(env, model_name, id_a, id_b, step=None):
         else:
             record._write({"company_id": id_a})
 
-    for rec_b in records_b:
+    total = len(records_b)
+    for position, rec_b in enumerate(records_b, 1):
         rec_step = "%s:%s" % (step, rec_b.id) if step else None
         if rec_step and not step_pending(env, rec_step):
             continue
-        with merge_step(env, rec_step):
+        label = "%s %s/%s id=%s" % (model_name, position, total, rec_b.id)
+        with merge_step(env, rec_step, label):
             # --- CASO account.tax.group: eliminar si no tiene impuestos asociados y no tiene campo active ---
             if model_name == "account.tax.group":
                 # Si no tiene campo active y no tiene impuestos asociados, eliminar
@@ -1477,25 +1558,40 @@ def handle_merge_or_move(env, model_name, id_a, id_b, step=None):
                         continue
                     if table_exists(cr, fk_table):
                         if is_integer_column(cr, fk_table, fk.name):
+                            # Los ids vuelven al proceso solo si alguien los usa:
+                            # son decenas de miles por impuesto en las líneas
+                            # contables, y traerlos para no hacer nada con ellos
+                            # se paga igual.
+                            dedupe_columns = DEDUPE_AFTER_REMAP.get(fk.model)
+                            by_sql = (fk.model, fk.name) in SQL_RECOMPUTE_AFTER_REMAP
+                            needs_ids = bool(dedupe_columns) or (
+                                not by_sql
+                                and has_stored_dependents(env, fk.model, fk.name)
+                            )
+                            cr.execute(
+                                f"UPDATE {fk_table} SET {fk.name} = %s WHERE {fk.name} = %s"
+                                + (" RETURNING id" if needs_ids else ""),
+                                (rec_a.id, rec_b.id),
+                            )
                             _logger.info(
-                                "Re-mapeando FK: %s.%s id=%s -> id=%s",
+                                "Re-mapeando FK: %s.%s id=%s -> id=%s (%s fila(s))",
                                 fk.model,
                                 fk.name,
                                 rec_b.id,
                                 rec_a.id,
+                                cr.rowcount,
                             )
-                            cr.execute(
-                                f"UPDATE {fk_table} SET {fk.name} = %s WHERE {fk.name} = %s RETURNING id",
-                                (rec_a.id, rec_b.id),
-                            )
-                            remapped_ids = [row[0] for row in cr.fetchall()]
-                            dedupe_columns = DEDUPE_AFTER_REMAP.get(fk.model)
-                            if dedupe_columns:
-                                deleted_ids = dedupe_after_remap(
-                                    cr, fk.model, fk_table, dedupe_columns, remapped_ids
-                                )
-                                remapped_ids = [i for i in remapped_ids if i not in deleted_ids]
-                            flag_remapped_dependents(env, fk.model, fk.name, remapped_ids)
+                            if needs_ids:
+                                remapped_ids = [row[0] for row in cr.fetchall()]
+                                if dedupe_columns:
+                                    deleted_ids = dedupe_after_remap(
+                                        cr, fk.model, fk_table, dedupe_columns, remapped_ids
+                                    )
+                                    remapped_ids = [
+                                        i for i in remapped_ids if i not in deleted_ids
+                                    ]
+                                flag_remapped_dependents(env, fk.model, fk.name, remapped_ids)
+                            sql_recompute_after_remap(env, fk.model, fk.name, rec_a.id)
                         else:
                             _logger.info(
                                 "Saltando FK: %s.%s porque la columna no es integer",
@@ -1515,6 +1611,9 @@ def handle_merge_or_move(env, model_name, id_a, id_b, step=None):
                 # stored tienen que quedar escritos ahora y no en un flush implícito
                 # posterior.
                 env.flush_all()
+                # Y soltamos la caché: lo que queda adentro no lo vuelve a leer
+                # nadie, pero lo recorre cada flush de los registros que siguen.
+                env.invalidate_all()
 
                 if "name" in rec_b._fields:
                     mark_deprecated(rec_b)

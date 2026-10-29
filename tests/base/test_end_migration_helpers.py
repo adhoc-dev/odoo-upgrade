@@ -16,6 +16,7 @@ import contextlib
 import json
 import logging
 import os
+import time
 import unittest
 
 PATH = os.path.join(
@@ -139,6 +140,19 @@ class TestEndMigrationHelpers(unittest.TestCase):
         namespace["table_exists"](cr, "hr_employee_public")
         self.assertIn("BASE TABLE", cr.query)
 
+    def _constant(self, name):
+        """El valor de una constante del script, evaluada sola."""
+        nodes = [
+            n
+            for n in self.tree.body
+            if isinstance(n, ast.Assign)
+            and isinstance(n.targets[0], ast.Name)
+            and n.targets[0].id == name
+        ]
+        namespace = {}
+        exec(compile(ast.Module(nodes, []), PATH, "exec"), namespace)
+        return namespace[name]
+
     def _helpers(self):
         names = {
             "_done_steps",
@@ -151,6 +165,7 @@ class TestEndMigrationHelpers(unittest.TestCase):
             "merge_step",
             "load_merged_ids",
             "remember_merged",
+            "has_stored_dependents",
         }
         constants = {
             "PROGRESS_PARAM",
@@ -171,6 +186,7 @@ class TestEndMigrationHelpers(unittest.TestCase):
         ]
         namespace = {
             "json": json,
+            "time": time,
             "_logger": logging.getLogger("test"),
             "contextmanager": contextlib.contextmanager,
         }
@@ -368,15 +384,15 @@ class TestEndMigrationHelpers(unittest.TestCase):
         self.assertEqual(calls["step_done"], 1)  # el del modelo; el registro lo cierra merge_step
 
         loops = [n for n in ast.walk(node) if isinstance(n, ast.For)]
-        rec_loop = [n for n in loops if ast.unparse(n.iter) == "records_b"]
+        rec_loop = [n for n in loops if "records_b" in ast.unparse(n.iter)]
         self.assertEqual(len(rec_loop), 1)
         # Todo el trabajo del registro vive adentro del with: un continue del
         # cuerpo sale por el __exit__ y deja la marca igual
         body = rec_loop[0].body
         self.assertIsInstance(body[-1], ast.With)  # el with cierra el cuerpo
         self.assertEqual(
-            [type(n) for n in body[:-1]], [ast.Assign, ast.If]
-        )  # rec_step y la guarda, nada de trabajo fuera del with
+            [type(n) for n in body[:-1]], [ast.Assign, ast.If, ast.Assign]
+        )  # rec_step, la guarda y el label: nada de trabajo fuera del with
 
     def test_migrate_delegates_the_merge_step_to_the_model_handler(self):
         node = [
@@ -404,7 +420,7 @@ class TestEndMigrationHelpers(unittest.TestCase):
         env = db.env()
         done = []
         for rec_id in (11, 22):
-            with h["merge_step"](env, "merge:3:4:2:account.tax:%s" % rec_id):
+            with h["merge_step"](env, "merge:3:4:2:account.tax:%s" % rec_id, "tax"):
                 done.append(rec_id)
                 if rec_id == 11:
                     continue
@@ -433,6 +449,94 @@ class TestEndMigrationHelpers(unittest.TestCase):
             json.loads(db.pending[h["MERGE_STATE_PARAM"]])["merged"],
             {"account.tax": {"7": 8}},
         )
+
+    def test_the_heavy_recompute_does_not_go_through_the_orm(self):
+        # account.move.line.tax_group_id es related store de tax_line_id: al
+        # re-mapear el impuesto, el ORM marcaría para recomputar todas las
+        # líneas de ese impuesto, decenas de miles, una vez por impuesto.
+        rule = self._constant("SQL_RECOMPUTE_AFTER_REMAP")
+        self.assertIn(("account.move.line", "tax_line_id"), rule)
+        table, columns, query = rule[("account.move.line", "tax_line_id")]
+        self.assertEqual(table, "account_move_line")
+        self.assertEqual(columns, ["tax_group_id"])
+        # Acotado al impuesto destino y sin reescribir lo que ya está bien
+        self.assertIn("%(id)s", query)
+        self.assertIn("IS DISTINCT FROM", query)
+
+    def test_the_remap_only_brings_back_ids_someone_uses(self):
+        # Traer los ids de 62.000 líneas por impuesto para no hacer nada con
+        # ellos se paga igual.
+        node = [
+            n
+            for n in self.tree.body
+            if isinstance(n, ast.FunctionDef) and n.name == "handle_merge_or_move"
+        ][-1]
+        source = ast.unparse(node)
+        self.assertIn("RETURNING id' if needs_ids else ''", source)
+        # El cálculo de needs_ids mira las dos salidas: dedupe y recompute
+        self.assertIn("dedupe_columns", source)
+        self.assertIn("has_stored_dependents", source)
+        self.assertIn("sql_recompute_after_remap", source)
+
+    def test_a_field_nobody_recomputes_is_not_flagged(self):
+        h = self._helpers()
+        calls = []
+
+        class FakeField:
+            def __init__(self, compute, store):
+                self.compute = compute
+                self.store = store
+
+        class FakeRegistry:
+            def __init__(self, tree):
+                self.tree = tree
+
+            def get_trigger_tree(self, fields, select=None):
+                calls.append(fields)
+                return self.tree
+
+        class FakeModel:
+            def __init__(self, field):
+                self._fields = {"tax_line_id": field}
+
+        class FakeEnvRegistry:
+            def __init__(self, tree):
+                self.registry = FakeRegistry(tree)
+                self.model = FakeModel(FakeField(True, True))
+
+            def __getitem__(self, name):
+                return self.model
+
+        self.assertFalse(
+            h["has_stored_dependents"](FakeEnvRegistry({}), "account.move.line", "tax_line_id")
+        )
+        self.assertTrue(
+            h["has_stored_dependents"](
+                FakeEnvRegistry({"x": 1}), "account.move.line", "tax_line_id"
+            )
+        )
+        self.assertEqual(len(calls), 2)
+
+    def test_the_cache_is_dropped_between_records(self):
+        # Sin esto la caché crece durante toda la fusión y cada flush la recorre
+        # entera: el impuesto 50 paga lo que acumularon los 49 anteriores.
+        node = [
+            n
+            for n in self.tree.body
+            if isinstance(n, ast.FunctionDef) and n.name == "handle_merge_or_move"
+        ][-1]
+        found = False
+        for parent in ast.walk(node):
+            body = getattr(parent, "body", None)
+            if not isinstance(body, list):
+                continue
+            for first, second in zip(body, body[1:]):
+                if (
+                    ast.unparse(first).strip() == "env.flush_all()"
+                    and ast.unparse(second).strip() == "env.invalidate_all()"
+                ):
+                    found = True
+        self.assertTrue(found, "la caché se tiene que soltar junto con el flush")
 
 
 if __name__ == "__main__":
