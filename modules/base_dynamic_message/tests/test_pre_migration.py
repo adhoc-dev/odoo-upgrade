@@ -89,6 +89,11 @@ class NormalizeOperatorsCase(unittest.TestCase):
                 '["|", ["email", "<>", False], ["phone", "<>", False]]',
                 '["|", ["email", "!=", False], ["phone", "!=", False]]',
             ),
+            # the whole set of 20, not a copy of it
+            (
+                '[("name", "NOT =ILIKE", "a"), ("user_ids", "NOT ANY!", [])]',
+                '[("name", "not =ilike", "a"), ("user_ids", "not any!", [])]',
+            ),
         ]
         for old, new in cases:
             with self.subTest(old):

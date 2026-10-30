@@ -56,8 +56,12 @@ def migrate(cr, version):
     longer active. Removing the condition changes which records show the
     message, so the script only reports. The list goes to the request log and
     to the customer note data (``mensajes_dinamicos_a_revisar``).
+
+    An end script on purpose: the module only depends on base, so its post
+    runs before mail, account and the rest are loaded, and their fields and
+    models would look gone.
     """
-    _logger.info("Running post-migration of base_dynamic_message for version %s", version)
+    _logger.info("Running end-migration of base_dynamic_message for version %s", version)
     env = util.env(cr)
 
     to_review = []

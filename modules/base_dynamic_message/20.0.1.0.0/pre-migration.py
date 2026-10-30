@@ -1,6 +1,7 @@
 import ast
 import logging
 
+from odoo.orm.domains import CONDITION_OPERATORS
 from odoo.tools import SQL
 
 _logger = logging.getLogger(__name__)
@@ -8,27 +9,6 @@ _logger = logging.getLogger(__name__)
 # Operators that 19 accepted with a deprecation warning and 20 rejects with
 # "Invalid operator": the two aliases, and any valid operator in upper case.
 ALIASES = {"<>": "!=", "==": "="}
-VALID = {
-    "=",
-    "!=",
-    "<=",
-    "<",
-    ">",
-    ">=",
-    "=?",
-    "=like",
-    "=ilike",
-    "like",
-    "not like",
-    "ilike",
-    "not ilike",
-    "in",
-    "not in",
-    "child_of",
-    "parent_of",
-    "any",
-    "not any",
-}
 LOGICAL = {"&", "|", "!"}
 
 
@@ -36,7 +16,7 @@ def _new_operator(op):
     if op in ALIASES:
         return ALIASES[op]
     lower = op.lower()
-    if lower != op and lower in VALID:
+    if lower != op and lower in CONDITION_OPERATORS:
         return lower
     return None
 
