@@ -34,6 +34,21 @@ EXPECTED = {
             "name@es_AR": "Tipos de pedido de venta",
         },
     },
+    # base/0.0.0/end-220-fix_mail_templates.py: las plantillas que cambio el
+    # cliente se prueban con un registro del modelo. Siembra en
+    # tests/pre_odu/mail/190_200/010-customer_mail_templates.py.
+    "mail.template": {
+        # No renderiza y no viene de un modulo, asi que no se puede resetear:
+        # el script la archiva. Si sigue activa, no la probo o no la detecto.
+        ref("upgrade_prepare_demo.mail_template_customer_broken"): {
+            "active": False,
+        },
+        # Preservacion: una plantilla del cliente que renderiza queda activa.
+        # Si se archivo, el script marca como rota una que anda.
+        ref("upgrade_prepare_demo.mail_template_customer_healthy"): {
+            "active": True,
+        },
+    },
     "product.template": {
         # Preservacion: un registro del cliente con su traduccion, sin .po. Si
         # cambia, el script piso algo que no tenia de donde recargar.
