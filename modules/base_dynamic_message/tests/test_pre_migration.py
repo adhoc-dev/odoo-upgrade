@@ -170,45 +170,51 @@ class MigrateCase(unittest.TestCase):
         self.cr.execute(SQL("SELECT %s FROM %s WHERE id = %s", SQL.identifier(column), SQL.identifier(table), rec_id))
         return self.cr.fetchone()[0]
 
-    def logs(self):
+    def request_logs(self):
         self.cr.execute("SELECT payload FROM %s WHERE kind = 'log' ORDER BY id" % OUTPUT)
         return [p["message"] for (p,) in self.cr.fetchall()]
+
+    def migrate(self):
+        """Run the script and return what it said about the rewrite in the process log."""
+        with self.assertLogs(script._logger.name, "INFO") as logs:
+            script.migrate(self.cr, "19.0.1.0.0")
+        return [r.getMessage() for r in logs.records if r.getMessage().startswith("Mensajes dinámicos")]
 
     def test_line_code_and_field_are_rewritten_alike(self):
         line_id, code = self.line('[("email", "<>", False)]', "Tiene email")
         field_id = self.field(compute(code))
-        script.migrate(self.cr, "19.0.1.0.0")
+        said = self.migrate()
         new_code = CODE % ('[("email", "!=", False)]', "Tiene email")
         self.assertEqual(self.read("ir_model_dynamic_message_line", "domain", line_id), '[("email", "!=", False)]')
         self.assertEqual(self.read("ir_model_dynamic_message_line", "code", line_id), new_code)
         self.assertEqual(self.read("ir_model_fields", "compute", field_id), compute(new_code))
         self.assertEqual(
-            self.logs(),
+            said,
             [
                 "Mensajes dinámicos: se cambiaron a la forma de 20 los operadores de dominio en 1 líneas, "
                 "1 códigos y 1 campos calculados"
             ],
         )
+        # an info is for the process log, not for the request
+        self.assertEqual(self.request_logs(), [])
 
     def test_only_the_fields_of_the_messages(self):
         """A manual field that is not a dynamic message, or a field of a module, is not ours."""
         other = self.field("for rec in self: rec.filtered_domain([('a', '<>', 1)])", linked=False)
         base = self.field("for rec in self: rec.filtered_domain([('a', '<>', 1)])", state="base")
-        script.migrate(self.cr, "19.0.1.0.0")
+        self.migrate()
         self.assertIn("'<>'", self.read("ir_model_fields", "compute", other))
         self.assertIn("'<>'", self.read("ir_model_fields", "compute", base))
 
     def test_nothing_to_do_and_a_second_run(self):
         line_id, code = self.line('[("email", "!=", False)]')
-        script.migrate(self.cr, "19.0.1.0.0")
+        self.assertEqual(self.migrate(), [])
         self.assertEqual(self.read("ir_model_dynamic_message_line", "code", line_id), code)
-        self.assertEqual(self.logs(), [])
 
         bad_id, _code = self.line('[("email", "<>", False)]')
-        script.migrate(self.cr, "19.0.1.0.0")
-        script.migrate(self.cr, "19.0.1.0.0")
+        self.assertEqual(len(self.migrate()), 1)
+        self.assertEqual(self.migrate(), [])
         self.assertEqual(self.read("ir_model_dynamic_message_line", "domain", bad_id), '[("email", "!=", False)]')
-        self.assertEqual(len(self.logs()), 1)
 
 
 if __name__ == "__main__":

@@ -93,6 +93,7 @@ def migrate(cr, version):
             "Mensajes dinámicos que en 20 no se van a mostrar o rompen el formulario de su modelo, a revisar: %s"
             % "; ".join("%s (%s): %s" % (m["nombre"], m["modelo"], ", ".join(m["problemas"])) for m in to_review),
             "warning",
+            module="base_dynamic_message",
         )
     # Emitted also when empty: "nothing to review" is a result the note may want to say.
     add_customer_note(cr, {"mensajes_dinamicos_a_revisar": to_review})

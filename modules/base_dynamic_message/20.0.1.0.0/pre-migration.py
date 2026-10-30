@@ -3,8 +3,6 @@ import logging
 
 from odoo.tools import SQL
 
-from oba import log_message
-
 _logger = logging.getLogger(__name__)
 
 # Operators that 19 accepted with a deprecation warning and 20 rejects with
@@ -154,9 +152,10 @@ def migrate(cr, version):
         ),
     )
     if lines or codes or fields:
-        log_message(
-            cr,
+        _logger.info(
             "Mensajes dinámicos: se cambiaron a la forma de 20 los operadores de dominio en %s líneas, "
-            "%s códigos y %s campos calculados" % (len(lines), len(codes), len(fields)),
-            "info",
+            "%s códigos y %s campos calculados",
+            len(lines),
+            len(codes),
+            len(fields),
         )
