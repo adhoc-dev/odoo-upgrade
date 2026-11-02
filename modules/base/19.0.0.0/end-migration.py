@@ -3549,8 +3549,8 @@ def release_duplicated_employee_users(cr, id_a):
     branch user could see their own HR -- breaks the UPDATE that moves the
     employees to the parent. The employee that stays with the user is the one
     already in the parent (or the oldest, when every copy comes from a branch);
-    the rest go up without user_id, with their own history, and the two files
-    are unified by hand afterwards.
+    the rest go up without user_id, with their own history. Returns the
+    (copy, keeper) pairs so the copy can then be archived.
     """
     cr.execute(
         """
@@ -3576,21 +3576,117 @@ def release_duplicated_employee_users(cr, id_a):
         """,
         (id_a, id_a, id_a),
     )
-    for employee_id, keeper_id, user_id in cr.fetchall():
+    rows = cr.fetchall()
+    for employee_id, keeper_id, user_id in rows:
         _logger.warning(
             "COLISIÓN hr.employee: el empleado %s de la sucursal sube a la matriz "
-            "sin user_id=%s, que ya tiene el empleado %s; unificar las dos fichas "
-            "a mano",
+            "sin user_id=%s, que ya tiene el empleado %s",
             employee_id,
             user_id,
             keeper_id,
         )
+    return [(employee_id, keeper_id) for employee_id, keeper_id, _user in rows]
+
+
+# Una ficha con historia en alguna de estas tablas no se archiva: fusionar
+# historia de RRHH es una decisión del consultor, no del script.
+EMPLOYEE_HISTORY_TABLES = (
+    ("hr_leave", None),
+    ("account_analytic_line", None),
+    ("hr_payslip", None),
+    ("hr_version", "contract_date_start IS NOT NULL"),
+)
+
+
+def employees_with_own_history(cr, employee_ids):
+    """Ids, among the given ones, whose file carries HR history of its own.
+
+    Each table is optional: it only exists when its module is installed, and
+    hr_version is the 19.0 home of the contract, where every employee has a row
+    and only a started contract counts.
+    """
+    with_history = set()
+    for table, extra in EMPLOYEE_HISTORY_TABLES:
+        if not table_exists(cr, table) or not column_exists(cr, table, "employee_id"):
+            continue
+        where = "employee_id = ANY(%s)"
+        if extra:
+            if not column_exists(cr, table, extra.split()[0]):
+                continue
+            where += " AND " + extra
+        cr.execute(
+            f"SELECT DISTINCT employee_id FROM {table} WHERE {where}",
+            (list(employee_ids),),
+        )
+        with_history.update(row[0] for row in cr.fetchall())
+    return with_history
+
+
+def archive_duplicated_employee_files(cr, duplicated):
+    """Archives the branch copy that just lost its user.
+
+    HR goes up to the parent and the file people work with is the one already
+    there, so the copy left behind is archived instead of staying as a second
+    active file for the same person. Whoever it was manager or coach of is
+    pointed at the parent file first: an archived employee as a manager leaves
+    the hierarchy hanging.
+
+    A copy with history of its own is NOT archived -- merging HR history is a
+    call for the consultant -- and goes to the log so somebody picks it up.
+    """
+    if not duplicated:
+        return
+
+    with_history = employees_with_own_history(cr, [emp for emp, _keeper in duplicated])
+    for employee_id, keeper_id in duplicated:
+        if employee_id in with_history:
+            _logger.warning(
+                "hr.employee %s tiene historia propia (ausencias, partes de horas, "
+                "sueldos o contrato): sube a la matriz sin archivar; el consultor "
+                "define cómo se unifica con la ficha %s",
+                employee_id,
+                keeper_id,
+            )
+            continue
+
+        for column in ("parent_id", "coach_id"):
+            cr.execute(
+                f"""
+                UPDATE hr_employee
+                   SET {column} = %s
+                 WHERE {column} = %s
+                   AND id != %s
+                """,
+                (keeper_id, employee_id, keeper_id),
+            )
+            if cr.rowcount:
+                _logger.info(
+                    "Reapuntados %s hr.employee.%s de la ficha %s a la ficha %s",
+                    cr.rowcount,
+                    column,
+                    employee_id,
+                    keeper_id,
+                )
+
+        cr.execute(
+            "UPDATE hr_employee SET active = false WHERE id = %s AND active",
+            (employee_id,),
+        )
+        if cr.rowcount:
+            _logger.info(
+                "Archivada la copia hr.employee %s; queda activa la ficha %s "
+                "de la matriz",
+                employee_id,
+                keeper_id,
+            )
 
 
 def preprocess_unique_move_conflicts(cr, model_name, id_a, id_b):
     """Resuelve colisiones conocidas antes de mover registros de compañía."""
     if model_name == "hr.employee":
-        release_duplicated_employee_users(cr, id_a)
+        archive_duplicated_employee_files(
+            cr, release_duplicated_employee_users(cr, id_a)
+        )
     queries = UNIQUE_MOVE_PREPROCESSORS.get(model_name, ())
     for query in queries:
         _logger.info("Preprocesando colisiones UNIQUE para %s", model_name)
