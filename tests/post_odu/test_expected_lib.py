@@ -336,13 +336,6 @@ class TestMissingChecks(_Repo):
         self.assertFalse(X.enforced("190"))
         self.assertTrue(X.enforced("200"))
 
-    def test_el_repo_no_tiene_scripts_sin_check(self):
-        # el mismo control del job missing-checks, sobre este repo
-        root = os.path.join(os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.abspath(__file__)))), "modules")
-        self.assertEqual(
-            [p for tag in X.enforced_tags(root) for p in X.missing_checks(root, tag)], [])
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

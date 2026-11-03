@@ -147,7 +147,8 @@ EXPECTED = {
 - expected ilegible ⇒ FAIL
 - `ref` que no resuelve o registro desaparecido ⇒ **FAIL**
 - archivo con 0 asserts ⇒ FAIL
-- desde el salto a 20, un script sin su check ⇒ FAIL (ver abajo)
+- desde el salto a 20, un script sin su check ⇒ AVISO por ahora, FAIL cuando
+  los scripts en marcha tengan el suyo (ver abajo)
 
 Un salto sin sus `expected_<ver>.py`, pero con los de otros saltos, no es FAIL:
 el check sale verde con un `AVISO - sin expected_<ver>.py ...` en el log. Es el
@@ -174,6 +175,12 @@ desde el salto a 20 lo controlan dos lugares con la misma función
   levantar Odoo (`python3 tests/post_odu/missing_checks.py`), para todos los
   saltos desde el 20;
 - `check_expected.py` en runbot, para el salto que prueba.
+
+Hoy los dos **avisan y no frenan**: el job corre con `continue-on-error` y el
+runner lo lista como `AVISO - sin check: ...`. Es a propósito: los scripts de 20
+que ya estaban en marcha cuando entró el control no tenían cómo saber de él.
+Cuando cada uno tenga su check o su `NO_CHECK`, se saca el `continue-on-error`
+y el runner lo pasa a FAIL (segunda parte de la tarea 78310 de Odoo).
 
 Qué cuenta como cubierto:
 
