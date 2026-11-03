@@ -1,4 +1,6 @@
-# Test declarativo de base/0.0.0/end-110-reload_translations.py en el salto a 20.
+# Tests declarativos de los scripts de base en el salto a 20.
+#
+# == base/0.0.0/end-110-reload_translations.py ==
 #
 # La transformacion: al final del -u el script recarga las traducciones de los
 # idiomas activos desde los .po de la version nueva, pisando las de la base.
@@ -17,7 +19,39 @@
 # Solo se declara el estado esperado DESPUES del -u (ADR 0007): la base que
 # recibimos se da por buena.
 
+# == base/20.0.0.0/pre-install-out-of-stock-modules.py ==
+#
+# La transformacion: en 20 el tratamiento de los productos sin stock del
+# eCommerce pasa a venir con la tienda, asi que el script instala
+# website_sale_stock_hide_unavailable donde ya hay website_sale, y cada puente
+# donde estan sus dependencias. El auto_install del manifiesto no alcanza: la
+# auto discovery del pase solo lo dispara para modulos que la base nunca vio, y
+# este ya existia en el addons_path de 19.
+#
+#   base con eCommerce          -> el nucleo queda instalado
+#   base con eCommerce + stock  -> tambien el puente de Inventario
+#
+# Supuesto: la base canonica tiene eCommerce instalado. Si no lo tuviera, lo que
+# esta mal es este check y no el script, y hay que anclarlo en otra base.
+#
+# Solo se declara el estado esperado DESPUES del -u (ADR 0007).
+
 EXPECTED = {
+    "ir.module.module": {
+        # El nucleo: si queda 'uninstalled', el script no corrio o la marca no
+        # llego a la auto discovery, y toda base con tienda que ya existia se
+        # queda sin la funcionalidad.
+        ref("base.module_website_sale_stock_hide_unavailable"): {
+            "state": "installed",
+        },
+        # El puente de Inventario: es modulo nuevo, asi que su auto_install se
+        # evalua antes de que el nucleo este instalado. Si queda 'uninstalled',
+        # los movimientos de stock no alimentan el drenaje de 5 minutos y la
+        # tienda solo se reconcilia con el barrido nocturno.
+        ref("base.module_website_sale_stock_hide_unavailable_stock"): {
+            "state": "installed",
+        },
+    },
     "ir.ui.menu": {
         # Core: la siembra dejo "Editado a mano" en es_AR. Si sigue asi, el
         # script no recargo las traducciones, o no las piso.
