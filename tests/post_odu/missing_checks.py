@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Frena el PR si un script de modules/ no tiene su check (ADR 0037 de
-actua-20), sin levantar Odoo. Lo corre el job missing-checks de layout.yml;
-check_expected.py hace lo mismo en runbot, pero solo para el salto que prueba.
+"""Lista los scripts de modules/ que no tienen su check (ADR 0037 de
+actua-20), sin levantar Odoo, y sale con 1 si hay alguno. Lo corre el job
+missing-checks de layout.yml, que por ahora solo avisa (continue-on-error);
+check_expected.py hace lo mismo en runbot, para el salto que prueba.
 
     python3 tests/post_odu/missing_checks.py
 """

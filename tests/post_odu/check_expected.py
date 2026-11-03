@@ -16,9 +16,10 @@
 #   - expected ilegible                           => FAIL
 #   - ref que no resuelve / registro desaparecido => FAIL (ver abajo)
 #   - archivo con 0 asserts                       => FAIL
-#   - desde el salto a 20, script sin su check    => FAIL (ADR 0037)
 # Un salto sin sus expected_<ver>.py, con los de otros saltos, sale verde con
-# un AVISO en el log (ver el README). Lo que no se puede verificar acá se
+# un AVISO en el log (ver el README). Desde el salto a 20, un script sin su
+# check también sale como AVISO (ADR 0037): pasa a FAIL cuando los scripts que
+# ya están en marcha tengan el suyo. Lo que no se puede verificar acá se
 # declara con NO_CHECK y su motivo, y sale en el log como SIN CHECK.
 #
 # Un ref ausente es FAIL siempre, del lado de la clave y del lado del valor. El
@@ -222,7 +223,7 @@ def _check_field(record, field, want, key, xmlid):
 # Cinturón global: ninguna excepción escapa de este bloque — el resumen y el
 # os._exit de abajo corren siempre, así el log del step termina en la línea
 # "=== check declarativo: ..." también cuando el runner mismo falla.
-skipped, notice, no_checks = [], None, []
+skipped, notice, no_checks, without_check = [], None, [], []
 try:
     from odoo import release
 
@@ -241,7 +242,7 @@ try:
         notice = ("sin expected_%s.py bajo %s: nada que verificar en el salto a %s"
                   % (tag, ROOT, release.serie))
     if X.enforced(tag):
-        failures.extend(X.missing_checks(os.path.join(ROOT, "modules"), tag))
+        without_check = X.missing_checks(os.path.join(ROOT, "modules"), tag)
 
     for mod_dir, fname, path in files:
         key = X.data_key(mod_dir, fname)
@@ -329,6 +330,8 @@ print("")
 print("=== check declarativo: %s OK, %s FAIL ===" % (passed, len(failures)))
 if notice:
     print("AVISO - %s" % notice)
+for w in without_check:
+    print("AVISO - sin check: %s" % w)
 for n in no_checks:
     print("SIN CHECK - %s" % n)
 for mod_dir, fname, _path in skipped:
