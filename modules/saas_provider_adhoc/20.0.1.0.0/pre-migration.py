@@ -27,13 +27,15 @@ def migrate(cr, version):
     """Remove the unpaid invoices communications, deprecated in 20.
 
     The cron and the categories are noupdate data, so the -u keeps them. The
-    communications go first: their category is required.
+    server action of the cron goes after the cron, which restricts its deletion.
+    The communications go before their categories: their category is required.
     """
     _logger.info("Removing the unpaid invoices communications")
     for model, field in REMOVED_FIELDS:
         util.remove_field(cr, model, field)
 
     util.remove_record(cr, "saas_provider_adhoc.unpaid_invoices_cron")
+    util.remove_record(cr, "saas_provider_adhoc.unpaid_invoices_cron_ir_actions_server")
 
     cr.execute(
         SQL(
