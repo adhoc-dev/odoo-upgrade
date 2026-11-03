@@ -3542,59 +3542,106 @@ def migrate_store_user_access_to_company(cr, env, mapping):
 
 
 def release_duplicated_employee_users(cr, id_a):
-    """Frees the user link of the branch employee before HR goes up to the parent.
+    """Frees the user link of the employee files that do not keep it.
 
     hr.employee has a unique (user_id, company_id): the same person with an
     employee in the parent and a copy in the branch -- the workaround so a
     branch user could see their own HR -- breaks the UPDATE that moves the
-    employees to the parent. The employee that stays with the user is the one
-    already in the parent (or the oldest, when every copy comes from a branch);
-    the rest go up without user_id, with their own history. Returns the
-    (copy, keeper) pairs so the copy can then be archived.
+    employees to the parent. One file per user keeps the link, and which one
+    cannot be left to the planner: the active file of the parent wins, then any
+    other active file, and the oldest id breaks the tie. So the file that keeps
+    the user is never one that this same function frees.
+
+    user_id is a stored related of resource_id.user_id in 19.0, so the resource
+    is freed with it: left behind, the user keeps a second resource in the
+    parent and any ORM write on it gives the file its user back.
+
+    Returns (freed, keeper, keeper is the active file of the parent) per file,
+    for the archiving that follows.
     """
     cr.execute(
         """
-        UPDATE hr_employee emp
-           SET user_id = NULL
-          FROM hr_employee keeper
-         WHERE emp.user_id IS NOT NULL
-           AND keeper.user_id = emp.user_id
-           AND keeper.id != emp.id
-           AND emp.company_id IN (
-                 SELECT id FROM res_company WHERE parent_id = %s
-               )
-           AND (
-                 keeper.company_id = %s
-                 OR (
-                      keeper.company_id IN (
-                            SELECT id FROM res_company WHERE parent_id = %s
-                      )
-                      AND keeper.id < emp.id
-                 )
-               )
-        RETURNING emp.id, keeper.id, keeper.user_id
+        WITH tree AS (
+            SELECT emp.id,
+                   emp.user_id,
+                   COALESCE(emp.active, true) AS active,
+                   emp.company_id = %(parent)s AS in_parent
+              FROM hr_employee emp
+             WHERE emp.user_id IS NOT NULL
+               AND (
+                     emp.company_id = %(parent)s
+                     OR emp.company_id IN (
+                            SELECT id FROM res_company WHERE parent_id = %(parent)s
+                     )
+                   )
+        ), ranked AS (
+            SELECT id,
+                   user_id,
+                   first_value(id) OVER w AS keeper_id,
+                   first_value(active AND in_parent) OVER w AS keeper_is_active_parent
+              FROM tree
+            WINDOW w AS (
+                PARTITION BY user_id ORDER BY active DESC, in_parent DESC, id
+            )
+        )
+        SELECT id, keeper_id, keeper_is_active_parent, user_id
+          FROM ranked
+         WHERE id != keeper_id
+         ORDER BY id
         """,
-        (id_a, id_a, id_a),
+        {"parent": id_a},
     )
     rows = cr.fetchall()
-    for employee_id, keeper_id, user_id in rows:
+    if not rows:
+        return []
+
+    freed_ids = [employee_id for employee_id, _keeper, _parent, _user in rows]
+    cr.execute(
+        "UPDATE hr_employee SET user_id = NULL WHERE id = ANY(%s)", (freed_ids,)
+    )
+    cr.execute(
+        """
+        UPDATE resource_resource res
+           SET user_id = NULL
+          FROM hr_employee emp
+         WHERE emp.resource_id = res.id
+           AND emp.id = ANY(%s)
+           AND res.user_id IS NOT NULL
+        """,
+        (freed_ids,),
+    )
+    for employee_id, keeper_id, _parent_keeper, user_id in rows:
         _logger.warning(
-            "COLISIÓN hr.employee: el empleado %s de la sucursal sube a la matriz "
-            "sin user_id=%s, que ya tiene el empleado %s",
+            "COLISIÓN hr.employee: el empleado %s sube a la matriz sin user_id=%s, "
+            "que queda en el empleado %s",
             employee_id,
             user_id,
             keeper_id,
         )
-    return [(employee_id, keeper_id) for employee_id, keeper_id, _user in rows]
+    return [
+        (employee_id, keeper_id, parent_keeper)
+        for employee_id, keeper_id, parent_keeper, _user in rows
+    ]
 
 
 # Una ficha con historia en alguna de estas tablas no se archiva: fusionar
 # historia de RRHH es una decisión del consultor, no del script.
 EMPLOYEE_HISTORY_TABLES = (
     ("hr_leave", None),
+    ("hr_leave_allocation", None),
+    ("hr_attendance", None),
+    ("hr_expense", None),
     ("account_analytic_line", None),
     ("hr_payslip", None),
     ("hr_version", "contract_date_start IS NOT NULL"),
+)
+
+# Lo que apunta a una ficha de empleado como responsable: queda colgado si la
+# ficha se archiva, así que pasa a la de la matriz antes del archivado.
+EMPLOYEE_MANAGER_REFERENCES = (
+    ("hr_employee", "parent_id"),
+    ("hr_employee", "coach_id"),
+    ("hr_department", "manager_id"),
 )
 
 
@@ -3627,32 +3674,50 @@ def archive_duplicated_employee_files(cr, duplicated):
 
     HR goes up to the parent and the file people work with is the one already
     there, so the copy left behind is archived instead of staying as a second
-    active file for the same person. Whoever it was manager or coach of is
-    pointed at the parent file first: an archived employee as a manager leaves
-    the hierarchy hanging.
+    active file for the same person. Whoever it was manager or coach of, and
+    the departments it led, are pointed at the parent file first: an archived
+    employee as a manager leaves the hierarchy hanging. active is a stored
+    related of resource_id.active in 19.0, so the resource is archived with it.
 
-    A copy with history of its own is NOT archived -- merging HR history is a
-    call for the consultant -- and goes to the log so somebody picks it up.
+    Two cases are NOT archived and go to the log, for the consultant to pick
+    up: the copy with history of its own -- merging HR history is their call --
+    and the person whose file in the parent is archived, where the file that
+    keeps the user is a branch one and archiving would leave them with no
+    active file at all.
     """
     if not duplicated:
         return
 
-    with_history = employees_with_own_history(cr, [emp for emp, _keeper in duplicated])
-    for employee_id, keeper_id in duplicated:
+    with_history = employees_with_own_history(
+        cr, [employee_id for employee_id, _keeper, _parent in duplicated]
+    )
+    for employee_id, keeper_id, keeper_is_active_parent in duplicated:
+        if not keeper_is_active_parent:
+            _logger.warning(
+                "hr.employee %s se queda con el usuario y la ficha %s lo pierde: "
+                "la ficha de la matriz no está activa, así que no se archiva "
+                "ninguna; el consultor define con cuál se queda la persona",
+                keeper_id,
+                employee_id,
+            )
+            continue
         if employee_id in with_history:
             _logger.warning(
-                "hr.employee %s tiene historia propia (ausencias, partes de horas, "
-                "sueldos o contrato): sube a la matriz sin archivar; el consultor "
-                "define cómo se unifica con la ficha %s",
+                "hr.employee %s tiene historia propia (ausencias, asignaciones, "
+                "asistencias, gastos, partes de horas, sueldos o contrato): sube a "
+                "la matriz sin archivar; el consultor define cómo se unifica con la "
+                "ficha %s",
                 employee_id,
                 keeper_id,
             )
             continue
 
-        for column in ("parent_id", "coach_id"):
+        for table, column in EMPLOYEE_MANAGER_REFERENCES:
+            if not table_exists(cr, table) or not column_exists(cr, table, column):
+                continue
             cr.execute(
                 f"""
-                UPDATE hr_employee
+                UPDATE {table}
                    SET {column} = %s
                  WHERE {column} = %s
                    AND id != %s
@@ -3661,8 +3726,9 @@ def archive_duplicated_employee_files(cr, duplicated):
             )
             if cr.rowcount:
                 _logger.info(
-                    "Reapuntados %s hr.employee.%s de la ficha %s a la ficha %s",
+                    "Reapuntados %s %s.%s de la ficha %s a la ficha %s",
                     cr.rowcount,
+                    table,
                     column,
                     employee_id,
                     keeper_id,
@@ -3672,7 +3738,19 @@ def archive_duplicated_employee_files(cr, duplicated):
             "UPDATE hr_employee SET active = false WHERE id = %s AND active",
             (employee_id,),
         )
-        if cr.rowcount:
+        archived = cr.rowcount
+        cr.execute(
+            """
+            UPDATE resource_resource res
+               SET active = false
+              FROM hr_employee emp
+             WHERE emp.resource_id = res.id
+               AND emp.id = %s
+               AND res.active
+            """,
+            (employee_id,),
+        )
+        if archived:
             _logger.info(
                 "Archivada la copia hr.employee %s; queda activa la ficha %s "
                 "de la matriz",
