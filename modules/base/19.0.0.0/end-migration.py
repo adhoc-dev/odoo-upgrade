@@ -1980,7 +1980,10 @@ def merge_same_account(env, id_a, code, account_type, accounts):
       forma sin ambigüedad de decidir cuál se queda con esa compañía);
     - si más de una tiene asientos hasheados (inalterables), no se fusionan:
       fusionar borra todas menos una y un asiento hasheado no puede perder la
-      cuenta a la que apunta.
+      cuenta a la que apunta;
+    - si alguna tiene apuntes de una compañía fuera de las del grupo (dato
+      heredado: facturas de una compañía cargadas en cuentas de otra), no se
+      fusionan: `_check_company_consistency` rechaza la cuenta resultante.
 
     Si no se puede fusionar devuelve el grupo entero sin tocar.
     """
@@ -2023,6 +2026,27 @@ def merge_same_account(env, id_a, code, account_type, accounts):
             code,
             accounts.ids,
             hashed_account_ids,
+        )
+        return accounts
+
+    # Mismo dominio que `_check_company_consistency` sobre la unión de
+    # compañías que `_action_merge` le escribe a la cuenta que queda.
+    foreign_lines = env["account.move.line"].sudo().search(
+        [
+            ("account_id", "in", accounts.ids),
+            "!",
+            ("company_id", "child_of", companies_seen.ids),
+        ],
+        limit=20,
+    )
+    if foreign_lines:
+        _logger.warning(
+            "SALTANDO MERGE de cuentas con code=%s (ids=%s): tienen apuntes de compañías "
+            "fuera del grupo (%s), por ejemplo en los asientos %s",
+            code,
+            accounts.ids,
+            foreign_lines.company_id.ids,
+            foreign_lines.move_id.ids,
         )
         return accounts
 
