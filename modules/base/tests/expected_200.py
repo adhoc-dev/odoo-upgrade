@@ -14,10 +14,56 @@
 # traduccion de uno de estos menus, el check falla aunque el script ande: se
 # actualiza el valor declarado.
 #
+# Y de base/0.0.0/end-220-clean_broken_filters.py: los favoritos que usan un
+# campo que no existe en la base nueva pierden esa condicion, el group by y el
+# orden sobre ese campo; si no les queda ninguna condicion, se archivan.
+#
+#   campo roto en un OR, con otra condicion  -> se limpia y sigue activo
+#   campo roto en un camino, group by texto  -> se limpia y sigue activo
+#   solo el campo roto                       -> se archiva
+#   todos los campos existen                 -> no se toca (preservacion)
+#
+# Los siembra tests/pre_odu/base/190_200/020-filters_with_missing_fields.py,
+# con un campo que no existe en ninguna version.
+#
 # Solo se declara el estado esperado DESPUES del -u (ADR 0007): la base que
 # recibimos se da por buena.
 
 EXPECTED = {
+    "ir.filters": {
+        # La condicion sobre el campo roto queda como siempre falsa: en un OR,
+        # el favorito sigue buscando por nombre. El group by sobre el campo se
+        # va. Si el dominio sigue con el campo, el script no lo detecto.
+        ref("upgrade_prepare_demo.filter_missing_field_in_or"): {
+            "domain": "['|', ('name', 'ilike', 'Upgrade'), (0, '=', 1)]",
+            "context": "{'group_by': []}",
+            "sort": '["name"]',
+            "active": True,
+        },
+        # Sin ninguna condicion real, mostraria todos los contactos: se
+        # archiva. Si sigue activo, el script no lo archivo.
+        ref("upgrade_prepare_demo.filter_only_missing_field"): {
+            "active": False,
+        },
+        # El campo roto esta en el segundo tramo del camino, y el group by viene
+        # como texto: si el dominio sigue con el camino, o el group by quedo
+        # partido en letras, el script no lo limpio bien.
+        ref("upgrade_prepare_demo.filter_missing_field_in_path"): {
+            "domain": "['|', ('name', 'ilike', 'Upgrade'), (0, '=', 1)]",
+            "context": "{'group_by': [], 'pivot_measures': []}",
+            "sort": "[]",
+            "active": True,
+        },
+        # Preservacion: todos sus campos existen, y "-id" es el formato viejo de
+        # orden descendente, no un campo. Si cambia, el script toco un favorito
+        # que no estaba roto.
+        ref("upgrade_prepare_demo.filter_valid_fields"): {
+            "domain": "[('name', 'ilike', 'Upgrade'), ('type', 'in', ['contact', 'invoice', 'delivery'])]",
+            "context": "{'group_by': ['country_id']}",
+            "sort": '["name desc", "-id"]',
+            "active": True,
+        },
+    },
     "ir.ui.menu": {
         # Core: la siembra dejo "Editado a mano" en es_AR. Si sigue asi, el
         # script no recargo las traducciones, o no las piso.
@@ -45,7 +91,7 @@ EXPECTED = {
 
 # Los scripts de base/0.0.0 corren en todos los saltos: este EXPECTED verifica
 # los de SCRIPTS, y el resto queda en NO_CHECK con su motivo.
-SCRIPTS = ["end-110-reload_translations.py"]
+SCRIPTS = ["end-110-reload_translations.py", "end-220-clean_broken_filters.py"]
 
 IN_MEMORY = "Parchea un metodo en memoria mientras corre el -u: no deja nada en la base para verificar."
 ONLY_WARNS = "Solo avisa en el log: no cambia datos."
