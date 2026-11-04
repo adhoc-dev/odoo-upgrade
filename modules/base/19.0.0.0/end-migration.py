@@ -420,6 +420,11 @@ def is_integer_column(cr, table_name, column_name):
     return result and result[0] in ("integer", "bigint")
 
 
+def _model_table(env, model_name):
+    """Return the table of a model, or None if it is not in the registry."""
+    return env[model_name]._table if model_name in env else None
+
+
 def table_exists(cr, table_name):
     """Check if a table exists in the database."""
     cr.execute(
@@ -1532,7 +1537,14 @@ def handle_merge_or_move(env, model_name, id_a, id_b, step=None):
                     ]
                 )
                 for fk in fk_fields:
-                    fk_table = fk.model.replace(".", "_")
+                    fk_table = _model_table(env, fk.model)
+                    if not fk_table:
+                        _logger.warning(
+                            "Saltando FK: %s.%s (modelo fuera del registro, no se remapea)",
+                            fk.model,
+                            fk.name,
+                        )
+                        continue
                     if fk.model in skip_models:
                         # Contamos lo que queda en B para que el registro sea revisable:
                         # si había configuración, es un cambio de comportamiento respecto
@@ -1811,7 +1823,10 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
         field_type_map[(f.model, f.name)] = f.ttype
 
     for model_name, field_names in model_map.items():
-        table = model_name.replace(".", "_")
+        table = _model_table(env, model_name)
+        if not table:
+            _logger.warning(f"Model {model_name} not found, skipping")
+            continue
 
         # Odoo 19 guarda estos campos como JSONB
         for field_name in field_names:
@@ -2952,7 +2967,7 @@ def migrate_store_fields_to_company(cr, env, mapping):
 
     for field in store_fields:
         model_name = field.model
-        table = model_name.replace(".", "_")
+        table = _model_table(env, model_name)
         field_name = field.name
 
         if model_name in processed_models:
@@ -3843,7 +3858,10 @@ def migrate_standard_fields(cr, env, id_a, id_b):
 
     for field in field_targets:
         model_name = field.model
-        table = model_name.replace(".", "_")
+        table = _model_table(env, model_name)
+        if not table:
+            _logger.warning(f"Model {model_name} not found, skipping")
+            continue
         strategy = MODEL_STRATEGY.get(model_name, "CHECK")
 
         # invoice_company_id de sale.order.type / purchase.order.type NO se mueve
