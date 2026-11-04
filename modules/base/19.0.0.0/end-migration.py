@@ -649,6 +649,26 @@ def flag_remapped_dependents(env, model, field_name, record_ids):
         )
 
 
+def clear_past_appraisal_dates(env, employee_ids):
+    """Borra la próxima evaluación vencida de los empleados movidos.
+
+    El recompute no la toca en archivados ni en compañías sin plan, y la
+    restricción de hr_appraisal rechaza la fecha pasada y corta la migración.
+    """
+    if not employee_ids or "next_appraisal_date" not in env["hr.employee"]._fields:
+        return
+    env.cr.execute(
+        """
+        UPDATE hr_employee
+           SET next_appraisal_date = NULL
+         WHERE id = ANY(%s)
+           AND next_appraisal_date < CURRENT_DATE
+        """,
+        [employee_ids],
+    )
+    env["hr.employee"].browse(employee_ids).invalidate_recordset(["next_appraisal_date"])
+
+
 def log_unmapped_model_rows(cr, model_name, table, field, id_b):
     """Deja en el log los modelos sin estrategia declarada que tienen datos en la sucursal.
 
@@ -3928,6 +3948,8 @@ def migrate_standard_fields(cr, env, id_a, id_b):
                     )
                     if model_name in FLAG_COMPANY_DEPENDENTS_ON_MOVE:
                         moved_ids = [row[0] for row in cr.fetchall()]
+                        if model_name == "hr.employee":
+                            clear_past_appraisal_dates(env, moved_ids)
                         flag_remapped_dependents(
                             env, model_name, field.name, moved_ids
                         )
