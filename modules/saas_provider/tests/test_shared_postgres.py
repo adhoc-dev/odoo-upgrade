@@ -13,7 +13,7 @@ import importlib.util
 import os
 import sys
 import unittest
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, call, patch
 
 ODOO_PATH = os.environ.get("ODOO_PATH", "/home/odoo/src/odoo")
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -45,7 +45,7 @@ class SharedPostgresCase(unittest.TestCase):
         return util
 
     def setUp(self):
-        self.cr = object()
+        self.cr = MagicMock()
 
     def test_the_mode_goes(self):
         """Nothing defines the postgres mode in 20: the field and its related one go."""
@@ -69,6 +69,13 @@ class SharedPostgresCase(unittest.TestCase):
         names = [c[0] for c in util.method_calls]
         last_field = max(i for i, name in enumerate(names) if name == "remove_field")
         self.assertLess(last_field, names.index("remove_model"))
+
+    def test_the_tunnel_parameter_goes(self):
+        """The tunnel parameter is a system parameter, not a field: remove_model does not drop it."""
+        self._migrate()
+        self.cr.execute.assert_called_once_with(
+            "DELETE FROM ir_config_parameter WHERE key = %s", ["saas_postgres_server.use_tunnel"]
+        )
 
 
 if __name__ == "__main__":

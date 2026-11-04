@@ -11,6 +11,7 @@ def migrate(cr, version):
     In 20 every k8s environment runs on CNPG, so the postgres servers, the
     environment servers, the database server and the postgres mode go away, with
     their history. The code asks for the environment type instead of the mode.
+    The tunnel parameter only served the shared postgres, and remove_model keeps it.
     """
     _logger.info("Running pre-migration of saas_provider for version %s", version)
 
@@ -21,3 +22,4 @@ def migrate(cr, version):
     util.remove_field(cr, "saas.environment", "postgres_server_ids")
     util.remove_model(cr, "saas.environment.postgres.server")
     util.remove_model(cr, "saas.postgres.server")
+    cr.execute("DELETE FROM ir_config_parameter WHERE key = %s", ["saas_postgres_server.use_tunnel"])
