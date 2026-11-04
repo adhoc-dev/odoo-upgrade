@@ -27,7 +27,9 @@ def migrate(cr, version):
     cr.execute(SQL("DROP TABLE IF EXISTS %s", SQL.identifier(BACKUP_TABLE)))
     if not util.column_exists(cr, "account_move_line", "discount1"):
         return
-    if util.module_installed(cr, "account_invoice_triple_discount"):
+    # Not util.module_installed: the merge may have left it in `to install` already.
+    cr.execute("SELECT 1 FROM ir_module_module WHERE name = 'account_invoice_triple_discount' AND state = 'installed'")
+    if cr.rowcount:
         # The hook already ran in 18: nothing to protect.
         return
 
