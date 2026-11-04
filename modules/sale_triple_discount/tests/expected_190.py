@@ -10,6 +10,13 @@
 # Las líneas salen de tests/pre_odu/sale_triple_discount/180_190/010-invoice_line_discounts.py.
 
 EXPECTED = {
+    "ir.module.module": {
+        # sale_three_discounts se fusiona en sale_triple_discount, y el -u tiene que instalar
+        # su dependencia nueva. Si account_invoice_triple_discount no quedó instalado,
+        # account.move.line no tiene discount1/2/3 y los casos de abajo no se pueden evaluar.
+        ref("base.module_sale_triple_discount"): {"state": "installed"},
+        ref("base.module_account_invoice_triple_discount"): {"state": "installed"},
+    },
     "account.move.line": {
         # Dos descuentos, 10 y 20. Si el hook corrió sin el respaldo, discount1 queda en 28
         # (el combinado) y el 20 se aplica dos veces.
