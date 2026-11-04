@@ -128,6 +128,9 @@ def _merge_keeping_target_state(cr, old, into):
     # silently uninstalled active targets (e.g. l10n_ar_tax overwritten by
     # l10n_ar_tax_ratio's 'uninstalled').
     if old_state in ("installed", "to upgrade"):
+        # merge_module only queues the install of `into` while base is in `to upgrade`, and the
+        # replay in base/0.0.0 skips it once the state below is set: mark its dependencies now.
+        util_modules._force_install_module(cr, into, reason=f"installed {old!r} module has been merged into it")
         cr.execute("UPDATE ir_module_module SET state = %s WHERE name = %s", [old_state, into])
 
 
