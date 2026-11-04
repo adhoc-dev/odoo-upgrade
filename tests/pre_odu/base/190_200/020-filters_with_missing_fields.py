@@ -38,6 +38,21 @@ FILTERS = {
         "{'group_by': '%s', 'pivot_measures': ['%s']}" % (MISSING, MISSING),
         '["%s asc"]' % MISSING,
     ),
+    # El campo roto con un operador negado de patron: se detecta y se archiva.
+    "upgrade_prepare_demo.filter_missing_field_not_like": (
+        "Upgrade: missing field with not =like",
+        "[('%s', 'not =like', 'a')]" % MISSING,
+        "{}",
+        "[]",
+    ),
+    # La condicion que queda usa "not =ilike": cuenta como condicion real, asi
+    # que se limpia y sigue activo.
+    "upgrade_prepare_demo.filter_missing_field_and_not_ilike": (
+        "Upgrade: missing field and a not =ilike condition",
+        "[('%s', '=', 'a'), ('name', 'not =ilike', 'foo')]" % MISSING,
+        "{}",
+        "[]",
+    ),
     # Preservacion: todo existe y no se toca. La lista de valores tiene tres
     # elementos, como una condicion: no se lee como campo.
     "upgrade_prepare_demo.filter_valid_fields": (

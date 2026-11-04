@@ -21,6 +21,8 @@
 #   campo roto en un OR, con otra condicion  -> se limpia y sigue activo
 #   campo roto en un camino, group by texto  -> se limpia y sigue activo
 #   solo el campo roto                       -> se archiva
+#   solo el campo roto, con "not =like"      -> se archiva
+#   campo roto y una condicion "not =ilike"  -> se limpia y sigue activo
 #   todos los campos existen                 -> no se toca (preservacion)
 #
 # Los siembra tests/pre_odu/base/190_200/020-filters_with_missing_fields.py,
@@ -52,6 +54,18 @@ EXPECTED = {
             "domain": "['|', ('name', 'ilike', 'Upgrade'), (0, '=', 1)]",
             "context": "{'group_by': [], 'pivot_measures': []}",
             "sort": "[]",
+            "active": True,
+        },
+        # "not =like" es un operador de condicion: si sigue activo, el script
+        # no vio el campo roto.
+        ref("upgrade_prepare_demo.filter_missing_field_not_like"): {
+            "active": False,
+        },
+        # En un AND, la condicion sobre el campo roto queda como siempre
+        # verdadera, y la de "not =ilike" sigue. Si se archivo, el script no la
+        # conto como condicion.
+        ref("upgrade_prepare_demo.filter_missing_field_and_not_ilike"): {
+            "domain": "['&', (1, '=', 1), ('name', 'not =ilike', 'foo')]",
             "active": True,
         },
         # Preservacion: todos sus campos existen, y "-id" es el formato viejo de
