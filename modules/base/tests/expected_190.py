@@ -35,6 +35,24 @@
 # recibimos se da por buena.
 
 EXPECTED = {
+    "account.account": {
+        # Company-merge case (040-company_merge_accounts.py): two accounts with
+        # the same code, name, type and currency, one reconcilable in the branch
+        # and one not in the main company. They must NOT be merged: a merge would
+        # leave one account whose reconcile may be wrong, so both refs still
+        # resolve. The main one keeps the code and the reconcile it had.
+        ref("upgrade_prepare_demo.account_merge_main_not_reconcile"): {
+            "code": "2.1.9.99.001",
+            "reconcile": False,
+        },
+        # The branch one is renumbered with the marker after the one-digit header
+        # segments (2.1.9), so it stays in the 2.1 group instead of jumping to
+        # 2.2, and it keeps reconcile = True.
+        ref("upgrade_prepare_demo.account_merge_branch_reconcile"): {
+            "code": "2.1.9.2.99.001",
+            "reconcile": True,
+        },
+    },
     "account.journal": {
         # Rama "store -> company homonima": parte de company_id = Muebleria US
         # (la main company) y store_id = el store sembrado "Sucursal
