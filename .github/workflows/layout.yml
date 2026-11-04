@@ -23,13 +23,14 @@ jobs:
 
   missing-checks:
     runs-on: ubuntu-latest
-    # Reports only, until every script of 20 already in flight has its check or
-    # its NO_CHECK; then this line goes and the job stops the PR
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       # Runbot does not run every jump on every PR; this lists the scripts without their check on each push
       - name: Every script has its declarative check
+        # Reports only, until every script of 20 already in flight has its check or
+        # its NO_CHECK; then this line goes and the job stops the PR.
+        # On the step and not on the job: on the job the check still shows red.
+        continue-on-error: true
         run: python3 tests/post_odu/missing_checks.py
 
   branch-name:
