@@ -19,6 +19,7 @@ import ast
 import json
 import logging
 
+from odoo.orm.domains import CONDITION_OPERATORS
 from odoo.upgrade import util
 
 from oba import log_message, should_run
@@ -28,11 +29,8 @@ _logger = logging.getLogger(__name__)
 # Upgrades to 19 still run the upgrade line 1118.
 FIRST_TARGET_VERSION = 20
 
-TERM_OPERATORS = {
-    "=", "!=", "<>", "==", "<=", "<", ">", ">=", "=?", "=like", "=ilike", "like", "not like",
-    "ilike", "not ilike", "in", "not in", "child_of", "parent_of",
-    "any", "not any", "any!", "not any!",
-}
+# "<>" and "==" left the operators in 20, but a favorite from before can still use them.
+TERM_OPERATORS = set(CONDITION_OPERATORS) | {"<>", "=="}
 SUB_DOMAIN_OPERATORS = {"any", "not any", "any!", "not any!"}
 LIST_CONTEXT_KEYS = (
     "group_by", "pivot_measures", "pivot_column_groupby", "pivot_row_groupby", "graph_groupbys", "orderedBy",
