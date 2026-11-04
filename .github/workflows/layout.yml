@@ -22,17 +22,29 @@ jobs:
           fi
 
   missing-checks:
-    name: mergebot/missing-checks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
     steps:
       - uses: actions/checkout@v4
       # Runbot does not run every jump on every PR; this lists the scripts without their check on each push
       - name: Every script has its declarative check
+        id: missing_checks
         # Reports only, until every script of 20 already in flight has its check or
         # its NO_CHECK; then this line goes and the job stops the PR.
         # On the step and not on the job: on the job the check still shows red.
         continue-on-error: true
         run: python3 tests/post_odu/missing_checks.py
+      # The mergebot reads commit statuses, not check runs
+      - name: Create commit status
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STATE: ${{ steps.missing_checks.conclusion == 'success' && 'success' || 'failure' }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }}" \
+            -f state="$STATE" -f context=mergebot/missing-checks
 
   branch-name:
     if: github.event_name == 'pull_request'
