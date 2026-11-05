@@ -248,6 +248,10 @@ def _sale(env, ctx, product, qty, price=250000.0):
     return so
 
 
+def _delivery(so):
+    return so.picking_ids.filtered(lambda p: p.state == "done" and p.picking_type_code == "outgoing")[:1]
+
+
 def _outgoing(env, ctx, product, qty):
     picking_type = ctx["warehouse"].out_type_id
     picking = env["stock.picking"].create({
@@ -290,15 +294,18 @@ def case_usd_manual_lc_pdiff(env, ctx, key, label):
 def case_usd_manual_lc(env, ctx, key, label):
     product = _product(env, ctx, key, label)
     po = _purchase(env, ctx, product, 10, 100.0, "usd")
-    _landed_cost(env, ctx, _receive(po, rate=PICKING_RATE), 150000.0, rate=LANDED_COST_RATE)
+    picking = _receive(po, rate=PICKING_RATE)
+    _landed_cost(env, ctx, picking, 150000.0, rate=LANDED_COST_RATE)
     _tag(env, po, key + "_po")
+    _tag(env, picking.move_ids, key + "_move_in")
 
 
 def case_usd_manual(env, ctx, key, label):
     product = _product(env, ctx, key, label)
     po = _purchase(env, ctx, product, 10, 100.0, "usd")
-    _receive(po, rate=PICKING_RATE)
+    picking = _receive(po, rate=PICKING_RATE)
     _tag(env, po, key + "_po")
+    _tag(env, picking.move_ids, key + "_move_in")
 
 
 def case_usd_auto_pdiff(env, ctx, key, label):
@@ -340,23 +347,28 @@ def case_ars(env, ctx, key, label):
 def case_purchase_return(env, ctx, key, label):
     product = _product(env, ctx, key, label)
     po = _purchase(env, ctx, product, 10, 100.0, "usd")
-    _return(env, _receive(po, rate=PICKING_RATE), 4)
+    picking = _receive(po, rate=PICKING_RATE)
+    returned = _return(env, picking, 4)
     _tag(env, po, key + "_po")
+    _tag(env, picking.move_ids, key + "_move_in")
+    _tag(env, returned.move_ids, key + "_move_return")
 
 
 def case_sale(env, ctx, key, label):
     product = _product(env, ctx, key, label)
     _stock(env, ctx, product, 20)
-    _tag(env, _sale(env, ctx, product, 5), key + "_so")
+    so = _sale(env, ctx, product, 5)
+    _tag(env, so, key + "_so")
+    _tag(env, _delivery(so).move_ids, key + "_move_out")
 
 
 def case_sale_return(env, ctx, key, label):
     product = _product(env, ctx, key, label)
     _stock(env, ctx, product, 20)
     so = _sale(env, ctx, product, 5)
-    delivery = so.picking_ids.filtered(lambda p: p.state == "done" and p.picking_type_code == "outgoing")
-    _return(env, delivery[:1], 2)
+    returned = _return(env, _delivery(so), 2)
     _tag(env, so, key + "_so")
+    _tag(env, returned.move_ids, key + "_move_return")
 
 
 def case_scrap(env, ctx, key, label):
@@ -401,8 +413,9 @@ def case_usd_manual_lc_after_sale(env, ctx, key, label):
 def case_no_valuation_currency(env, ctx, key, label):
     product = _product(env, ctx, key, label, categ="categ_none")
     po = _purchase(env, ctx, product, 10, 100.0, "usd")
-    _receive(po)
+    picking = _receive(po)
     _tag(env, po, key + "_po")
+    _tag(env, picking.move_ids, key + "_move_in")
 
 
 # (xmlid key, label, needs sale, flow)
