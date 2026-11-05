@@ -24,9 +24,14 @@ def migrate(env):
     if "value_in_currency" not in env["stock.valuation.layer"]._fields:
         _logger.info("stock_currency_valuation no esta en esta base — no se siembra nada")
         return
-    ctx = _setup(env)
-    if not ctx:
+    company = _company(env, env.ref("base.USD"))
+    if not company:
+        _logger.info("No hay una compania en otra moneda que USD — no se siembra nada")
         return
+    _logger.info("Se siembra en la compania %s (%s)", company.name, company.currency_id.name)
+    # Every record created below defaults to the seeded company.
+    env = env(context=dict(env.context, allowed_company_ids=company.ids))
+    ctx = _setup(env)
     for key, label, needs_sale, case in CASES:
         if env.ref(PREFIX + key, raise_if_not_found=False):
             continue
@@ -44,12 +49,20 @@ def migrate(env):
 # --------------------------------------------------------------------- setup
 
 
+def _company(env, usd):
+    """A main company with a warehouse and not in USD; an Argentine RI one first,
+    as the customers of the module."""
+    candidates = env["stock.warehouse"].search([]).company_id.filtered(
+        lambda c: c.currency_id != usd and not c.parent_id
+    )
+    return candidates.sorted(
+        lambda c: (c.chart_template != "ar_ri", c.currency_id.name != "ARS", c.id)
+    )[:1]
+
+
 def _setup(env):
-    company = env.company
     usd = env.ref("base.USD").with_context(active_test=False)
-    if company.currency_id == usd:
-        _logger.info("La compania ya esta en USD — no se siembra nada")
-        return None
+    company = env.company
     usd.active = True
     if not env["res.currency.rate"].search_count([("currency_id", "=", usd.id), ("company_id", "in", [company.id, False])]):
         env["res.currency.rate"].create({"currency_id": usd.id, "rate": 1 / FALLBACK_USD_RATE, "company_id": company.id})
