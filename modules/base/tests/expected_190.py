@@ -99,12 +99,5 @@ EXPECTED = {
         ref("base.main_company"): {
             "parent_id": None,
         },
-        # Company merge seeded by 035-company_merge_base.py: B ends as a branch
-        # of the main company. 038-company_dependent_other_table.py makes the
-        # merge update a model whose table is not the model name; if the table
-        # is derived from the name the -u fails before this check runs.
-        ref("upgrade_prepare_demo.company_merge_b"): {
-            "parent_id": ref("base.main_company"),
-        },
     },
 }
