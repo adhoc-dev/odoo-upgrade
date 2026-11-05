@@ -19,10 +19,15 @@ import ast
 import json
 import logging
 
-from odoo.orm.domains import CONDITION_OPERATORS
 from odoo.upgrade import util
 
 from oba import log_message, should_run
+
+try:
+    from odoo.orm.domains import CONDITION_OPERATORS
+except ImportError:
+    # Before 19: the file is loaded on every jump, but should_run stops it there.
+    CONDITION_OPERATORS = ()
 
 _logger = logging.getLogger(__name__)
 
