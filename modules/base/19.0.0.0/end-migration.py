@@ -1547,7 +1547,7 @@ def handle_merge_or_move(env, model_name, id_a, id_b, step=None):
                 for fk in fk_fields:
                     fk_table = _model_table(env, fk.model)
                     if not fk_table:
-                        _logger.warning(
+                        _logger.info(
                             "Saltando FK: %s.%s (modelo fuera del registro, no se remapea)",
                             fk.model,
                             fk.name,
@@ -1566,7 +1566,9 @@ def handle_merge_or_move(env, model_name, id_a, id_b, step=None):
                                 (rec_b.id,),
                             )
                             kept = cr.fetchone()[0]
-                        log = _logger.warning if kept else _logger.info
+                        # Las asistencias de B quedan en su calendario, que se archiva
+                        quiet = fk.model == "resource.calendar.attendance"
+                        log = _logger.warning if kept and not quiet else _logger.info
                         log(
                             "Saltando FK: %s.%s (modelo hijo propio, no se redirige al equivalente en A). "
                             "Quedan %s registro(s) en '%s' (B), que se archiva",
@@ -1833,7 +1835,7 @@ def migrate_json_company_dependent(cr, env, id_a, id_b):
     for model_name, field_names in model_map.items():
         table = _model_table(env, model_name)
         if not table:
-            _logger.warning(f"Model {model_name} not found, skipping")
+            _logger.info(f"Model {model_name} not found, skipping")
             continue
 
         # Odoo 19 guarda estos campos como JSONB
@@ -3868,7 +3870,7 @@ def migrate_standard_fields(cr, env, id_a, id_b):
         model_name = field.model
         table = _model_table(env, model_name)
         if not table:
-            _logger.warning(f"Model {model_name} not found, skipping")
+            _logger.info(f"Model {model_name} not found, skipping")
             continue
         strategy = MODEL_STRATEGY.get(model_name, "CHECK")
 
