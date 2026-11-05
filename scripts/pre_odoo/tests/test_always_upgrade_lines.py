@@ -47,6 +47,7 @@ user_type = _load_script("090-single_user_type_group.py")
 method_lines = _load_script("100-unique_payment_method_line_names.py")
 team_members = _load_script("110-archive_admin_sales_team_members.py")
 deprecated_views = _load_script("120-drop_deprecated_website_views.py")
+website_menus = _load_script("190-backup_website_menus.py")
 
 
 class OldDatabaseCase(unittest.TestCase):
@@ -294,6 +295,59 @@ class TestDropDeprecatedWebsiteViews(OldDatabaseCase):
         self.write_context(to_version="19.0")
         deprecated_views.migrate(self.cr, "18.0")
         self.assertEqual(len(self.views()), 8)
+
+
+class TestBackupWebsiteMenus(OldDatabaseCase):
+    # Menu 3 has no English name: that is what the consumer compares with, so it has to see it.
+    TABLES = """
+        CREATE TABLE website_menu (id integer PRIMARY KEY, website_id integer, name jsonb);
+        INSERT INTO website_menu (id, website_id, name) VALUES
+            (1, NULL, '{"en_US": "Default Main Menu"}'),
+            (2, 1, '{"en_US": "Home", "es_AR": "Inicio"}'),
+            (3, 1, '{"es_AR": "Solo en castellano"}');
+    """
+
+    def exists(self):
+        return bool(self.rows("SELECT 1 FROM information_schema.tables WHERE table_name = 'website_menu_bu'"))
+
+    def backup(self):
+        return self.rows("SELECT id, website_id, name FROM website_menu_bu ORDER BY id")
+
+    def test_backs_up_every_menu_by_id_with_its_english_name(self):
+        """Every menu, not only the ones of a website: the consumer recognises them by id."""
+        self.install("website")
+        self.write_context()
+        website_menus.migrate(self.cr, "19.0")
+        self.assertEqual(self.backup(), [(1, None, "Default Main Menu"), (2, 1, "Home"), (3, 1, None)])
+
+    def test_nothing_without_website(self):
+        self.write_context()
+        website_menus.migrate(self.cr, "19.0")
+        self.assertFalse(self.exists())
+
+    def test_nothing_before_the_jump_to_20(self):
+        """Upgrades to 19 are still covered by the upgrade line."""
+        self.install("website")
+        self.write_context(to_version="19.0")
+        website_menus.migrate(self.cr, "18.0")
+        self.assertFalse(self.exists())
+
+    def test_nothing_when_the_name_is_not_jsonb(self):
+        """A source older than 16 keeps a varchar there: skip instead of breaking on ->>."""
+        self.install("website")
+        self.write_context()
+        self.cr.execute("ALTER TABLE website_menu ALTER COLUMN name TYPE varchar USING name->>'en_US'")
+        website_menus.migrate(self.cr, "19.0")
+        self.assertFalse(self.exists())
+
+    def test_a_table_from_an_earlier_run_does_not_travel(self):
+        """should_back_up drops it before any gate: the consumer must not read a stale one."""
+        self.install("website")
+        self.write_context()
+        website_menus.migrate(self.cr, "19.0")
+        self.cr.execute("DELETE FROM ir_module_module WHERE name = 'website'")
+        website_menus.migrate(self.cr, "19.0")
+        self.assertFalse(self.exists())
 
 
 if __name__ == "__main__":
