@@ -131,6 +131,13 @@ IN_MEMORY = "Parchea un metodo en memoria mientras corre el -u: no deja nada en 
 ONLY_WARNS = "Solo avisa en el log: no cambia datos."
 GONE = "Borra un registro, y el check no puede declarar una ausencia: lo cubre su test en modules/base/tests/."
 PENDING = "Pendiente: es de antes de la regla del ADR 0037 de actua-20, falta escribirle el check."
+AN_ABSENCE = (
+    "Lo que hay que verificar es que un registro NO este, y este carril no declara una ausencia "
+    "(tests/post_odu/README.md). Lo cubre el test de modules/base/tests/"
+    "test_new_database_upgrade_lines.py, que corre el script contra su propia base. Para traerlo "
+    "aca habria que sembrar un xmlid en cada item del menu de un sitio y declarar el conjunto "
+    "child_id del menu raiz, y antes confirmar que la base canonica tiene website instalado."
+)
 
 NO_CHECK = {
     "end-020-restore_active_crons.py": PENDING,
@@ -149,6 +156,7 @@ NO_CHECK = {
     "end-160-deactivate_problem_views.py": PENDING,
     "end-170-drop_dashboard_custom_views.py": PENDING,
     "end-180-deprecate_website_custom_views.py": PENDING,
+    "end-190-drop_new_website_menus.py": AN_ABSENCE,
     "end-200-replace_success_upgrade_message.py": PENDING,
     "end-210-check_personalizations.py": PENDING,
     "end-230-drop_variant_preselect_parameter.py": GONE,

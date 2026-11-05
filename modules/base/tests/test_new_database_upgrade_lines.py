@@ -1,6 +1,6 @@
 """The upgrade lines that only touch the new database, as end scripts, case by case.
 
-Covers the scripts that are plain SQL (1470, 1812 and 2498). The tests create and drop their
+Covers the scripts that are plain SQL (1470, 1812, 2498 and 2684). The tests create and drop their
 own Postgres database with the tables the scripts touch, so they need no Odoo running, only
 importable, in the target version (20.0 or later).
 
@@ -9,6 +9,7 @@ importable, in the target version (20.0 or later).
 ``ODOO_PATH`` and ``UPGRADE_TEST_DB`` point them at another checkout or another database.
 """
 
+import contextlib
 import importlib.util
 import json
 import os
@@ -51,6 +52,7 @@ def _load_script(filename):
 orphan_activities = _load_script("end-130-check_orphan_activities.py")
 partner_timezones = _load_script("end-140-fix_partner_timezones.py")
 reconcile_labels = _load_script("end-150-unify_reconcile_model_labels.py")
+website_menus = _load_script("end-190-drop_new_website_menus.py")
 
 
 class Cursor:
@@ -63,6 +65,25 @@ class Cursor:
         if isinstance(query, SQL):
             query, params, _fields = query._sql_tuple
         return self._cr.execute(query, params)
+
+    @contextlib.contextmanager
+    def savepoint(self):
+        """The migration cursor has savepoints; psycopg2 in autocommit does not, so the block
+        runs in a real transaction and rolls back to the savepoint on error, as Odoo does."""
+        conn = self._cr.connection
+        autocommit = conn.autocommit
+        conn.autocommit = False
+        self._cr.execute("SAVEPOINT test_savepoint")
+        try:
+            yield
+        except Exception:
+            self._cr.execute("ROLLBACK TO SAVEPOINT test_savepoint")
+            raise
+        else:
+            self._cr.execute("RELEASE SAVEPOINT test_savepoint")
+        finally:
+            conn.commit()
+            conn.autocommit = autocommit
 
     def __getattr__(self, name):
         return getattr(self._cr, name)
@@ -253,6 +274,159 @@ class TestReconcileModelLabels(NewDatabaseCase):
         self.write_context(is_last_in_series=False)
         self.run_script()
         self.assertEqual(self.label(10)["en_US"], "Old fee")
+
+
+class TestWebsiteMenus(NewDatabaseCase):
+    TABLES = """
+        CREATE TABLE website_menu (
+            id serial PRIMARY KEY,
+            website_id integer,
+            name jsonb,
+            parent_id integer REFERENCES website_menu (id) ON DELETE CASCADE
+        );
+        CREATE TABLE ir_model_data (
+            id serial PRIMARY KEY, module varchar, name varchar, model varchar, res_id integer
+        );
+    """
+
+    def backup(self, *rows):
+        """The table the pre-odoo leaves on the old database: every menu, by id."""
+        self.cr.execute(
+            "CREATE TABLE website_menu_bu (id integer PRIMARY KEY, website_id integer, name varchar)"
+        )
+        for menu_id, website_id, name in rows:
+            self.cr.execute(
+                "INSERT INTO website_menu_bu (id, website_id, name) VALUES (%s, %s, %s)",
+                (menu_id, website_id, name),
+            )
+
+    def menus(self, *rows):
+        """Parents first: the foreign key is checked on insert."""
+        for menu_id, website_id, name, parent_id in rows:
+            self.cr.execute(
+                "INSERT INTO website_menu (id, website_id, name, parent_id) VALUES (%s, %s, %s, %s)",
+                (menu_id, website_id, json.dumps({"en_US": name}), parent_id),
+            )
+
+    def xmlid(self, module, name, res_id):
+        self.cr.execute(
+            "INSERT INTO ir_model_data (module, name, model, res_id) VALUES (%s, %s, 'website.menu', %s)",
+            (module, name, res_id),
+        )
+
+    def ids(self):
+        return [menu_id for (menu_id,) in self.rows("SELECT id FROM website_menu ORDER BY id")]
+
+    def run_script(self):
+        self.install("website")
+        website_menus.migrate(self.cr, FROM_VERSION)
+
+    def test_drops_the_item_the_jump_added(self):
+        """Website 1 had taken 'Jobs' out and the jump brought it back; website 2 never had it."""
+        self.backup((1, 1, "Home"), (2, 2, "Home"))
+        self.menus((1, 1, "Home", None), (2, 2, "Home", None), (3, 1, "Jobs", None), (4, 2, "Jobs", None))
+        self.run_script()
+        self.assertEqual(self.ids(), [1, 2])
+
+    def test_drops_the_twin_of_an_item_that_is_still_there(self):
+        """The jump also duplicates the item in the websites that kept it: the copy goes."""
+        self.backup((1, 1, "Shop"))
+        self.menus((1, 1, "Shop", None), (5, 1, "Shop", None))
+        self.run_script()
+        self.assertEqual(self.ids(), [1])
+
+    def test_keeps_an_item_recreated_with_another_id(self):
+        """Same (website, name) and the backed up id gone: it is that item, not a new one."""
+        self.backup((1, 1, "Shop"))
+        self.menus((7, 1, "Shop", None))
+        self.run_script()
+        self.assertEqual(self.ids(), [7])
+
+    def test_drops_the_xmlid_of_what_it_drops(self):
+        """Left behind, the next -u of the module would recreate the menu and duplicate it again."""
+        self.backup((1, 1, "Home"))
+        self.menus((1, 1, "Home", None), (3, 1, "Jobs", None))
+        self.xmlid("website_hr_recruitment", "website_menu_jobs", 3)
+        self.xmlid("website", "menu_home", 1)
+        self.run_script()
+        self.assertEqual(self.rows("SELECT module FROM ir_model_data ORDER BY id"), [("website",)])
+
+    def test_leaves_the_menus_without_a_website_alone(self):
+        """website.menu.create keeps one copy without website_id when the menu hangs from the
+        Default Main Menu: no navbar shows it, and the comparison does not look at it."""
+        self.backup((1, 1, "Home"), (9, None, "Jobs"))
+        self.menus((1, 1, "Home", None), (9, None, "Jobs", None))
+        self.run_script()
+        self.assertEqual(self.ids(), [1, 9])
+
+    def test_keeps_a_menu_that_changed_website(self):
+        """It is in the backup by id, so it is not new even under another website."""
+        self.backup((1, 1, "Home"), (9, None, "Jobs"))
+        self.menus((1, 1, "Home", None), (9, 2, "Jobs", None))
+        self.run_script()
+        self.assertEqual(self.ids(), [1, 9])
+
+    def test_does_not_drop_a_menu_that_holds_an_item_of_the_customer(self):
+        """Deleting it would cascade on the child the customer keeps: it is left and reported."""
+        self.backup((2, 1, "Offers"))
+        self.menus((3, 1, "Jobs", None), (2, 1, "Offers", 3))
+        self.run_script()
+        self.assertEqual(self.ids(), [2, 3])
+        self.assertTrue(any("items del cliente" in m for m in self.logs("warning")))
+
+    def test_does_not_drop_an_ancestor_of_an_item_of_the_customer(self):
+        """The cascade reaches the whole subtree, so sparing the direct parent is not enough."""
+        self.backup((10, 1, "Offers"))
+        self.menus((20, 1, "Jobs", None), (21, 1, "Openings", 20), (10, 1, "Offers", 21))
+        self.run_script()
+        self.assertEqual(self.ids(), [10, 20, 21])
+
+    def test_reports_when_it_cannot_drop(self):
+        """A failed delete is reported on the request and leaves the rest of the -u alone."""
+        self.backup((1, 1, "Home"))
+        self.menus((1, 1, "Home", None), (3, 1, "Jobs", None))
+        self.cr.execute(
+            "CREATE TABLE blocker (menu_id integer REFERENCES website_menu (id) ON DELETE RESTRICT);"
+            "INSERT INTO blocker (menu_id) VALUES (3)"
+        )
+        self.run_script()
+        self.assertEqual(self.ids(), [1, 3])
+        self.assertTrue(any("No se pudieron sacar" in m for m in self.logs("warning")))
+
+    def test_warns_on_the_request_when_there_is_no_backup(self):
+        """Nobody looked: dropping menus here would take items the customer did have."""
+        self.menus((3, 1, "Jobs", None))
+        self.run_script()
+        self.assertEqual(self.ids(), [3])
+        self.assertTrue(any("No hay respaldo" in m for m in self.logs("warning")))
+
+    def test_nothing_without_website(self):
+        self.backup()
+        self.menus((3, 1, "Jobs", None))
+        website_menus.migrate(self.cr, FROM_VERSION)
+        self.assertEqual(self.ids(), [3])
+        self.assertEqual(self.logs(), [])
+
+    def test_nothing_on_a_minor_update(self):
+        self.backup()
+        self.menus((3, 1, "Jobs", None))
+        self.install("website")
+        website_menus.migrate(self.cr, "20.0.1.3")
+        self.assertEqual(self.ids(), [3])
+
+    def test_second_run_drops_nothing_again(self):
+        """A repeated -u leaves the same rows. The warning about the menu that holds items of
+        the customer does come back: it describes the state, and the state is still that one.
+        What must not repeat is the action."""
+        self.backup((2, 1, "Offers"))
+        self.menus((3, 1, "Jobs", None), (2, 1, "Offers", 3), (4, 1, "Events", None))
+        self.run_script()
+        before = self.ids()
+        self.assertEqual(before, [2, 3])
+        self.cr.execute("DELETE FROM %s" % OUTPUT)
+        website_menus.migrate(self.cr, FROM_VERSION)
+        self.assertEqual(self.ids(), before)
+        self.assertFalse(any("No se pudieron sacar" in m for m in self.logs()))
 
 
 if __name__ == "__main__":
