@@ -235,6 +235,19 @@ def _make_payments_gross(cr):
                AND cur.id = COALESCE(p.counterpart_currency_id, p.currency_id)
             """
         )
+    if util.column_exists(cr, "account_payment", "withhold"):
+        # New in 20: Odoo computes it before these lines exist, so every payment got 'payment'.
+        # Same rule as account_payment_pro: withholdings only when the net amount is zero.
+        cr.execute(
+            """
+            UPDATE account_payment p
+               SET withhold = CASE WHEN ROUND(p.amount - g.withholding, cur.decimal_places) = 0
+                                   THEN 'withhold' ELSE 'withhold_pay' END
+              FROM l10n_ar_tax_gross g, res_currency cur
+             WHERE p.id = g.payment_id
+               AND cur.id = p.currency_id
+            """
+        )
 
     cr.execute(
         SQL(

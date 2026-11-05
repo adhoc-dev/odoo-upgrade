@@ -6,6 +6,7 @@
 | base_amount, amount | x accounting_rate of the payment (payment currency per ARS) |
 | - | account_id: tax line of the payment entry, or the tax repartition account |
 | account.payment.amount (net) | net + withholdings; amount_exact and counterpart_currency_amount follow |
+| - (account.payment.withhold, new in 20) | 'withhold' when the 19 net is zero, else 'withhold_pay' |
 
 modules/l10n_ar_tax/tests/test_withholding_lines_to_20.py tests the script case by case.
 """

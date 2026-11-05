@@ -95,7 +95,7 @@ class WithholdingLinesCase(unittest.TestCase):
                 id integer PRIMARY KEY, company_id integer, currency_id integer, move_id integer,
                 accounting_rate double precision, amount numeric, amount_exact double precision,
                 counterpart_currency_id integer, counterpart_rate double precision,
-                counterpart_currency_amount numeric
+                counterpart_currency_amount numeric, withhold varchar DEFAULT 'payment'
             );
             CREATE TABLE account_move_line (
                 id serial PRIMARY KEY, move_id integer, tax_line_id integer, account_id integer
@@ -132,7 +132,9 @@ class WithholdingLinesCase(unittest.TestCase):
     def payment(self, pid, amount, currency=ARS, accounting_rate=1.0, counterpart_currency=None,
                 counterpart_rate=1.0, counterpart_amount=None, amount_exact=None):
         self.cr.execute(
-            "INSERT INTO account_payment VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "INSERT INTO account_payment (id, company_id, currency_id, move_id, accounting_rate, amount, amount_exact, "
+            "counterpart_currency_id, counterpart_rate, counterpart_currency_amount) "
+            "VALUES (%s, 1, %s, %s, %s, %s, %s, %s, %s, %s)",
             (pid, currency, pid, accounting_rate, amount, amount_exact, counterpart_currency or currency,
              counterpart_rate, amount if counterpart_amount is None else counterpart_amount),
         )
@@ -228,6 +230,34 @@ class TestCurrencies(WithholdingLinesCase):
         self.migrate()
         self.assertEqual(self.new_lines(6)[0][7], 3.01)
         self.assertEqual(self.payment_amounts(6)[0], 100.00)
+
+
+class TestWithholdMode(WithholdingLinesCase):
+    """New in 20, computed before the lines exist: every payment starts in 'payment'."""
+
+    def withhold(self, pid):
+        self.cr.execute("SELECT withhold FROM account_payment WHERE id = %s", (pid,))
+        return self.cr.fetchone()[0]
+
+    def test_payment_with_net_amount_withholds_and_pays(self):
+        self.payment(20, 97000)
+        self.line(20, TAX_IIBB, 100000, 3000)
+        self.migrate()
+        self.assertEqual(self.withhold(20), "withhold_pay")
+
+    def test_payment_without_net_amount_only_withholds(self):
+        """The 19 net amount is zero: the payment only settled the debt with the certificate."""
+        self.payment(21, 0, currency=USD, accounting_rate=0.001)
+        self.line(21, TAX_IIBB, 100000, 3000)
+        self.migrate()
+        self.assertEqual(self.payment_amounts(21)[0], 3.0)
+        self.assertEqual(self.withhold(21), "withhold")
+
+    def test_payment_left_out_keeps_its_mode(self):
+        self.payment(22, 97, currency=USD, accounting_rate=0)
+        self.line(22, TAX_IIBB, 100000, 3000)
+        self.migrate()
+        self.assertEqual(self.withhold(22), "payment")
 
 
 class TestLines(WithholdingLinesCase):
