@@ -222,12 +222,29 @@ def _stock(env, ctx, product, qty):
 
 
 def _sale(env, ctx, product, qty, price=250000.0):
-    so = env["sale.order"].create({
+    vals = {
         "partner_id": ctx["customer"].id, "company_id": ctx["company"].id,
         "order_line": [(0, 0, {"product_id": product.id, "product_uom_qty": qty, "price_unit": price})],
-    })
+    }
+    # Sale exceptions and sale type automations roll the whole transaction back on
+    # their own (an unapproved new customer is enough), so neither may apply here.
+    fields_ = env["sale.order"]._fields
+    if "ignore_exception" in fields_:
+        vals["ignore_exception"] = True
+    if "type_id" in fields_:
+        sale_type = env["sale.order.type"].search([
+            ("company_id", "in", [ctx["company"].id, False]),
+            ("picking_atomation", "=", "none"), ("invoicing_atomation", "=", "none"),
+        ], limit=1)
+        if sale_type:
+            vals["type_id"] = sale_type.id
+    so = env["sale.order"].create(vals)
     so.action_confirm()
-    _validate(so.picking_ids)
+    if so.state != "sale":
+        raise ValueError("La venta %s no se confirmo (estado %s)" % (so.name, so.state))
+    for picking in so.picking_ids.sorted("id"):
+        if picking.state not in ("done", "cancel"):
+            _validate(picking)
     return so
 
 
@@ -337,7 +354,8 @@ def case_sale_return(env, ctx, key, label):
     product = _product(env, ctx, key, label)
     _stock(env, ctx, product, 20)
     so = _sale(env, ctx, product, 5)
-    _return(env, so.picking_ids.filtered(lambda p: p.state == "done")[:1], 2)
+    delivery = so.picking_ids.filtered(lambda p: p.state == "done" and p.picking_type_code == "outgoing")
+    _return(env, delivery[:1], 2)
     _tag(env, so, key + "_so")
 
 
