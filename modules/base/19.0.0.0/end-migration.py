@@ -1454,7 +1454,15 @@ def handle_merge_or_move(env, model_name, id_a, id_b, step=None):
                 # account.payment.term.line: re-mapearlas sumaba las cuotas de B al plazo
                 # homónimo de A, y el recompute de value_amount (100 - suma de porcentajes)
                 # rompía _check_percent.
+                #
+                # resource.calendar.attendance: re-mapearlas duplicaba los horarios del
+                # calendario de A cuando el de B era equivalente, y la constraint de
+                # superposición (_check_attendance_ids) rompía al crear una company nueva,
+                # que copia las asistencias del calendario de la company del entorno.
                 SKIP_FK_REMAP_MODELS = {
+                    "resource.calendar": {
+                        "resource.calendar.attendance",
+                    },
                     "account.payment.term": {
                         "account.payment.term.line",
                     },
