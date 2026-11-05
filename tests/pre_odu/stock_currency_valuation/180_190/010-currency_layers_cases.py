@@ -32,16 +32,21 @@ def migrate(env):
     # Every record created below defaults to the seeded company.
     env = env(context=dict(env.context, allowed_company_ids=company.ids))
     ctx = _setup(env)
+    env.cr.commit()
     for key, label, needs_sale, case in CASES:
         if env.ref(PREFIX + key, raise_if_not_found=False):
             continue
         if needs_sale and "sale.order" not in env:
             _logger.info("Caso %s: sin ventas en esta base, se saltea", key)
             continue
+        # Commit per case instead of a savepoint: some flows of the seed base commit on
+        # their own, which drops any savepoint and would abort the other seeds too.
         try:
-            with env.cr.savepoint():
-                case(env, ctx, key, label)
+            case(env, ctx, key, label)
+            env.cr.commit()
         except Exception:
+            env.cr.rollback()
+            env.invalidate_all()
             _logger.exception("Caso %s (%s): fallo la siembra", key, label)
     _backup_layers(env)
 
