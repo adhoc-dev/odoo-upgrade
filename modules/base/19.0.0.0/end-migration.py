@@ -286,6 +286,7 @@ MODEL_STRATEGY = {
     "account.cashbox.session": "KEEP_AND_CHECK",
     "account.payment.receiptbook": "KEEP_AND_CHECK",
     "account.journal": "KEEP_AND_CHECK",
+    "account.return": "KEEP_AND_CHECK",
     # --- CONFIGURACIÓN CONTABLE (MERGE OR MOVE) ---
     # TODOS LOS MERGE_OR_MOVE son consistentes con que son compartidos de padre a hijos	[('company_id', 'parent_of', company_ids)]
     # por lo cual unirlos o moverlos debería ser seguro.
@@ -354,6 +355,7 @@ MODEL_STRATEGY = {
     "hr.job": "MOVE_TO_PARENT",
     "hr.department": "MOVE_TO_PARENT",
     "hr.work.location": "MOVE_TO_PARENT",
+    "hr.attendance.overtime.ruleset": "MOVE_TO_PARENT",
     # These take their company from the employee or from its resource, so
     # leaving them in the branch contradicts their own compute.
     "hr.leave": "MOVE_TO_PARENT",
@@ -380,6 +382,8 @@ MODEL_STRATEGY = {
     "account.account": "KEEP_AND_CHECK",
     # --- OTROS (MOVE TO PARENT) ---
     "mail.activity.plan": "MOVE_TO_PARENT",
+    # record_company_id follows the record the message belongs to
+    "mail.message": "KEEP",
     "documents.document": "MOVE_TO_PARENT",
     "loyalty.program": "MOVE_TO_PARENT",
     "loyalty.card": "MOVE_TO_PARENT",
