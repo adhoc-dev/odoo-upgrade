@@ -11,8 +11,10 @@ is touched, and a filter that fails does not stop the others. A filter left with
 real condition is archived: kept as is it would show every record (AND) or none (OR). A
 filter it cannot read, or of a model that is gone, is reported and left as is.
 
-In ``modules/base/0.0.0`` so it runs on every jump, after the modules are loaded and after
-the renames of the other scripts.
+In ``modules/base/0.0.0`` so it runs after the modules are loaded and after the renames of
+the other scripts. Only on the last jump of a series: on an intermediate database a field
+can be missing just because its module has no code in that version, and the cleaning is
+for good.
 """
 
 import ast
@@ -118,7 +120,7 @@ def _sort_path(item):
 
 
 def migrate(cr, version):
-    if not should_run(cr, version, FIRST_TARGET_VERSION):
+    if not should_run(cr, version, FIRST_TARGET_VERSION, position="last"):
         return
     try:
         # Private helpers of util.remove_field: applied here to the broken filters only.
