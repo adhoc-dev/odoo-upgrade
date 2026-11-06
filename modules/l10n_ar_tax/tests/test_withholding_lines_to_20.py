@@ -288,6 +288,72 @@ class TestLeftOut(WithholdingLinesCase):
         self.assertIn("have no account", self.warnings()[0])
 
 
+class TestTaxes(WithholdingLinesCase):
+    """The AR taxes after the upgrade, with the 20 columns."""
+
+    AR, US = 1, 2
+
+    def setUp(self):
+        super().setUp()
+        self.cr.execute("DROP TABLE IF EXISTS account_tax, res_country")
+        self.cr.execute(
+            """
+            CREATE TABLE res_country (id integer PRIMARY KEY, code varchar);
+            CREATE TABLE account_tax (
+                id integer PRIMARY KEY, country_id integer, type_tax_use varchar, is_withholding_tax boolean,
+                l10n_ar_withholding_tax_type varchar, l10n_ar_code varchar
+            );
+            INSERT INTO res_country VALUES (1, 'AR'), (2, 'US');
+            """
+        )
+
+    def tearDown(self):
+        self.cr.execute("DROP TABLE IF EXISTS account_tax, res_country")
+
+    def tax(self, tid, type_tax_use, withholding, tax_type, code=None, country=AR):
+        self.cr.execute(
+            "INSERT INTO account_tax VALUES (%s, %s, %s, %s, %s, %s)",
+            (tid, country, type_tax_use, withholding, tax_type, code),
+        )
+
+    def tax_type(self, tid):
+        self.cr.execute("SELECT l10n_ar_withholding_tax_type FROM account_tax WHERE id = %s", (tid,))
+        return self.cr.fetchone()[0]
+
+    def test_perception_loses_the_withholding_type(self):
+        self.tax(1, "sale", False, "iibb_untaxed")
+        self.migrate()
+        self.assertIsNone(self.tax_type(1))
+
+    def test_withholding_keeps_its_type(self):
+        self.tax(2, "purchase", True, "iibb_total")
+        self.migrate()
+        self.assertEqual(self.tax_type(2), "iibb_total")
+
+    def test_tax_of_another_country_is_not_touched(self):
+        self.tax(3, "sale", False, "iibb_untaxed", country=self.US)
+        self.migrate()
+        self.assertEqual(self.tax_type(3), "iibb_untaxed")
+
+    def test_earnings_without_code_is_warned_and_not_filled(self):
+        self.tax(4, "purchase", True, "earnings")
+        self.tax(5, "purchase", True, "earnings_scale", code="")
+        self.tax(6, "purchase", True, "earnings", code="78")
+        self.tax(7, "sale", True, "earnings")
+        self.migrate()
+        self.assertEqual(len(self.warnings()), 1)
+        self.assertIn("2 earnings withholding taxes have no ARCA code", self.warnings()[0])
+        self.assertIn("[4, 5]", self.warnings()[0])
+        self.cr.execute("SELECT count(*) FROM account_tax WHERE COALESCE(l10n_ar_code, '') = ''")
+        self.assertEqual(self.cr.fetchone()[0], 3)
+
+    def test_without_the_old_table_still_checks_the_taxes(self):
+        self.cr.execute("DROP TABLE l10n_ar_payment_withholding")
+        self.tax(1, "sale", False, "iibb_untaxed")
+        self.migrate()
+        self.assertIsNone(self.tax_type(1))
+
+
 class TestRuns(WithholdingLinesCase):
     def test_second_run_changes_nothing(self):
         self.payment(1, 97000)

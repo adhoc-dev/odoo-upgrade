@@ -27,8 +27,13 @@ def migrate(cr, version):
     The lines are inserted with SQL: `base_amount`, `amount` and `account_id` are stored computes, and the
     ORM would recompute them with today's rates, registers and accumulations. The posted entries are not
     touched.
+
+    It also leaves the AR taxes valid for the 20 rules that our 19 data can break.
     """
     _logger.info("Running post-migration for l10n_ar_tax version %s", version)
+
+    _clean_withholding_type_of_other_taxes(cr)
+    _warn_earnings_without_code(cr)
 
     if not util.table_exists(cr, OLD_TABLE):
         _logger.info("No %s table: nothing to migrate", OLD_TABLE)
@@ -52,6 +57,87 @@ def migrate(cr, version):
     _warn_missing_account(cr)
     _insert_lines(cr)
     _make_payments_gross(cr)
+
+
+def _ar_taxes(where):
+    return SQL(
+        """
+        SELECT t.id
+          FROM account_tax t
+          JOIN res_country co ON co.id = t.country_id
+         WHERE co.code = 'AR'
+           AND %s
+        """,
+        where,
+    )
+
+
+def _has_withholding_columns(cr):
+    return all(
+        util.column_exists(cr, "account_tax", column)
+        for column in ("is_withholding_tax", "l10n_ar_withholding_tax_type", "country_id")
+    )
+
+
+def _clean_withholding_type_of_other_taxes(cr):
+    """In 20 only a withholding tax can have a withholding type; in 19 our perceptions had one.
+
+    The perceptions of 20 do not read it, and while it is set the tax cannot be saved. Nothing to do when
+    the upgrade already cleaned it.
+    """
+    if not _has_withholding_columns(cr):
+        return
+    cr.execute(
+        SQL(
+            """
+            UPDATE account_tax
+               SET l10n_ar_withholding_tax_type = NULL
+             WHERE id IN (%s)
+            RETURNING id
+            """,
+            _ar_taxes(
+                SQL("NOT COALESCE(t.is_withholding_tax, FALSE) AND t.l10n_ar_withholding_tax_type IS NOT NULL")
+            ),
+        )
+    )
+    tax_ids = sorted(tax_id for (tax_id,) in cr.fetchall())
+    if tax_ids:
+        log_message(
+            cr,
+            "%s AR taxes that are not withholdings lost their withholding type (account.tax ids %s)"
+            % (len(tax_ids), tax_ids),
+            module="l10n_ar_tax",
+        )
+
+
+def _warn_earnings_without_code(cr):
+    """In 20 a purchase earnings withholding needs its ARCA code to be saved. The code is not guessed."""
+    if not (_has_withholding_columns(cr) and util.column_exists(cr, "account_tax", "l10n_ar_code")):
+        return
+    cr.execute(
+        SQL(
+            "SELECT array_agg(id ORDER BY id) FROM (%s) s",
+            _ar_taxes(
+                SQL(
+                    """
+                    t.is_withholding_tax
+                    AND t.type_tax_use = 'purchase'
+                    AND t.l10n_ar_withholding_tax_type IN ('earnings', 'earnings_scale')
+                    AND COALESCE(t.l10n_ar_code, '') = ''
+                    """
+                )
+            ),
+        )
+    )
+    tax_ids = cr.fetchone()[0]
+    if tax_ids:
+        log_message(
+            cr,
+            "%s earnings withholding taxes have no ARCA code, and they cannot be edited until somebody sets it "
+            "(account.tax ids %s)" % (len(tax_ids), tax_ids),
+            "warning",
+            module="l10n_ar_tax",
+        )
 
 
 def _pending_lines():
