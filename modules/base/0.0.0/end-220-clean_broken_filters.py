@@ -147,7 +147,10 @@ def migrate(cr, version):
             not_parsed.append(filter_id)
             continue
         context_breaks = {p for p in _context_paths(context) if _broken_path(env, model_name, p)}
-        sort_breaks = {p for p in map(_sort_path, sort) if p and _broken_path(env, model_name, p)}
+        # "__count desc": a grouped list sorted by the count, not a field.
+        sort_breaks = {
+            p for p in map(_sort_path, sort) if p and not p.startswith("__") and _broken_path(env, model_name, p)
+        }
         if not (domain_breaks or context_breaks or sort_breaks):
             continue
 

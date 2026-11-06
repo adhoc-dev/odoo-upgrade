@@ -54,12 +54,13 @@ FILTERS = {
         "[]",
     ),
     # Preservacion: todo existe y no se toca. La lista de valores tiene tres
-    # elementos, como una condicion: no se lee como campo.
+    # elementos, como una condicion: no se lee como campo. "__count" en el orden
+    # es una lista agrupada ordenada por cantidad, no un campo.
     "upgrade_prepare_demo.filter_valid_fields": (
         "Upgrade: valid fields",
         "[('name', 'ilike', 'Upgrade'), ('type', 'in', ['contact', 'invoice', 'delivery'])]",
         "{'group_by': ['country_id']}",
-        '["name desc", "-id"]',
+        '["name desc", "-id", "__count desc"]',
     ),
 }
 

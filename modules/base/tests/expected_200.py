@@ -69,12 +69,12 @@ EXPECTED = {
             "active": True,
         },
         # Preservacion: todos sus campos existen, y "-id" es el formato viejo de
-        # orden descendente, no un campo. Si cambia, el script toco un favorito
-        # que no estaba roto.
+        # orden descendente, no un campo; "__count" tampoco. Si cambia, el script
+        # toco un favorito que no estaba roto.
         ref("upgrade_prepare_demo.filter_valid_fields"): {
             "domain": "[('name', 'ilike', 'Upgrade'), ('type', 'in', ['contact', 'invoice', 'delivery'])]",
             "context": "{'group_by': ['country_id']}",
-            "sort": '["name desc", "-id"]',
+            "sort": '["name desc", "-id", "__count desc"]',
             "active": True,
         },
     },
