@@ -4957,6 +4957,8 @@ def create_branch_receiptbooks(env, branch_company_ids):
 
 def migrate(cr, version):
     env = util.env(cr)
+    # Remapping a leave type recomputes the dates of approved leaves too.
+    env = env(context=dict(env.context, leave_skip_state_check=True))
     # Una corrida que retoma necesita las equivalencias de las anteriores: el
     # merge de posiciones fiscales compara contra impuestos ya fusionados.
     load_merged_ids(env)
