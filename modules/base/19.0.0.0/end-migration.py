@@ -5,6 +5,7 @@ import re
 import time
 from contextlib import contextmanager
 
+from odoo import fields
 from odoo.exceptions import UserError
 from odoo.tools import SQL
 from odoo.tools.safe_eval import safe_eval
@@ -662,9 +663,9 @@ def clear_past_appraisal_dates(env, employee_ids):
         UPDATE hr_employee
            SET next_appraisal_date = NULL
          WHERE id = ANY(%s)
-           AND next_appraisal_date < CURRENT_DATE
+           AND next_appraisal_date < %s
         """,
-        [employee_ids],
+        [employee_ids, fields.Date.today()],
     )
     env["hr.employee"].browse(employee_ids).invalidate_recordset(["next_appraisal_date"])
 
