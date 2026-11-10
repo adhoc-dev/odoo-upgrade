@@ -113,7 +113,7 @@ class WithholdingLinesCase(unittest.TestCase):
                 id serial PRIMARY KEY, tax_id integer NOT NULL, account_id integer NOT NULL,
                 company_id integer NOT NULL, payment_id integer NOT NULL, name varchar, ref text,
                 placeholder_type varchar NOT NULL, previous_placeholder_type varchar,
-                base_amount numeric, amount numeric,
+                base_amount numeric, amount numeric, l10n_ar_base_amount numeric, l10n_ar_amount numeric,
                 create_uid integer, create_date timestamp, write_uid integer, write_date timestamp
             );
             CREATE TABLE {output} (id serial PRIMARY KEY, kind varchar NOT NULL, payload jsonb NOT NULL);
@@ -163,6 +163,14 @@ class WithholdingLinesCase(unittest.TestCase):
         )
         return self.cr.fetchall()
 
+    def ars_amounts(self, pid):
+        self.cr.execute(
+            "SELECT l10n_ar_base_amount, l10n_ar_amount FROM account_payment_withholding_line "
+            "WHERE payment_id = %s ORDER BY tax_id",
+            (pid,),
+        )
+        return self.cr.fetchall()
+
     def payment_amounts(self, pid):
         self.cr.execute(
             "SELECT amount, amount_exact, counterpart_currency_amount FROM account_payment WHERE id = %s", (pid,)
@@ -185,14 +193,17 @@ class TestCurrencies(WithholdingLinesCase):
             [(TAX_IIBB, ACCOUNT_ENTRY, COMPANY, "0001-00000001", "100000 x 3%", "given_by_name",
               100000, 3000)],
         )
+        self.assertEqual(self.ars_amounts(1), [(100000, 3000)])
         self.assertEqual(self.payment_amounts(1), (100000, None, 100000))
 
     def test_r2_foreign_currency_payment(self):
-        """R.2: USD payment at 1.000 ARS; the ARS line goes to USD with the payment rate (USD per ARS)."""
+        """R.2: USD payment at 1.000 ARS; the ARS line goes to USD with the payment rate (USD per ARS) and keeps
+        its ARS."""
         self.payment(2, 97, currency=USD, accounting_rate=0.001, amount_exact=97.0)
         self.line(2, TAX_IIBB, 100000, 3000)
         self.migrate()
         self.assertEqual(self.new_lines(2)[0][6:], (100.00, 3.00))
+        self.assertEqual(self.ars_amounts(2), [(100000, 3000)])
         self.assertEqual(self.payment_amounts(2), (100.00, 100.0, 100.00))
 
     def test_r3_buying_currency(self):
@@ -227,6 +238,7 @@ class TestCurrencies(WithholdingLinesCase):
         self.line(6, TAX_IIBB, 100000, 3010)
         self.migrate()
         self.assertEqual(self.new_lines(6)[0][7], 3.01)
+        self.assertEqual(self.ars_amounts(6), [(100000, 3010)])
         self.assertEqual(self.payment_amounts(6)[0], 100.00)
 
 

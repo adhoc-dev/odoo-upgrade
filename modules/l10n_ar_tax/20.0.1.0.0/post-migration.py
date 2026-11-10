@@ -22,7 +22,9 @@ def migrate(cr, version):
     In 19 the lines of l10n_ar_tax are in company currency (ARS) and the payment amount is the net one.
     In 20 the lines are Odoo's, in the payment currency valued at the payment rate (`accounting_rate`,
     payment currency per company currency), and the payment amount is the gross one: Odoo computes the
-    net as amount minus withholdings.
+    net as amount minus withholdings. l10n_ar_tax also stores the ARS of each line
+    (`l10n_ar_base_amount`, `l10n_ar_amount`), the ones the entry and the certificate use: they are the
+    19 amounts, as they are.
 
     The lines are inserted with SQL: `base_amount`, `amount` and `account_id` are stored computes, and the
     ORM would recompute them with today's rates, registers and accumulations. The posted entries are not
@@ -165,6 +167,8 @@ def _pending_lines():
                CASE WHEN p.currency_id = c.currency_id THEN w.amount
                     ELSE ROUND(w.amount * p.accounting_rate::numeric, cur.decimal_places)
                END AS amount,
+               w.base_amount AS l10n_ar_base_amount,
+               w.amount AS l10n_ar_amount,
                COALESCE(
                    (SELECT aml.account_id
                       FROM account_move_line aml
@@ -245,12 +249,14 @@ def _insert_lines(cr):
                 INSERT INTO %(new)s (
                     id, payment_id, tax_id, company_id, account_id, name, ref,
                     placeholder_type, previous_placeholder_type, base_amount, amount,
+                    l10n_ar_base_amount, l10n_ar_amount,
                     create_uid, create_date, write_uid, write_date
                 )
                 SELECT new_id, payment_id, tax_id, company_id, account_id, name, ref,
                        CASE WHEN name IS NULL THEN 'not_defined' ELSE 'given_by_name' END,
                        CASE WHEN name IS NULL THEN 'not_defined' ELSE 'given_by_name' END,
                        base_amount, amount,
+                       l10n_ar_base_amount, l10n_ar_amount,
                        create_uid, create_date, write_uid, write_date
                   FROM src
             )
