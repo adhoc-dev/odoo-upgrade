@@ -7,7 +7,18 @@
 #    dato tiene que sobrevivir con el mismo estado de facturacion en la orden y en sus lineas
 #    y con el monto a facturar de la orden en cero. No migra ningun script: es el check de que el dato
 #    no se pierde.
+# 3. sale_product_uom_price se fusiona en sale_ux: su ajuste "Mostrar la unidad del producto en los
+#    presupuestos" pasa de sale_product_uom_price.report_in_product_uom a
+#    sale_ux.report_in_product_uom. Migra sale_ux/20.0.0.0/pre-migration.py.
 EXPECTED = {
+    "ir.config_parameter": {
+        # Parte de sale_product_uom_price.report_in_product_uom = 'True'. Si la clave no cambia,
+        # sale_ux no lee el ajuste y los presupuestos vuelven a la unidad del envase.
+        ref("upgrade_prepare_demo.param_report_in_product_uom"): {
+            "key": "sale_ux.report_in_product_uom",
+            "value": "True",
+        },
+    },
     "res.company": {
         # Rama "ajuste prendido": parte de sale_ux.show_product_image_on_report = 'True'.
         # En 20 el ajuste de la compania nace en False; si queda asi, el script no paso el
