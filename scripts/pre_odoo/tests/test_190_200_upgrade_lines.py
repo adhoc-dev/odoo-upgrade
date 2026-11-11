@@ -64,7 +64,6 @@ class TestFollowupReportResidualColumn(OldDatabaseCase):
         self.write_context()
         residual_column.migrate(self.cr, "19.0")
         self.assertEqual(self.columns(), [1, 3, 4, 5])
-        self.assertEqual(len(self.logs()), 1)
 
     def test_keeps_a_residual_column_with_xmlid(self):
         self.xmlid("account_reports", "followup_report_amount_residual", "account.report.column", 2)
@@ -78,7 +77,6 @@ class TestFollowupReportResidualColumn(OldDatabaseCase):
         residual_column.migrate(self.cr, "19.0")
         residual_column.migrate(self.cr, "19.0")
         self.assertEqual(self.columns(), [1, 3, 4, 5])
-        self.assertEqual(len(self.logs()), 1)
 
     def test_nothing_without_account_reports(self):
         residual_column.migrate(self.cr, "19.0")

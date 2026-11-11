@@ -1,6 +1,6 @@
 import logging
 
-from oba import log_message, should_run_pre_odoo
+from oba import should_run_pre_odoo
 
 _logger = logging.getLogger(__name__)
 
@@ -45,9 +45,3 @@ def migrate(cr, version):
     dropped = sorted(row[0] for row in cr.fetchall())
     if dropped:
         _logger.info("Dropped the residual columns without xmlid of the follow-up report: %s", dropped)
-        log_message(
-            cr,
-            "Se borró del reporte de seguimiento la columna de importe residual que agregaba "
-            "account_accountant_ux (ids %s): en 20.0 la trae el reporte nativo." % dropped,
-            "info",
-        )
