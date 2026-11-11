@@ -13,8 +13,11 @@ _logger = logging.getLogger(__name__)
 #   - the main company with an automatic level used by an open invoice, a manual level that
 #     sends a mail and a manual level without media;
 #   - a company with an automatic level that was never used, behind a manual one;
-#   - a branch of the main company without levels, with an open invoice on a level of its parent.
-# The delays (-11, 11, 12) are not in the demo: they are unique per company.
+#   - a branch of the main company without levels, with an open invoice on a level of its parent;
+#   - a company that only used manual levels: another branch, with its own level and invoice
+#     (a new company that is not a branch has no chart of accounts to invoice with);
+#   - in the main company, a manual level that sends an SMS and one that only creates an activity.
+# The delays (-11, 11 to 14) are not in the demo: they are unique per company.
 
 
 def migrate(env):
@@ -34,41 +37,27 @@ def migrate(env):
             }
         ]
     )
-    # Not again through _load_records: writing parent_id, even the same one, raises in 19.0.
-    branch = env.ref("upgrade_prepare_demo.company_followup_branch", raise_if_not_found=False) or env[
-        "res.company"
-    ]._load_records(
-        [
-            {
-                "xml_id": "upgrade_prepare_demo.company_followup_branch",
-                "values": {"name": "Seguimiento sucursal", "parent_id": main.id},
-                "noupdate": True,
-            }
-        ]
+    branch = _branch(
+        env,
+        main,
+        "company_followup_branch",
+        "Seguimiento sucursal",
+        "journal_followup_branch",
+        "Ventas sucursal seguimiento",
+        "SSEG",
     )
-    # A new branch has no journals: it posts its invoice on one of its own, with the income
-    # account of its parent, whose chart it shares.
-    income = (
-        env["account.journal"].search([("type", "=", "sale"), ("company_id", "=", main.id)], limit=1).default_account_id
-    )
-    env["account.journal"]._load_records(
-        [
-            {
-                "xml_id": "upgrade_prepare_demo.journal_followup_branch",
-                "values": {
-                    "name": "Ventas sucursal seguimiento",
-                    "code": "SSEG",
-                    "type": "sale",
-                    "company_id": branch.id,
-                    "default_account_id": income.id,
-                },
-                "noupdate": True,
-            }
-        ]
+    manual = _branch(
+        env,
+        main,
+        "company_followup_manual",
+        "Seguimiento manual",
+        "journal_followup_manual",
+        "Ventas manual seguimiento",
+        "SMAN",
     )
     template = env.ref("account_followup.demo_followup_email_template_2", raise_if_not_found=False)
     template = template.id if template else False
-    levels = env["account_followup.followup.line"]._load_records(
+    env["account_followup.followup.line"]._load_records(
         [
             {
                 "xml_id": "upgrade_prepare_demo.%s" % name,
@@ -107,6 +96,39 @@ def migrate(env):
                     },
                 ),
                 (
+                    "followup_main_manual_sms",
+                    {
+                        "company_id": main.id,
+                        "name": "Aviso por SMS (seguimiento)",
+                        "delay": 13,
+                        "auto_execute": False,
+                        "send_email": False,
+                        "send_sms": True,
+                    },
+                ),
+                (
+                    "followup_main_activity",
+                    {
+                        "company_id": main.id,
+                        "name": "Llamado (seguimiento)",
+                        "delay": 14,
+                        "auto_execute": False,
+                        "send_email": False,
+                        "create_activity": True,
+                        "activity_summary": "Llamar al cliente",
+                    },
+                ),
+                (
+                    "followup_manual_mail",
+                    {
+                        "company_id": manual.id,
+                        "name": "Reclamo manual (seguimiento)",
+                        "delay": 11,
+                        "auto_execute": False,
+                        "send_email": True,
+                    },
+                ),
+                (
                     "followup_blocked_manual_mail",
                     {
                         "company_id": blocked.id,
@@ -129,15 +151,58 @@ def migrate(env):
             )
         ]
     )
-    automatic = levels[1]
+    automatic = env.ref("upgrade_prepare_demo.followup_main_automatic")
+    _invoice(env, "upgrade_prepare_demo.followup_invoice_main", main, automatic)
+    _invoice(env, "upgrade_prepare_demo.followup_invoice_branch", branch, automatic)
+    _invoice(
+        env,
+        "upgrade_prepare_demo.followup_invoice_manual",
+        manual,
+        env.ref("upgrade_prepare_demo.followup_manual_mail"),
+    )
+
+
+def _branch(env, parent, name, label, journal, journal_label, code):
+    """A branch of ``parent`` that can invoice: its own sale journal, the accounts of its parent."""
+    # Not again through _load_records: writing parent_id, even the same one, raises in 19.0.
+    branch = env.ref("upgrade_prepare_demo.%s" % name, raise_if_not_found=False) or env["res.company"]._load_records(
+        [
+            {
+                "xml_id": "upgrade_prepare_demo.%s" % name,
+                "values": {"name": label, "parent_id": parent.id},
+                "noupdate": True,
+            }
+        ]
+    )
+    # A new branch has no journals: it posts its invoice on one of its own, with the income
+    # account of its parent, whose chart it shares.
+    income = (
+        env["account.journal"]
+        .search([("type", "=", "sale"), ("company_id", "=", parent.id)], limit=1)
+        .default_account_id
+    )
+    env["account.journal"]._load_records(
+        [
+            {
+                "xml_id": "upgrade_prepare_demo.%s" % journal,
+                "values": {
+                    "name": journal_label,
+                    "code": code,
+                    "type": "sale",
+                    "company_id": branch.id,
+                    "default_account_id": income.id,
+                },
+                "noupdate": True,
+            }
+        ]
+    )
     # Nor a receivable account for the partner: the one of its parent.
     partner = env.ref("base.res_partner_2")
     if not partner.with_company(branch).property_account_receivable_id:
         partner.with_company(branch).property_account_receivable_id = partner.with_company(
-            main
+            parent
         ).property_account_receivable_id
-    _invoice(env, "upgrade_prepare_demo.followup_invoice_main", main, automatic)
-    _invoice(env, "upgrade_prepare_demo.followup_invoice_branch", branch, automatic)
+    return branch
 
 
 def _invoice(env, xmlid, company, level):

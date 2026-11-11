@@ -34,9 +34,13 @@
 #
 #   compania con un nivel automatico usado en 180 dias -> interruptor prendido
 #     nivel manual con mail                             -> solo actividad
+#     nivel manual con SMS                              -> solo actividad
 #     nivel automatico                                  -> no se toca
 #     nivel manual sin medios                           -> no se toca
+#     nivel manual que ya era solo actividad            -> no se toca
 #   compania con un automatico sin uso, tras un manual -> interruptor apagado,
+#                                                         niveles sin cambios
+#   compania que solo uso niveles manuales             -> interruptor apagado,
 #                                                         niveles sin cambios
 #   sucursal reclamada con los niveles de la matriz    -> interruptor de la matriz
 #
@@ -132,6 +136,11 @@ EXPECTED = {
         ref("upgrade_prepare_demo.company_followup_branch"): {
             "automatic_invoice_reminder": True,
         },
+        # Uso en 180 dias solo un nivel manual: el interruptor queda apagado. Si se
+        # prende, el script conto como automatico un uso manual.
+        ref("upgrade_prepare_demo.company_followup_manual"): {
+            "automatic_invoice_reminder": False,
+        },
     },
     "account_followup.followup.line": {
         # Manual con mail, en una compania que pasa a automatico: solo actividad,
@@ -142,6 +151,23 @@ EXPECTED = {
             "create_activity": True,
             "activity_summary": "Aviso previo (seguimiento)",
             "activity_type_id": ref("mail.mail_activity_data_todo"),
+        },
+        # Manual con SMS, en una compania que pasa a automatico: solo actividad, y la
+        # nota dice que hay que mandar el SMS (sin plantilla). Si sigue con el SMS,
+        # empieza a salir solo; si la nota esta vacia, nadie sabe que mandar.
+        ref("upgrade_prepare_demo.followup_main_manual_sms"): {
+            "send_sms": False,
+            "create_activity": True,
+            "activity_summary": "Aviso por SMS (seguimiento)",
+            "activity_note": "Mandar el SMS del recordatorio.",
+        },
+        # Preservacion: manual que ya creaba solo una actividad, con su resumen. Si
+        # cambia el resumen o aparece una nota, el script lo trato como si mandara algo.
+        ref("upgrade_prepare_demo.followup_main_activity"): {
+            "send_email": False,
+            "create_activity": True,
+            "activity_summary": "Llamar al cliente",
+            "activity_note": None,
         },
         # Preservacion: el nivel automatico sigue mandando su mail como antes.
         ref("upgrade_prepare_demo.followup_main_automatic"): {
@@ -158,6 +184,12 @@ EXPECTED = {
         # Preservacion: en una compania que queda apagada no se convierte nada. Si
         # pasa a actividad, el script miro el nivel y no el interruptor.
         ref("upgrade_prepare_demo.followup_blocked_manual_mail"): {
+            "send_email": True,
+            "create_activity": False,
+        },
+        # Preservacion: la compania solo manual sigue mandando su mail a mano. Si pasa
+        # a actividad, el script convirtio niveles con el interruptor apagado.
+        ref("upgrade_prepare_demo.followup_manual_mail"): {
             "send_email": True,
             "create_activity": False,
         },
