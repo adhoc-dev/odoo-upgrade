@@ -159,7 +159,8 @@ MERGE_CRITERIA = {
     "account.group": ["code_prefix_start"],
     # Two types with the same name but different allocation behaviour are not
     # the same type: merging them would change how the branch requests time off.
-    "hr.leave.type": ["name", "requires_allocation"],
+    # A different unit would also recompute the dates of approved leaves.
+    "hr.leave.type": ["name", "requires_allocation", "request_unit"],
     "hr.leave.accrual.plan": ["name"],
     "hr.leave.mandatory.day": ["name", "start_date", "end_date"],
     # Same name is not enough for a schedule: merging calendars with different
