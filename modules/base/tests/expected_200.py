@@ -28,6 +28,26 @@
 # Los siembra tests/pre_odu/base/190_200/020-filters_with_missing_fields.py,
 # con un campo que no existe en ninguna version.
 #
+# Y de base/0.0.0/end-230-followup_levels.py, con lo que respaldo
+# scripts/pre_odoo/190_200/030-backup_followup_levels.py antes del pase: el envio
+# automatico de recordatorios pasa de cada nivel a un interruptor por compania.
+#
+#   compania con un nivel automatico usado en 180 dias -> interruptor prendido
+#     nivel manual con mail                             -> solo actividad
+#     nivel automatico                                  -> no se toca
+#     nivel manual sin medios                           -> no se toca
+#   compania con un automatico sin uso, tras un manual -> interruptor apagado,
+#                                                         niveles sin cambios
+#   sucursal reclamada con los niveles de la matriz    -> interruptor de la matriz
+#
+# Los siembra tests/pre_odu/account_followup/190_200/010-followup_levels.py. Lo
+# que el script hace sobre registros sin xmlid queda afuera, y lo prueba el banco
+# local del PR: los niveles copiados a la sucursal, sus apuntes en el nivel copiado
+# y la fecha del ultimo recordatorio automatico de las facturas (una fecha que sale
+# del vencimiento mas los dias del nivel, que el expected no sabe escribir). El uso
+# en 180 dias sale de una factura sembrada hace 20 dias: el caso vale mientras la
+# base de origen se siembre de nuevo antes de cada pase.
+#
 # Solo se declara el estado esperado DESPUES del -u (ADR 0007): la base que
 # recibimos se da por buena.
 
@@ -94,6 +114,54 @@ EXPECTED = {
             "name@es_AR": "Tipos de pedido de venta",
         },
     },
+    "res.company": {
+        # Uso un nivel automatico en los ultimos 180 dias (la factura sembrada): el
+        # interruptor se prende. Si queda apagado, el script no leyo el uso del
+        # respaldo y la compania deja de mandar los recordatorios que hoy manda.
+        ref("base.main_company"): {
+            "automatic_invoice_reminder": True,
+        },
+        # Su nivel automatico nunca se uso, porque esta detras de uno manual: el
+        # interruptor queda apagado. Si se prende, empieza a salir un mail que hoy
+        # no sale (el caso de UNIVERSIDAD FASTA en apromark).
+        ref("upgrade_prepare_demo.company_followup_blocked"): {
+            "automatic_invoice_reminder": False,
+        },
+        # Sucursal sin niveles propios, reclamada con los de la matriz: recibe el
+        # interruptor de la matriz. Apagado, en 20 deja de reclamarse sin error.
+        ref("upgrade_prepare_demo.company_followup_branch"): {
+            "automatic_invoice_reminder": True,
+        },
+    },
+    "account_followup.followup.line": {
+        # Manual con mail, en una compania que pasa a automatico: solo actividad,
+        # con el nombre que tenia en 19 de resumen. Si sigue mandando mail, ese
+        # mail que hoy dispara una persona empieza a salir solo.
+        ref("upgrade_prepare_demo.followup_main_manual_mail"): {
+            "send_email": False,
+            "create_activity": True,
+            "activity_summary": "Aviso previo (seguimiento)",
+            "activity_type_id": ref("mail.mail_activity_data_todo"),
+        },
+        # Preservacion: el nivel automatico sigue mandando su mail como antes.
+        ref("upgrade_prepare_demo.followup_main_automatic"): {
+            "send_email": True,
+            "create_activity": False,
+        },
+        # Preservacion: manual sin medios queda como estaba (decision del 30/10).
+        # Si aparece una actividad, el script convirtio un nivel que no mandaba nada.
+        ref("upgrade_prepare_demo.followup_main_no_media"): {
+            "send_email": False,
+            "create_activity": False,
+            "activity_summary": None,
+        },
+        # Preservacion: en una compania que queda apagada no se convierte nada. Si
+        # pasa a actividad, el script miro el nivel y no el interruptor.
+        ref("upgrade_prepare_demo.followup_blocked_manual_mail"): {
+            "send_email": True,
+            "create_activity": False,
+        },
+    },
     "product.template": {
         # Preservacion: un registro del cliente con su traduccion, sin .po. Si
         # cambia, el script piso algo que no tenia de donde recargar.
@@ -105,7 +173,11 @@ EXPECTED = {
 
 # Los scripts de base/0.0.0 corren en todos los saltos: este EXPECTED verifica
 # los de SCRIPTS, y el resto queda en NO_CHECK con su motivo.
-SCRIPTS = ["end-110-reload_translations.py", "end-220-clean_broken_filters.py"]
+SCRIPTS = [
+    "end-110-reload_translations.py",
+    "end-220-clean_broken_filters.py",
+    "end-230-followup_levels.py",
+]
 
 IN_MEMORY = "Parchea un metodo en memoria mientras corre el -u: no deja nada en la base para verificar."
 ONLY_WARNS = "Solo avisa en el log: no cambia datos."
