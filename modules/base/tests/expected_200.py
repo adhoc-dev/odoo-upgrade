@@ -95,7 +95,7 @@ EXPECTED = {
         },
     },
     # base/0.0.0/end-220-fix_mail_templates.py: las plantillas que cambio el
-    # cliente se prueban con un registro del modelo. Siembra en
+    # cliente se prueban con los ultimos registros del modelo. Siembra en
     # tests/pre_odu/mail/190_200/010-customer_mail_templates.py.
     "mail.template": {
         # No renderiza y no viene de un modulo, asi que no se puede resetear:
@@ -106,6 +106,11 @@ EXPECTED = {
         # Preservacion: una plantilla del cliente que renderiza queda activa.
         # Si se archivo, el script marca como rota una que anda.
         ref("upgrade_prepare_demo.mail_template_customer_healthy"): {
+            "active": True,
+        },
+        # Falla solo con la etiqueta archivada: el error es del dato y no se
+        # toca. Si se archivo, el script no probo con varios registros.
+        ref("upgrade_prepare_demo.mail_template_customer_partial"): {
             "active": True,
         },
     },

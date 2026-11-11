@@ -7,20 +7,24 @@ Two steps, as the upgrade line 1211 did:
    the standard gets its old ``body_html`` again, every language. Odoo's own render check
    decides if the old content still works; if it does not, the template keeps the standard
    and is reported as failed.
-2. Render. Every other template the customer changed is rendered with a record of its model,
-   or compiled when there is none. One that fails is reset to the file of its module, or
-   archived when it has none.
+2. Render. Every other template the customer changed is rendered with the last records of
+   its model, or compiled when there is none. One that fails with all of them is reset to the
+   file of its module, or archived when it has none. One that fails only with some is left
+   as it is: the error is in the data, not in the template.
 
 The failed templates go to the customer note values as ``mail_templates_failed``: ``id`` in
-this database and ``status``, ``R`` (it has the standard of this version) or ``A`` (archived).
-The Test & C. Notes upgrade line of this version reads them to build the config matrix where
-the customer chooses which ones Adhoc fixes, and applies the fixed code that comes back.
+this database, ``status`` and ``error``, the reason Odoo gave. ``R``: it has the standard of
+this version; ``A``: archived; ``P``: fails only with some records, not touched. The Test &
+C. Notes upgrade line of this version reads them, tells the Bugfix team in a subticket, and
+applies the fixed code the team leaves in the ticket.
 
 Only on the last request of a series. In ``modules/base/0.0.0`` so it runs on every jump,
 after the modules are loaded, and after ``end-110``, which reloads the translations.
 """
 
 import logging
+import re
+from html import unescape
 
 from lxml import html
 
@@ -40,7 +44,9 @@ RENDER_FIELDS = [
 ]
 # Sent by Adhoc, not by the customer.
 EXCLUDED_XMLIDS = ("base_install_request.mail_template_base_install_request",)
-RESET, ARCHIVED = "R", "A"
+# Records to render each template with: one that fails only with some of them is not broken.
+SAMPLE_SIZE = 3
+RESET, ARCHIVED, PARTIAL = "R", "A", "P"
 MUTED_LOGGERS = ("odoo.addons.mail.models.mail_render_mixin", "odoo.addons.mail.models.mail_template")
 
 
@@ -52,20 +58,26 @@ def migrate(cr, version):
     ignored = _ignored_ids(env)
 
     failed = {}
+    samples = {}
     # A template that does not render is expected here and handled: Odoo would log each one as
     # an error with its traceback, and runbot fails a build on a traceback. The reason is
     # logged below, as info.
     with mute_logger(*MUTED_LOGGERS):
-        restored, validated = _restore(cr, env, ignored, failed)
-        _render(cr, env, ignored | set(failed) | validated, restored, failed)
+        restored, validated = _restore(cr, env, ignored, failed, samples)
+        _render(cr, env, ignored | set(failed) | validated, restored, failed, samples)
 
     # Always, also empty: the upgrade line tells "nothing failed" from "the script did not run".
     add_customer_note(
-        cr, {"mail_templates_failed": [{"id": tid, "status": status} for tid, status in sorted(failed.items())]}
+        cr,
+        {
+            "mail_templates_failed": [
+                {"id": tid, "status": status, "error": error} for tid, (status, error) in sorted(failed.items())
+            ]
+        },
     )
 
 
-def _restore(cr, env, ignored, failed):
+def _restore(cr, env, ignored, failed, samples):
     """Put back the content of the customized templates the upgrade reset.
 
     :returns: (restored ids, the ones of them Odoo's render check already validated)
@@ -117,15 +129,15 @@ def _restore(cr, env, ignored, failed):
                     checked = template.with_context(lang=lang) if lang else template
                     checked._check_can_be_rendered(fnames={"body_html"})
         except Exception as e:
-            _logger.info("Mail template %s: the old content does not render here (%s)", template.id, str(e)[:300])
+            _logger.info("Mail template %s: the old content does not render here (%s)", template.id, _error_text(e))
             template.invalidate_recordset(["body_html"])
             rejected.append(template.id)
             # Not archived: it keeps the standard of this version, which works.
-            failed[template.id] = RESET
+            failed[template.id] = (RESET, _error_text(e))
             continue
         restored.append(template.id)
         # The check returns early without a model or a record of it: then it validated nothing.
-        if _any_record_id(cr, env, template.sudo().model_id.model):
+        if _model_sample(cr, env, samples, template.sudo().model_id.model):
             validated.add(template.id)
 
     if restored:
@@ -135,7 +147,7 @@ def _restore(cr, env, ignored, failed):
     return restored, validated
 
 
-def _render(cr, env, skipped, restored, failed):
+def _render(cr, env, skipped, restored, failed, samples):
     """Render the templates the customer changed; reset or archive the ones that fail."""
     # Active and changed by the customer: not last written by OdooBot. The restored ones are, now.
     cr.execute(
@@ -153,45 +165,88 @@ def _render(cr, env, skipped, restored, failed):
         return
 
     render_context = _render_context(env)
-    record_by_model = {}
     for template in env["mail.template"].browse(template_ids):
-        model = template.model or False
-        if model not in record_by_model:
-            record_by_model[model] = _any_record_id(cr, env, model)
-        record_id = record_by_model[model]
-        try:
-            with cr.savepoint():
-                if record_id:
-                    template.with_context(**render_context)._generate_template([record_id], RENDER_FIELDS)
-                elif template.body_html:
-                    # Without a record, parse the HTML and compile the QWeb, Odoo's first step
-                    # of a render. Not _has_unsafe_expression_template_qweb, the upgrade line's
-                    # check: it returns True on any expression of the template and raises nothing.
-                    env["ir.qweb"]._generate_code(html.fragment_fromstring(template.body_html, create_parent="div"))
-        except Exception as e:
-            _logger.info("Mail template %s does not render (%s)", template.id, str(e)[:300])
-            failed[template.id] = _reset_or_archive(cr, template)
+        sample_ids = _model_sample(cr, env, samples, template.model)
+        rendered = template.with_context(**render_context)
+        error = _render_error(cr, env, rendered, sample_ids)
+        if not error:
+            continue
+        # Fails with all of them? One by one, to tell a broken template from a broken record.
+        if len(sample_ids) > 1:
+            errors = [_render_error(cr, env, rendered, [record_id]) for record_id in sample_ids]
+            if not any(errors):
+                # Only the batch fails: no record is broken, and neither is the template.
+                _logger.info("Mail template %s fails only rendered in batch, not touched (%s)", template.id, error)
+                continue
+            if not all(errors):
+                _logger.info("Mail template %s fails only with some records, not touched (%s)", template.id, error)
+                failed[template.id] = (PARTIAL, error)
+                continue
+        _logger.info("Mail template %s does not render (%s)", template.id, error)
+        failed[template.id] = (_reset_or_archive(cr, template), error)
 
-    reset = sorted(tid for tid, status in failed.items() if status == RESET)
-    archived = sorted(tid for tid, status in failed.items() if status == ARCHIVED)
-    if reset or archived:
-        _logger.info("Failed mail templates. With the standard: %s. Archived: %s", reset, archived)
+    by_status = {
+        status: sorted(tid for tid, (tid_status, _error) in failed.items() if tid_status == status)
+        for status in (RESET, ARCHIVED, PARTIAL)
+    }
+    if any(by_status.values()):
+        _logger.info(
+            "Failed mail templates. With the standard: %s. Archived: %s. Only with some records: %s",
+            by_status[RESET], by_status[ARCHIVED], by_status[PARTIAL],
+        )
 
 
-def _any_record_id(cr, env, model):
-    """A record of ``model`` to render with, archived ones too as Odoo's own check; or False.
+def _render_error(cr, env, template, record_ids):
+    """Why ``template`` does not render with ``record_ids``, or None when it does."""
+    try:
+        with cr.savepoint():
+            if record_ids:
+                template._generate_template(record_ids, RENDER_FIELDS)
+            elif template.body_html:
+                # Without a record, parse the HTML and compile the QWeb, Odoo's first step
+                # of a render. Not _has_unsafe_expression_template_qweb, the upgrade line's
+                # check: it returns True on any expression of the template and raises nothing.
+                env["ir.qweb"]._generate_code(html.fragment_fromstring(template.body_html, create_parent="div"))
+    except Exception as e:
+        return _error_text(e)
+    return None
+
+
+def _error_text(error):
+    """What failed, for whoever fixes the template: the ``SomeError: message`` line.
+
+    Odoo wraps a render error in a long message, escaped, that ends with the body of the
+    template; the line of the original error is what tells what is wrong.
+    """
+    text = unescape(str(error)).strip()
+    # The first one: the body of the template comes after it, and can hold any text.
+    found = re.findall(r"^\s*([\w.]+(?:Error|Exception)): (.+)$", text, re.MULTILINE)
+    name, message = found[0] if found else (type(error).__name__, text.splitlines()[0] if text else "")
+    return "%s: %s" % (name, message.strip()[:300])
+
+
+def _model_sample(cr, env, samples, model):
+    """``_sample_ids`` of ``model``, searched once per model."""
+    model = model or False
+    if model not in samples:
+        samples[model] = _sample_ids(cr, env, model)
+    return samples[model]
+
+
+def _sample_ids(cr, env, model):
+    """The last records of ``model`` to render with, archived ones too as Odoo's own check.
 
     A model the registry knows can still fail to search (a module half uninstalled): then
     there is no record, and the template is only compiled.
     """
     if not model or model not in env:
-        return False
+        return []
     try:
         with cr.savepoint():
-            return env[model].with_context(active_test=False).search([], limit=1).id or False
+            return env[model].with_context(active_test=False).search([], limit=SAMPLE_SIZE, order="id desc").ids
     except Exception as e:
         _logger.info("Cannot search %s to render its mail templates (%s)", model, str(e)[:300])
-        return False
+        return []
 
 
 def _ignored_ids(env):
