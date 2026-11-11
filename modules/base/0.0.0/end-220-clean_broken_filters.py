@@ -10,6 +10,8 @@ Only the broken filters are written, one by one: no other domain (actions, rules
 is touched, and a filter that fails does not stop the others. A filter left without any
 real condition is archived: kept as is it would show every record (AND) or none (OR). A
 filter it cannot read, or of a model that is gone, is reported and left as is.
+A filter of ``_unknown`` counts as one of a model that is gone: upgrade-util moves there the
+filters of the customer when a jump removes their model.
 
 In ``modules/base/0.0.0`` so it runs after the modules are loaded and after the renames of
 the other scripts. Only on the last jump of a series: on an intermediate database a field
@@ -135,7 +137,7 @@ def migrate(cr, version):
     fixed, archived, orphan, not_parsed, not_cleaned = [], [], [], [], []
     cr.execute("SELECT id, model_id, domain, context, sort FROM ir_filters ORDER BY id")
     for filter_id, model_name, domain, context_s, sort_s in cr.fetchall():
-        if model_name not in env:
+        if model_name == "_unknown" or model_name not in env:
             orphan.append((filter_id, model_name))
             continue
         try:

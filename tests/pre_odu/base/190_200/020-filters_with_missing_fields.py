@@ -62,7 +62,20 @@ FILTERS = {
         "{'group_by': ['country_id']}",
         '["name desc", "-id", "__count desc"]',
     ),
+    # De un modelo que se fue: upgrade-util pasa los favoritos del cliente a
+    # "_unknown", que existe en el registro pero no tiene el campo. Se informa y
+    # no se toca.
+    "upgrade_prepare_demo.filter_unknown_model": (
+        "Upgrade: favorite of a removed model",
+        "[('%s', '=', 'a')]" % MISSING,
+        "{'group_by': ['%s']}" % MISSING,
+        '["%s desc"]' % MISSING,
+    ),
 }
+
+# El modelo se escribe por SQL, como el dominio: el caso "_unknown" no es un
+# modelo que se pueda elegir en un favorito.
+MODELS = {"upgrade_prepare_demo.filter_unknown_model": "_unknown"}
 
 
 def migrate(env):
@@ -71,6 +84,6 @@ def migrate(env):
             [{"xml_id": xmlid, "values": {"name": name, "model_id": "res.partner"}, "noupdate": True}]
         )
         env.cr.execute(
-            "UPDATE ir_filters SET domain = %s, context = %s, sort = %s, active = true WHERE id = %s",
-            (domain, context, sort, env.ref(xmlid).id),
+            "UPDATE ir_filters SET model_id = %s, domain = %s, context = %s, sort = %s, active = true WHERE id = %s",
+            (MODELS.get(xmlid, "res.partner"), domain, context, sort, env.ref(xmlid).id),
         )

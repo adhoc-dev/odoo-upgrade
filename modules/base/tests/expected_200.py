@@ -24,6 +24,7 @@
 #   solo el campo roto, con "not =like"      -> se archiva
 #   campo roto y una condicion "not =ilike"  -> se limpia y sigue activo
 #   todos los campos existen                 -> no se toca (preservacion)
+#   favorito de modelo "_unknown"            -> no se toca (preservacion)
 #
 # Los siembra tests/pre_odu/base/190_200/020-filters_with_missing_fields.py,
 # con un campo que no existe en ninguna version.
@@ -75,6 +76,17 @@ EXPECTED = {
             "domain": "[('name', 'ilike', 'Upgrade'), ('type', 'in', ['contact', 'invoice', 'delivery'])]",
             "context": "{'group_by': ['country_id']}",
             "sort": '["name desc", "-id", "__count desc"]',
+            "active": True,
+        },
+        # Preservacion: upgrade-util deja en "_unknown" los favoritos del cliente
+        # de un modelo que se fue. Es un modelo que no existe, aunque este en el
+        # registro: si se archivo o cambio el dominio, el script lo trato como
+        # un favorito con un campo roto.
+        ref("upgrade_prepare_demo.filter_unknown_model"): {
+            "model_id": "_unknown",
+            "domain": "[('x_upgrade_missing_field', '=', 'a')]",
+            "context": "{'group_by': ['x_upgrade_missing_field']}",
+            "sort": '["x_upgrade_missing_field desc"]',
             "active": True,
         },
     },
