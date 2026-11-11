@@ -1,6 +1,6 @@
 """The upgrade lines that run on the old database before the pass to Odoo, case by case.
 
-Covers 090, 100, 110 and 120 of ``scripts/pre_odoo/always``. The tests create and drop their own
+Covers 090, 100, 110, 120 and 130 of ``scripts/pre_odoo/always``. The tests create and drop their own
 Postgres database with the tables the scripts touch, so they need no Odoo running, only
 importable (any version: the scripts are plain SQL).
 
@@ -47,6 +47,7 @@ user_type = _load_script("090-single_user_type_group.py")
 method_lines = _load_script("100-unique_payment_method_line_names.py")
 team_members = _load_script("110-archive_admin_sales_team_members.py")
 deprecated_views = _load_script("120-drop_deprecated_website_views.py")
+helpdesk_product_lot = _load_script("130-backup_helpdesk_ticket_product_lot.py")
 
 
 class OldDatabaseCase(unittest.TestCase):
@@ -294,6 +295,51 @@ class TestDropDeprecatedWebsiteViews(OldDatabaseCase):
         self.write_context(to_version="19.0")
         deprecated_views.migrate(self.cr, "18.0")
         self.assertEqual(len(self.views()), 8)
+
+
+class TestBackupHelpdeskTicketProductLot(OldDatabaseCase):
+    TABLES = """
+        CREATE TABLE helpdesk_ticket (id integer PRIMARY KEY, product_id integer, lot_id integer);
+        INSERT INTO helpdesk_ticket VALUES (1, 10, 20), (2, 10, NULL), (3, NULL, 20), (4, NULL, NULL);
+    """
+    BACKUP = helpdesk_product_lot.BACKUP_TABLE
+
+    def backup(self):
+        self.cr.execute("SELECT 1 FROM information_schema.tables WHERE table_name = %s", (self.BACKUP,))
+        if not self.cr.fetchone():
+            return None
+        return self.rows("SELECT id, product_id, lot_id FROM %s ORDER BY id" % self.BACKUP)
+
+    def test_backs_up_the_tickets_that_have_a_product_or_a_lot(self):
+        self.install("helpdesk_stock_ux")
+        helpdesk_product_lot.migrate(self.cr, "19.0.1.2.0")
+        self.assertEqual(self.backup(), [(1, 10, 20), (2, 10, None), (3, None, 20)])
+
+    def test_running_it_again_replaces_the_table(self):
+        self.install("helpdesk_stock_ux")
+        helpdesk_product_lot.migrate(self.cr, "19.0.1.2.0")
+        self.cr.execute("UPDATE helpdesk_ticket SET product_id = NULL, lot_id = NULL WHERE id = 1")
+        helpdesk_product_lot.migrate(self.cr, "19.0.1.2.0")
+        self.assertEqual(self.backup(), [(2, 10, None), (3, None, 20)])
+
+    def test_nothing_without_the_module(self):
+        helpdesk_product_lot.migrate(self.cr, "19.0.1.2.0")
+        self.assertIsNone(self.backup())
+
+    def test_nothing_on_an_upgrade_to_19(self):
+        self.install("helpdesk_stock_ux")
+        self.write_context(to_version="19.0")
+        helpdesk_product_lot.migrate(self.cr, "18.0.1.0.0")
+        self.assertIsNone(self.backup())
+
+    def test_nothing_when_the_columns_are_not_there(self):
+        """The two columns come from helpdesk_stock, not from our module: a source version
+        that does not define them has nothing to carry over, and is not a failure.
+        """
+        self.install("helpdesk_stock_ux")
+        self.cr.execute("ALTER TABLE helpdesk_ticket DROP COLUMN lot_id")
+        helpdesk_product_lot.migrate(self.cr, "19.0.1.2.0")
+        self.assertIsNone(self.backup())
 
 
 if __name__ == "__main__":
