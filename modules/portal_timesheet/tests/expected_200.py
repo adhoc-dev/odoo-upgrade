@@ -7,7 +7,7 @@
 # cargue el csv.
 #
 #   regla de cuentas analiticas -> ir.access ru, sin dominio, grupo de horas
-#   regla de lineas de horas    -> ir.access crud, dominio de seguidor, grupo de horas
+#   regla de lineas de horas    -> ir.access crud, dominio de seguidor o colaborador, grupo de horas
 #
 # Las anclas son los propios xmlid del modulo: no hace falta siembra.
 #
@@ -26,13 +26,15 @@ EXPECTED = {
             "domain": None,
         },
         # Regla de 19 sobre lineas de horas (seguidor del proyecto o de la
-        # tarea, crud, grupo portal_backend) -> crud del grupo de horas con el
-        # mismo dominio. Si queda en portal_backend, un usuario portal-backend
-        # sin el grupo de horas carga y borra horas de los proyectos que sigue.
+        # tarea, crud, grupo portal_backend) -> crud del grupo de horas, para
+        # seguidores y tambien para colaboradores: en 20 compartir un proyecto
+        # solo crea colaboradores. Si queda en portal_backend, un usuario
+        # portal-backend sin el grupo de horas carga y borra horas de los
+        # proyectos que sigue.
         ref("portal_timesheet.account_analytic_line_timesheet_portal_backend_user"): {
             "group_id": ref("portal_timesheet.group_portal_backend_timesheet"),
             "operation": "crud",
-            "domain": "[('project_id', '!=', False), '|', ('project_id.message_partner_ids', 'child_of', [user.partner_id.commercial_partner_id.id]), ('task_id.message_partner_ids', 'child_of', [user.partner_id.commercial_partner_id.id]), ('project_id.privacy_visibility', '=', 'portal')]",
+            "domain": "[('project_id', '!=', False), '|', '&', ('project_id.privacy_visibility', '=', 'portal'), '|', ('project_id.message_partner_ids', 'child_of', [user.partner_id.commercial_partner_id.id]), ('task_id.message_partner_ids', 'child_of', [user.partner_id.commercial_partner_id.id]), '&', ('project_id.privacy_visibility', 'in', ['invited_users', 'portal']), ('project_id.collaborator_ids.partner_id', 'in', [user.partner_id.id])]",
         },
     },
 }
