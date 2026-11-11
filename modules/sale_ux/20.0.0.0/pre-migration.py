@@ -1,10 +1,15 @@
 import logging
 
+from odoo.upgrade import util
+
 _logger = logging.getLogger(__name__)
 
 # sale_product_uom_price (19) is merged into sale_ux in 20: scripts/pre_upgrade/190_200/module_changes.json.
 OLD_PARAM = "sale_product_uom_price.report_in_product_uom"
 NEW_PARAM = "sale_ux.report_in_product_uom"
+# Settings view of sale_product_uom_price, renamed by the merge. sale_ux 20 has the setting in its own
+# view, so until the update drops this one as obsolete the settings form shows it twice.
+OLD_SETTINGS_VIEW = "sale_ux.res_config_settings_view_form"
 
 
 def migrate(cr, version):
@@ -30,3 +35,5 @@ def migrate(cr, version):
         _logger.info("Parameter %s renamed to %s", OLD_PARAM, NEW_PARAM)
     # Left over only when both keys were there: the sale_ux one already rules.
     cr.execute("DELETE FROM ir_config_parameter WHERE key = %s", [OLD_PARAM])
+
+    util.remove_view(cr, OLD_SETTINGS_VIEW)
