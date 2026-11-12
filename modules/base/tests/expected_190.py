@@ -118,4 +118,30 @@ EXPECTED = {
             "parent_id": None,
         },
     },
+    "res.partner": {
+        # De base/0.0.0/end-230-fill_partner_country.py, sembrado por
+        # tests/pre_odu/base/always/020-partners_without_country.py.
+        # Consumidor final sin pais ni provincia: tiene que quedar en Argentina.
+        # Si sigue vacio, Odoo no le aplica ninguna posicion fiscal y la factura
+        # sale sin IVA.
+        ref("upgrade_prepare_demo.partner_no_country_cf"): {
+            "country_id": ref("base.ar"),
+        },
+        # Cliente del exterior: el script no puede saber su pais y no lo toca.
+        # Si viene Argentina, se le cambio la posicion fiscal a un extranjero.
+        ref("upgrade_prepare_demo.partner_no_country_ext"): {
+            "country_id": None,
+        },
+        # Sin tipo de responsabilidad: el pais no le cambia nada y no se toca.
+        ref("upgrade_prepare_demo.partner_no_country_no_resp"): {
+            "country_id": None,
+        },
+        # Con provincia: end-230 no lo toca (filtra state_id IS NULL), pero en el
+        # salto a 19 la actualizacion de Odoo ya le completa el pais desde la
+        # provincia. Si viene vacio, ese paso de Odoo dejo de hacerlo y el contacto
+        # se queda sin posicion fiscal.
+        ref("upgrade_prepare_demo.partner_no_country_with_state"): {
+            "country_id": ref("base.ar"),
+        },
+    },
 }
