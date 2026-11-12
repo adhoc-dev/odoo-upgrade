@@ -101,11 +101,38 @@ EXPECTED = {
             "name@es_AR": "Producto traducido a mano",
         },
     },
+    "res.partner": {
+        # De base/0.0.0/end-230-fill_partner_country.py, sembrado por
+        # tests/pre_odu/base/always/020-partners_without_country.py.
+        # Consumidor final sin pais ni provincia: tiene que quedar en Argentina.
+        # Si sigue vacio, Odoo no le aplica ninguna posicion fiscal y la factura
+        # sale sin IVA.
+        ref("upgrade_prepare_demo.partner_no_country_cf"): {
+            "country_id": ref("base.ar"),
+        },
+        # Cliente del exterior: el script no puede saber su pais y no lo toca.
+        # Si viene Argentina, se le cambio la posicion fiscal a un extranjero.
+        ref("upgrade_prepare_demo.partner_no_country_ext"): {
+            "country_id": None,
+        },
+        # Sin tipo de responsabilidad: el pais no le cambia nada y no se toca.
+        ref("upgrade_prepare_demo.partner_no_country_no_resp"): {
+            "country_id": None,
+        },
+        # Con provincia: Odoo ya toma el pais de la provincia y no se toca.
+        ref("upgrade_prepare_demo.partner_no_country_with_state"): {
+            "country_id": None,
+        },
+    },
 }
 
 # Los scripts de base/0.0.0 corren en todos los saltos: este EXPECTED verifica
 # los de SCRIPTS, y el resto queda en NO_CHECK con su motivo.
-SCRIPTS = ["end-110-reload_translations.py", "end-220-clean_broken_filters.py"]
+SCRIPTS = [
+    "end-110-reload_translations.py",
+    "end-220-clean_broken_filters.py",
+    "end-230-fill_partner_country.py",
+]
 
 IN_MEMORY = "Parchea un metodo en memoria mientras corre el -u: no deja nada en la base para verificar."
 ONLY_WARNS = "Solo avisa en el log: no cambia datos."
