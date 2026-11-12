@@ -190,7 +190,11 @@ def _render(cr, env, skipped, restored, langs, failed, samples):
             _logger.info("Mail template %s fails only rendered in batch, not touched (%s)", template.id, error)
             continue
         if not all(errors):
-            _logger.info("Mail template %s fails only with some records, not touched (%s)", template.id, error)
+            failing = [record_id for record_id, record_error in zip(sample_ids, errors) if record_error]
+            _logger.info(
+                "Mail template %s fails only with some records of %s, not touched: %s (%s)",
+                template.id, template.model, failing, error,
+            )
             failed[template.id] = (PARTIAL, error)
             continue
         _logger.info("Mail template %s does not render (%s)", template.id, error)
