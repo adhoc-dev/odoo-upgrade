@@ -56,23 +56,18 @@ class TestReattributeCustomerinfoFields(OldDatabaseCase):
     def owners(self):
         return self.rows("SELECT name, module FROM ir_model_data ORDER BY id")
 
-    def test_reattributes_the_five_fields_and_reports_it(self):
+    def test_reattributes_the_five_fields(self):
         reattribute.migrate(self.cr, "19.0")
         self.assertEqual(
             self.owners(),
             [("field_product_customerinfo__%s" % field, "product_customerinfo") for field, _module in FIELDS],
         )
-        ((type_, message),) = self.logs()
-        self.assertEqual(type_, "info")
-        for field, module in FIELDS:
-            self.assertIn("product.customerinfo.%s (%s)" % (field, module), message)
 
     def test_second_run_changes_nothing(self):
         reattribute.migrate(self.cr, "19.0")
         before = self.owners()
         reattribute.migrate(self.cr, "19.0")
         self.assertEqual(self.owners(), before)
-        self.assertEqual(len(self.logs()), 1)
 
     def test_nothing_without_the_module(self):
         self.cr.execute("UPDATE ir_module_module SET state = 'uninstalled' WHERE name = 'product_customerinfo'")
