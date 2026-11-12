@@ -1,5 +1,6 @@
 import logging
 
+from odoo.tools import float_compare
 from odoo.upgrade import util
 
 _logger = logging.getLogger(__name__)
@@ -130,9 +131,32 @@ def create_allocations(cr):
     return sorted(request_ids)
 
 
+def settle_states(env, request_ids):
+    """Make the lines that 19 left cancelled follow their quantities again.
+
+    A line was cancelled when its pending move had no allocation, so it asked for more than
+    what it counted. Once the allocations are back, a line that got everything is done and one
+    with something still to deliver and nothing cancelled is in progress. A line that still has
+    something cancelled stays so, as it would after a partial delivery.
+    """
+    lines = env["stock.request"].browse(request_ids).filtered(lambda r: r.state == "cancel")
+    precision = env["decimal.precision"].precision_get("Product Unit")
+    lines.check_done()
+    reopened = lines.filtered(
+        lambda r: r.state == "cancel"
+        and float_compare(r.qty_cancelled, 0, precision_digits=precision) <= 0
+        and float_compare(r.qty_in_progress, 0, precision_digits=precision) > 0
+    )
+    reopened.write({"state": "open"})
+    for line in lines:
+        if line.state != "cancel":
+            _logger.info("Stock request %s was cancelled and is now %s", line.id, line.state)
+
+
 def migrate(cr, version):
     request_ids = create_allocations(cr)
     if request_ids:
         # The stored quantities of the lines do not depend on the new rows until they are recomputed
         util.recompute_fields(cr, "stock.request", QTY_FIELDS, ids=request_ids)
         _logger.info("Recomputed the quantities of %s stock requests", len(request_ids))
+        settle_states(util.env(cr), request_ids)
