@@ -1,6 +1,6 @@
 """The upgrade lines that run on the old database before the pass to Odoo, case by case.
 
-Covers 090, 100, 110 and 120 of ``scripts/pre_odoo/always``. The tests create and drop their own
+Covers 090, 100, 110, 120 and 190 of ``scripts/pre_odoo/always``. The tests create and drop their own
 Postgres database with the tables the scripts touch, so they need no Odoo running, only
 importable (any version: the scripts are plain SQL).
 
@@ -47,6 +47,7 @@ user_type = _load_script("090-single_user_type_group.py")
 method_lines = _load_script("100-unique_payment_method_line_names.py")
 team_members = _load_script("110-archive_admin_sales_team_members.py")
 deprecated_views = _load_script("120-drop_deprecated_website_views.py")
+custom_views = _load_script("190-backup_website_custom_views.py")
 
 
 class OldDatabaseCase(unittest.TestCase):
@@ -294,6 +295,84 @@ class TestDropDeprecatedWebsiteViews(OldDatabaseCase):
         self.write_context(to_version="19.0")
         deprecated_views.migrate(self.cr, "18.0")
         self.assertEqual(len(self.views()), 8)
+
+
+class TestBackupWebsiteCustomViews(OldDatabaseCase):
+    # 1/2: the same key and website twice, as a dirty database has it. 3: a generic view that is
+    # not the wishlist. 4: the generic wishlist view. 5: not qweb. 6: no key. 7: active NULL.
+    TABLES = """
+        CREATE TABLE ir_ui_view (
+            id integer PRIMARY KEY, key varchar, website_id integer,
+            active boolean DEFAULT true, type varchar, priority integer DEFAULT 16
+        );
+        INSERT INTO ir_ui_view (id, key, website_id, active, type, priority) VALUES
+            (1, 'website.a', 1, true, 'qweb', 16),
+            (2, 'website.a', 1, false, 'qweb', 99),
+            (3, 'website.b', NULL, true, 'qweb', 16),
+            (4, 'website_sale_wishlist.add_to_wishlist', NULL, false, 'qweb', 16),
+            (5, 'website.c', 2, true, 'form', 16),
+            (6, NULL, 3, true, 'qweb', 16),
+            (7, 'website.d', 2, NULL, 'qweb', 16);
+    """
+
+    def backup(self):
+        return self.rows(
+            "SELECT id, key, website_id, active FROM %s ORDER BY key, website_id" % custom_views.BACKUP_TABLE
+        )
+
+    def test_backs_up_the_website_views_and_the_generic_wishlist(self):
+        self.install("website")
+        custom_views.migrate(self.cr, "19.0")
+        self.assertEqual(
+            self.backup(),
+            [
+                # Of the two rows with the same key and website, the one end-080 would take.
+                # Its id travels too: the consumer falls back to it when the upgrade renamed
+                # the key.
+                (1, "website.a", 1, True),
+                # A NULL active is a view that was on: the consumer reads NULL as "not here".
+                (7, "website.d", 2, True),
+                # The generic wishlist view lands under website 0, where the consumer looks.
+                (4, "website_sale_wishlist.add_to_wishlist", 0, False),
+            ],
+        )
+
+    def test_the_key_and_website_are_the_primary_key(self):
+        self.install("website")
+        custom_views.migrate(self.cr, "19.0")
+        self.cr.execute(
+            """
+            SELECT a.attname FROM pg_index i
+              JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+             WHERE i.indrelid = %s::regclass AND i.indisprimary
+             ORDER BY a.attname
+            """,
+            (custom_views.BACKUP_TABLE,),
+        )
+        self.assertEqual([r for (r,) in self.cr.fetchall()], ["key", "website_id"])
+
+    def test_second_run_changes_nothing(self):
+        self.install("website")
+        custom_views.migrate(self.cr, "19.0")
+        before = self.backup()
+        custom_views.migrate(self.cr, "19.0")
+        self.assertEqual(self.backup(), before)
+
+    def test_nothing_without_website(self):
+        custom_views.migrate(self.cr, "19.0")
+        self.assertEqual(self.rows("SELECT to_regclass(%s)", (custom_views.BACKUP_TABLE,)), [(None,)])
+
+    def test_nothing_on_an_upgrade_to_19(self):
+        self.install("website")
+        self.write_context(to_version="19.0")
+        custom_views.migrate(self.cr, "18.0")
+        self.assertEqual(self.rows("SELECT to_regclass(%s)", (custom_views.BACKUP_TABLE,)), [(None,)])
+
+    def test_nothing_when_it_is_not_the_last_jump(self):
+        self.install("website")
+        self.write_context(is_last_in_series=False)
+        custom_views.migrate(self.cr, "19.0")
+        self.assertEqual(self.rows("SELECT to_regclass(%s)", (custom_views.BACKUP_TABLE,)), [(None,)])
 
 
 if __name__ == "__main__":

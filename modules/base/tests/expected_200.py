@@ -28,6 +28,18 @@
 # Los siembra tests/pre_odu/base/190_200/020-filters_with_missing_fields.py,
 # con un campo que no existe en ninguna version.
 #
+# Y de base/0.0.0/end-190-restore_website_custom_views.py: despues de que
+# end-180 deprecia las vistas del sitio que el cliente tenia modificadas, cada
+# una vuelve al estado que tenia antes de actualizar.
+#
+#   copia del sitio prendida      -> vuelve prendida, con su key
+#   copia del sitio apagada       -> recupera su key y sigue archivada
+#   copia con key en IGNORE_KEYS  -> no se toca (preservacion)
+#   lista de deseos apagada       -> el website pierde las dos clases de la opcion
+#
+# Las siembra tests/pre_odu/base/190_200/030-website_custom_views.py, porque
+# una copia de website solo nace editando el sitio desde el editor.
+#
 # Solo se declara el estado esperado DESPUES del -u (ADR 0007): la base que
 # recibimos se da por buena.
 
@@ -101,11 +113,53 @@ EXPECTED = {
             "name@es_AR": "Producto traducido a mano",
         },
     },
+    "ir.ui.view": {
+        # Estaba prendida antes de actualizar: end-180 la deprecia y end-190 la
+        # tiene que dejar como estaba. Si llega con la key terminada en
+        # "_depreciada" o archivada, end-190 no la puso de vuelta.
+        ref("upgrade_prepare_demo.website_view_on"): {
+            "key": "upgrade_prepare_demo.website_view_on",
+            "active": True,
+        },
+        # Estaba apagada: recupera su key y sigue archivada. Si queda prendida,
+        # end-190 leyo mal el estado viejo; si queda con la key depreciada, deja
+        # de pisar a la generica y la version nueva prende la opcion sola.
+        ref("upgrade_prepare_demo.website_view_off"): {
+            "key": "upgrade_prepare_demo.website_view_off",
+            "active": False,
+        },
+        # Preservacion: su key esta en IGNORE_KEYS de end-180, asi que nadie la
+        # deprecia. Si cambia, end-180 dejo de respetar su lista.
+        ref("upgrade_prepare_demo.website_view_ignored"): {
+            "key": "website_sale.products_oe_structure_website_sale_products_1",
+            "active": True,
+        },
+        # La copia de la lista de deseos: estaba apagada, asi que recupera su key y
+        # sigue archivada, igual que website_view_off. Es la mitad "vista" del caso;
+        # la otra mitad la mira el website de abajo.
+        ref("upgrade_prepare_demo.website_view_wishlist"): {
+            "key": "website_sale_wishlist.add_to_wishlist",
+            "active": False,
+        },
+    },
+    "website": {
+        # La lista de deseos estaba apagada en la base vieja: end-190 le saca las dos
+        # clases de la opcion y deja el resto como estaba. Si quedan, la opcion se
+        # prende sola en 20, donde ya no depende de la vista; si el campo queda
+        # vacio, el script saco de mas.
+        ref("website.default_website"): {
+            "shop_opt_products_design_classes": "o_wsale_products_opt_cc1",
+        },
+    },
 }
 
 # Los scripts de base/0.0.0 corren en todos los saltos: este EXPECTED verifica
 # los de SCRIPTS, y el resto queda en NO_CHECK con su motivo.
-SCRIPTS = ["end-110-reload_translations.py", "end-220-clean_broken_filters.py"]
+SCRIPTS = [
+    "end-110-reload_translations.py",
+    "end-190-restore_website_custom_views.py",
+    "end-220-clean_broken_filters.py",
+]
 
 IN_MEMORY = "Parchea un metodo en memoria mientras corre el -u: no deja nada en la base para verificar."
 ONLY_WARNS = "Solo avisa en el log: no cambia datos."
