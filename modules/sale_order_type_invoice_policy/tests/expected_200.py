@@ -4,33 +4,18 @@
 # bridge sale_order_type_invoice_policy_project (depende de sale_project). El traspaso del
 # xmlid lo hacia migrations/19.0.1.2.0/pre-migration.py del propio modulo, y al migrar el
 # modulo a 20 esa carpeta se borra (ADR 0050 de actua-20): una base que salta a 20 desde un
-# 19 anterior nunca lo corre y llega con el xmlid apuntando al modulo padre, que en 20 ya no
-# declara el campo.
+# 19 anterior al 28/09 llega con el xmlid apuntando al modulo padre, que en 20 ya no declara
+# el campo. Reproducido sobre una base 20 en ese estado: el bridge no se auto-instala en el
+# -u, se borra field_sale_order_type__services_delivered con su columna y el dato se pierde.
+# Es lo que anticipaba el comentario del pre-migration de 19.0.1.2.0.
 #
-# NO MIGRA NINGUN SCRIPT: es el check de que el dato no se pierde. Probado el 03/11/2026
-# sobre una base 20 que reproduce ese estado: el bridge se auto-instala en el -u, el campo
-# sigue en el registry y Odoo no lo trata como huerfano, asi que el valor sobrevive. El
-# comentario del pre-migration de 19.0.1.2.0 dice lo contrario ("auto_install does not cover
-# this"); el codigo de 20 lo desmiente. Si esa conducta cambia, este check se pone en rojo
-# antes de que un cliente pierda la opcion.
-#
-# El estado de partida lo siembra tests/pre_odu/sale_order_type_invoice_policy/190_200/
-# 010-services_delivered_xmlid_on_parent.py: la base canonica llega con el traspaso ya hecho,
-# asi que la siembra lo devuelve al estado de una base que se quedo en un 19 anterior.
-EXPECTED = {
-    "sale.order.type": {
-        # Preservacion del dato: parte de services_delivered = True con el xmlid del campo
-        # apuntando al modulo padre. Si queda en False, el campo quedo huerfano al cargar el
-        # padre, Odoo le borro la columna y el bridge lo recreo vacio: el tipo de venta deja
-        # de excluir los servicios prepagos y los factura por cantidad entregada. Si el campo
-        # directamente no existe, el bridge no se auto-instalo en el -u.
-        ref("upgrade_prepare_demo.sot_services_delivered_on"): {
-            "services_delivered": True,
-        },
-        # El mismo tipo de venta sin la opcion marcada, con el xmlid igual de mudado. Tiene
-        # que seguir en False: separa "el dato sobrevivio" de "la columna quedo toda en True".
-        ref("upgrade_prepare_demo.sot_services_delivered_off"): {
-            "services_delivered": False,
-        },
-    },
-}
+# Ese estado no existe en ningun cliente, asi que no hay nada que verificar: el motivo de
+# abajo lo dice con los numeros con que se comprobo.
+NO_CHECK = (
+    "El unico estado que pierde services_delivered es una base de 19 anterior al 28/09/2026, "
+    "con el xmlid del campo todavia en el modulo padre y el bridge sin instalar, y no queda "
+    "ninguna: de las 31 bases productivas activas de 19 con el modulo, las 16 que tienen "
+    "sale_project ya tienen el bridge instalado (pasaron por 19.0.1.2.0) y las otras 15 no "
+    "tienen sale_project, asi que el caso no les aplica (saas.database.module_ids, 12/11/2026). "
+    "Un check pedia sembrar un estado que ninguna base real tiene."
+)
