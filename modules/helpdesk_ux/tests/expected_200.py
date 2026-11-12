@@ -11,6 +11,10 @@
 #
 #   equipo con el recordatorio prendido -> apagado
 #
+# end-migration.py no cambia data: solo deja la lista de etapas para un
+# customer note en oba_upgrade_customer_note, que no es un modelo y este
+# carril no la puede verificar.
+#
 # El ticket prendido lo siembra tests/pre_odu/helpdesk_ux/190_200/
 # 010-dont_send_stage_email_on.py: la demo del modulo no trae ninguno.
 #
