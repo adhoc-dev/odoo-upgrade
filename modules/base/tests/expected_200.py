@@ -109,6 +109,7 @@ SCRIPTS = ["end-110-reload_translations.py", "end-220-clean_broken_filters.py"]
 
 IN_MEMORY = "Parchea un metodo en memoria mientras corre el -u: no deja nada en la base para verificar."
 ONLY_WARNS = "Solo avisa en el log: no cambia datos."
+GONE = "Borra un registro, y el check no puede declarar una ausencia: lo cubre su test en modules/base/tests/."
 PENDING = "Pendiente: es de antes de la regla del ADR 0037 de actua-20, falta escribirle el check."
 
 NO_CHECK = {
@@ -130,6 +131,7 @@ NO_CHECK = {
     "end-180-deprecate_website_custom_views.py": PENDING,
     "end-200-replace_success_upgrade_message.py": PENDING,
     "end-210-check_personalizations.py": PENDING,
+    "end-230-drop_variant_preselect_parameter.py": GONE,
     "end-900-uninstall_not_available_modules.py": PENDING,
     "post-01-modules-auto-discovery.py": PENDING,
     "pre-0-disable-check-company.py": IN_MEMORY,
