@@ -113,6 +113,14 @@ EXPECTED = {
         ref("upgrade_prepare_demo.mail_template_customer_partial"): {
             "active": True,
         },
+        # base/0.0.0/end-240-drop_foreign_model_mail_template_reports.py: el
+        # reporte de usuarios se desvincula y el de contactos se queda. Siembra
+        # en tests/pre_odu/mail/190_200/020-mail_template_foreign_reports.py.
+        # Si sigue el de usuarios, el script no corrio; si falta el de
+        # contactos, borro un par sano.
+        ref("upgrade_prepare_demo.mail_template_foreign_report"): {
+            "report_template_ids": [ref("upgrade_prepare_demo.report_partner_own_model")],
+        },
     },
     "product.template": {
         # Preservacion: un registro del cliente con su traduccion, sin .po. Si
@@ -125,7 +133,11 @@ EXPECTED = {
 
 # Los scripts de base/0.0.0 corren en todos los saltos: este EXPECTED verifica
 # los de SCRIPTS, y el resto queda en NO_CHECK con su motivo.
-SCRIPTS = ["end-110-reload_translations.py", "end-220-clean_broken_filters.py"]
+SCRIPTS = [
+    "end-110-reload_translations.py",
+    "end-220-clean_broken_filters.py",
+    "end-240-drop_foreign_model_mail_template_reports.py",
+]
 
 IN_MEMORY = "Parchea un metodo en memoria mientras corre el -u: no deja nada en la base para verificar."
 ONLY_WARNS = "Solo avisa en el log: no cambia datos."
