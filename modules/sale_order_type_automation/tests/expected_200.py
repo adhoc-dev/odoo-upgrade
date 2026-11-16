@@ -75,5 +75,13 @@ EXPECTED = {
         ref("upgrade_prepare_demo.sot_sd_mixed"): {
             "invoice_validate_domain": "[('checked', '!=', True)]",
         },
+        # Tipo que solo crea la factura ('create_invoice'): no evalua el filtro, asi que su
+        # condicion sobre un campo que 20 ya no tiene no frena nada y no se le avisa al
+        # cliente. Parte de [('checked', '<>', True)]. El operador se reescribe igual, que es
+        # mecanico: si siguiera '<>', el script dejo de reescribir en los tipos que no
+        # validan, y si el campo desapareciera, estaria decidiendo por el PO.
+        ref("upgrade_prepare_demo.sot_sd_create_invoice"): {
+            "invoice_validate_domain": "[('checked', '!=', True)]",
+        },
     },
 }

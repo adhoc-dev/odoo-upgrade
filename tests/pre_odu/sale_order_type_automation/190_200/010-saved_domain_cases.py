@@ -39,7 +39,16 @@ CASES = [
     # Las dos cosas a la vez: operador viejo sobre un campo que ya no esta
     # (account.move.checked).
     ("sot_sd_mixed", "[('checked', '<>', True)]", False),
+    # Tipo que no evalua los filtros (solo crea la factura): el operador se reescribe igual,
+    # pero un campo que 20 ya no tiene no se reporta a la nota del cliente. El de segundo
+    # plano no se siembra: pide account_background_post y la base de prueba no lo trae.
+    ("sot_sd_create_invoice", "[('checked', '<>', True)]", False),
 ]
+
+# Tipos con una automatizacion distinta de la de CASES, que es "validate_invoice".
+OTHER_AUTOMATION = {
+    "sot_sd_create_invoice": {"invoicing_atomation": "create_invoice"},
+}
 
 
 def migrate(env):
@@ -58,6 +67,7 @@ def migrate(env):
             "name": "Upgrade test - %s" % name,
             "invoicing_atomation": "validate_invoice",
         }
+        values.update(OTHER_AUTOMATION.get(name, {}))
         if invoice_domain:
             values["invoice_validate_domain"] = invoice_domain
         if order_domain:
