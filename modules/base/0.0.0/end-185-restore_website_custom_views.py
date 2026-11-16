@@ -131,20 +131,26 @@ def _restore_views(cr, by_key, by_id):
     return restored, archived, failed, unknown
 
 
-def _restore_wishlist(cr, old_state):
-    """Take the wishlist off the shop cards of the websites that had it off.
+def _restore_wishlist(cr, by_key):
+    """Take the wishlist off the shop cards of the websites that did not show it.
 
     In 20 the option no longer depends on a view: the addon that owned it is gone and only the
-    classes decide. The old state of a website is its own copy of the view if it had one, and
-    the generic view otherwise. The classes are only ever removed, never added.
+    classes decide. What a website showed on the old database is its own copy of the view if it
+    had one, the generic view otherwise, and nothing at all when neither is in the backup: in 19
+    website_sale_wishlist is auto_install on top of website_sale, so a base with no view of this
+    key is one where the module was uninstalled by hand, and there the customer saw no wishlist
+    even though the default of the field already carried the classes. Those three cases are the
+    same decision, because only a view that was on means the customer saw it.
+
+    The classes are only ever removed, never added.
     """
     if not util.module_installed(cr, "website_sale"):
         return []
 
-    generic = old_state.get((WISHLIST_KEY, GENERIC_WEBSITE_ID))
+    generic = by_key.get((WISHLIST_KEY, GENERIC_WEBSITE_ID))
     turned_off = []
     for site in util.env(cr)["website"].search([]):
-        if old_state.get((WISHLIST_KEY, site.id), generic) is not False:
+        if by_key.get((WISHLIST_KEY, site.id), generic):
             continue
         classes = (site.shop_opt_products_design_classes or "").split()
         kept = [c for c in classes if c not in WISHLIST_CLASSES]
