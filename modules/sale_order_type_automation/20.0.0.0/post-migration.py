@@ -89,7 +89,8 @@ def migrate(cr, version):
     * a condition on a field that no longer exists (`checked`, `require_payment`, ...) has no
       equivalent: it is not touched, because dropping it changes which invoices are validated
       by themselves. It is logged and reported to the customer note so someone fixes it by
-      hand.
+      hand, but only in the order types that evaluate the filters (those that validate the
+      invoice and not in the background): in the others the condition decides nothing.
 
     The domains are never evaluated: the widget allows `context_today()` or `relativedelta()`
     and evaluating them here would freeze them at the date of the migration.
@@ -113,6 +114,21 @@ def migrate(cr, version):
         """
     )
     seeded_ids = {row[0] for row in cr.fetchall()}
+
+    # The filters only decide something when the order type validates the invoice right
+    # there: "Validate invoice" without "Validate in the background". In the other types a
+    # broken condition does not stop anything, so it is not worth telling the customer.
+    # The operators are still rewritten in all of them.
+    in_background = (
+        "AND NOT COALESCE(background_post, FALSE)"
+        if util.column_exists(cr, "sale_order_type", "background_post")
+        else ""
+    )
+    cr.execute(
+        "SELECT id FROM sale_order_type WHERE invoicing_atomation = 'validate_invoice' "
+        + in_background
+    )
+    evaluating_ids = {row[0] for row in cr.fetchall()}
 
     env = util.env(cr)
     rewritten = 0
@@ -157,6 +173,17 @@ def migrate(cr, version):
 
             missing = _missing_fields(env, model_name, fixed)
             if not missing:
+                continue
+            if type_id not in evaluating_ids:
+                _logger.info(
+                    "sale.order.type %s: %s %r names fields %s that %s does not have in "
+                    "20, but the type does not evaluate its filters: not reported",
+                    type_id,
+                    column,
+                    fixed,
+                    missing,
+                    model_name,
+                )
                 continue
             log = _logger.info if type_id in seeded_ids else _logger.warning
             log(
