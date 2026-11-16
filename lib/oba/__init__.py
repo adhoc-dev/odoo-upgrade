@@ -13,10 +13,13 @@ from .gates import create_backup, should_back_up, should_run, should_run_pre_odo
 from .jump import jump_versions
 from .output import log_message, set_breaks, set_result
 from .request_context import request_context
+from .saved_domains import domain_missing_fields, fix_domain_operators
 
 __all__ = [
     "add_customer_note",
     "create_backup",
+    "domain_missing_fields",
+    "fix_domain_operators",
     "jump_versions",
     "log_message",
     "request_context",
