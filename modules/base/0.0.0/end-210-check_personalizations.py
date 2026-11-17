@@ -11,8 +11,11 @@ Personalizations by module (``personalizations`` or ``p13n`` anywhere in the nam
 
 Personalizations by interface: read from the "Mi base" dashboard (``saas_client.dashboard``)
 when its module is loaded; if not, only the custom views count, as the upgrade line did when
-the dashboard could not be read. Each custom view is written back to itself to find the ones
-that fail in this version. Those are archived whoever maintains the personalizations, since
+the dashboard could not be read. Each custom view goes through the original view check to
+find the ones that fail in this version. That check combines the whole tree of the view, so
+each one is checked alone, with the other custom views archived, and only when its parent
+passes without it: a broken sibling or a broken standard view does not take it down too.
+The ones that fail are archived whoever maintains the personalizations, since
 the fixdb of the postupgrade validates the views again and stops the request on a failing
 one, and a warning lists them so they can be fixed and active again. The note shows how many
 only when the customer maintains them (``saas_client.own_personalizations_agreement``).
@@ -99,16 +102,8 @@ def _check_interface(cr):
     if not has_personalizations:
         return False, False, 0
 
-    broken = []
-    for view in env["ir.ui.view"].search([("id", "in", view_ids)]):
-        try:
-            with cr.savepoint():
-                view.write({"arch_db": view.arch_db})
-        except Exception:
-            broken.append(view)
-
+    broken = _broken_views(env, view_ids)
     if broken:
-        cr.execute("UPDATE ir_ui_view SET active = false WHERE id = ANY(%s)", ([view.id for view in broken],))
         log_message(
             cr,
             "Se desactivaron vistas personalizadas que fallan en la nueva versión, revisarlas para "
@@ -122,7 +117,46 @@ def _check_interface(cr):
     row = cr.fetchone()
     if row and row[0]:
         return False, True, len(broken)
-    return True, False, len(broken)
+    return True, False, 0
+
+
+def _broken_views(env, view_ids):
+    """The custom views that fail on their own, left archived; the rest stay active."""
+    cr = env.cr
+    View = env["ir.ui.view"].with_context(_skip_primary_extensions_check=True)
+    # pre-0-disable-check-views.py only delays _check_xml: the original says if a view fails.
+    check_xml = getattr(type(View), "_upgrade_original_check_xml", type(View)._check_xml)
+    views = View.search([("id", "in", view_ids)], order="id")
+    if not views:
+        return View
+
+    def set_active(ids, active):
+        # By SQL: write unlinks the ir.ui.view.custom of the view and checks it again.
+        cr.execute("UPDATE ir_ui_view SET active = %s WHERE id = ANY(%s)", (active, list(ids)))
+        View.invalidate_model(["active"])
+
+    def passes(view):
+        try:
+            with cr.savepoint():
+                check_xml(view)
+        except Exception:
+            return False
+        return True
+
+    set_active(views.ids, False)
+    broken = []
+    for view in views:
+        if view.inherit_id.id in broken:
+            broken.append(view.id)
+            continue
+        parent_fails = view.inherit_id and not passes(view.inherit_id)
+        set_active(view.ids, True)
+        if parent_fails:
+            _logger.info("View %s kept active: its parent fails without it", view.id)
+        elif not passes(view):
+            set_active(view.ids, False)
+            broken.append(view.id)
+    return View.browse(broken)
 
 
 def _from_dashboard(env):

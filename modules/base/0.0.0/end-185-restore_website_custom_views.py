@@ -15,8 +15,8 @@ Ported from upgrade line 2490, which did this over RPC up to 19. Two things chan
 - Its gate was an HTTP GET, and no server is serving this database. ``oba.render_website``
   renders the same pages through the real router with no server, which is the only check that
   catches what breaks only at render time. The ORM's own gate is not an option: a write
-  validates through ``_check_xml``, and ``pre-0-disable-check-views.py`` leaves that a no-op
-  for the whole ``-u`` without restoring it. A view is turned back on inside a savepoint, and
+  validates through ``_check_xml``, and ``pre-0-disable-check-views.py`` turns a failure there
+  into a delayed warning for the whole ``-u`` without restoring it. A view is turned back on inside a savepoint, and
   if the website stops rendering it goes back to where it was.
 - Writing by SQL, like end-180: ``ir.ui.view.write`` unlinks every ``ir.ui.view.custom``
   pointing at the view, which is not ours to drop.
