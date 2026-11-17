@@ -12,23 +12,26 @@ have existed on the old one.
 Ported from upgrade line 2490, which did this over RPC up to 19. Two things change inside the
 ``-u`` and both are handled here:
 
-- Its HTTP render gate is gone: no server is serving this database. What is left is
-  ``_check_xml``, and ``pre-0-disable-check-views.py`` replaces that with a no-op for the whole
-  ``-u`` and never restores it, so a write would validate nothing. ``_still_resolves`` runs by
-  hand what ``_check_xml`` does for one view, inside a savepoint.
+- Its gate was an HTTP GET, and no server is serving this database. ``oba.render_website``
+  renders the same pages through the real router with no server, which is the only check that
+  catches what breaks only at render time. The ORM's own gate is not an option: a write
+  validates through ``_check_xml``, and ``pre-0-disable-check-views.py`` leaves that a no-op
+  for the whole ``-u`` without restoring it. A view is turned back on inside a savepoint, and
+  if the website stops rendering it goes back to where it was.
 - Writing by SQL, like end-180: ``ir.ui.view.write`` unlinks every ``ir.ui.view.custom``
   pointing at the view, which is not ours to drop.
+
+A website that already fails to render before all this is left alone: turning a view back on
+there proves nothing, and the failure would look like ours.
 
 In ``modules/base/0.0.0`` so it runs on every jump, after the modules are loaded.
 """
 
 import logging
 
-from lxml import etree
-
 from odoo.tools import SQL
 from odoo.upgrade import util
-from oba import log_message, should_run
+from oba import RENDER_OK, log_message, render_website, should_run
 
 _logger = logging.getLogger(__name__)
 
@@ -68,20 +71,14 @@ def _taken_keys(cr):
     return set(cr.fetchall())
 
 
-def _still_resolves(view):
-    """Why the view does not resolve now that it is back on, or ``None`` if it does.
+def _forget(env):
+    """Let the ORM and QWeb see what the SQL just changed.
 
-    What ``_check_xml`` checks for one view, called by hand because the ORM's own gate is a
-    no-op during the ``-u`` (see the module docstring).
+    Both are needed: without the ormcache of templates QWeb renders the one it had compiled,
+    and the page passes no matter what was written.
     """
-    view.env.invalidate_all()
-    try:
-        if view.inherit_id:
-            view._valid_inheritance(etree.fromstring(view.arch or "<data/>"))
-        view._get_combined_arch()
-    except Exception as e:
-        return str(e)[:300]
-    return None
+    env.invalidate_all()
+    env.transaction.invalidate_ormcache("templates")
 
 
 def _restore_views(cr, by_key, by_id):
@@ -91,14 +88,16 @@ def _restore_views(cr, by_key, by_id):
         [("key", "=like", "%" + SUFFIX), ("website_id", "!=", False), ("active", "=", False)]
     )
     taken = _taken_keys(cr)
+    baselines = {}
     restored, archived, failed, unknown = [], [], [], 0
     for view in candidates:
         # The "_" of the suffix is a single-character wildcard for =like, so the pattern also
         # matches a key ending in anything + "depreciada": check the suffix for real.
         if not view.key.endswith(SUFFIX):
             continue
+        site = view.website_id
         base_key = view.key[: -len(SUFFIX)]
-        was_active = by_key.get((base_key, view.website_id.id))
+        was_active = by_key.get((base_key, site.id))
         if was_active is None:
             # The key did not survive the upgrade: fall back to the id. A view born in the new
             # database carries an id from a sequence above every id of the old one, so it
@@ -109,24 +108,35 @@ def _restore_views(cr, by_key, by_id):
             # deprecated in cascade. Nothing to put back.
             unknown += 1
             continue
-        label = "%s (website %s)" % (base_key, view.website_id.id)
-        if (base_key, view.website_id.id) in taken:
+        label = "%s (website %s)" % (base_key, site.id)
+        if (base_key, site.id) in taken:
             failed.append("%s (another view already holds that key)" % label)
             continue
+        if was_active:
+            # What the website looks like before touching it. If it is already broken, turning
+            # a view back on proves nothing and the blame would land here.
+            if site.id not in baselines:
+                baselines[site.id] = render_website(env, site)
+                _logger.info("Website %s renders before the restore: %s", site.id, baselines[site.id])
+            if baselines[site.id] != RENDER_OK:
+                failed.append("%s (the website was already failing: %s)" % (label, baselines[site.id]))
+                continue
         try:
             with cr.savepoint():
                 cr.execute(
                     "UPDATE ir_ui_view SET key = %s, active = %s WHERE id = %s",
                     (base_key, was_active, view.id),
                 )
-                broken = _still_resolves(view) if was_active else None
-                if broken:
-                    raise ValueError(broken)
+                _forget(env)
+                if was_active:
+                    broken = render_website(env, site)
+                    if broken != RENDER_OK:
+                        raise ValueError(broken)
         except Exception as e:
-            env.invalidate_all()
+            _forget(env)
             failed.append("%s (%s)" % (label, str(e)[:300]))
             continue
-        taken.add((base_key, view.website_id.id))
+        taken.add((base_key, site.id))
         (restored if was_active else archived).append(label)
     return restored, archived, failed, unknown
 

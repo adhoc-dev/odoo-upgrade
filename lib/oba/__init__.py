@@ -35,4 +35,10 @@ def __getattr__(name):
         from . import module_changes
 
         return getattr(module_changes, name)
+    # Same reason: render reaches into odoo.http, which the pre_odoo scripts do not have in
+    # this shape — they import oba with the Odoo of the source version.
+    if name in ("RENDER_OK", "render_page", "render_website", "website_paths"):
+        from . import render
+
+        return getattr(render, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
