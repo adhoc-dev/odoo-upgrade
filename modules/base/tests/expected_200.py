@@ -223,6 +223,7 @@ NO_CHECK = {
     "end-200-replace_success_upgrade_message.py": PENDING,
     "end-210-check_personalizations.py": PENDING,
     "end-230-drop_variant_preselect_parameter.py": GONE,
+    "end-890-check_delayed_views.py": ONLY_WARNS,
     "end-900-uninstall_not_available_modules.py": PENDING,
     "post-01-modules-auto-discovery.py": PENDING,
     "pre-0-disable-check-company.py": IN_MEMORY,

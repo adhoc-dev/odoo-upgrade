@@ -11,8 +11,8 @@ Personalizations by module (``personalizations`` or ``p13n`` anywhere in the nam
 
 Personalizations by interface: read from the "Mi base" dashboard (``saas_client.dashboard``)
 when its module is loaded; if not, only the custom views count, as the upgrade line did when
-the dashboard could not be read. Each custom view is written back to itself to find the ones
-that fail in this version. Those are archived whoever maintains the personalizations, since
+the dashboard could not be read. Each custom view goes through the original view check to
+find the ones that fail in this version. Those are archived whoever maintains the personalizations, since
 the fixdb of the postupgrade validates the views again and stops the request on a failing
 one, and a warning lists them so they can be fixed and active again. The note shows how many
 only when the customer maintains them (``saas_client.own_personalizations_agreement``).
@@ -99,16 +99,19 @@ def _check_interface(cr):
     if not has_personalizations:
         return False, False, 0
 
-    broken = []
+    # pre-0-disable-check-views.py only delays _check_xml: the original says if a view fails.
+    view_class = type(env["ir.ui.view"])
+    check_xml = getattr(view_class, "_upgrade_original_check_xml", view_class._check_xml)
+    broken = env["ir.ui.view"]
     for view in env["ir.ui.view"].search([("id", "in", view_ids)]):
         try:
             with cr.savepoint():
-                view.write({"arch_db": view.arch_db})
+                check_xml(view)
         except Exception:
-            broken.append(view)
+            broken |= view
 
     if broken:
-        cr.execute("UPDATE ir_ui_view SET active = false WHERE id = ANY(%s)", ([view.id for view in broken],))
+        cr.execute("UPDATE ir_ui_view SET active = false WHERE id = ANY(%s)", (broken.ids,))
         log_message(
             cr,
             "Se desactivaron vistas personalizadas que fallan en la nueva versión, revisarlas para "
@@ -122,7 +125,7 @@ def _check_interface(cr):
     row = cr.fetchone()
     if row and row[0]:
         return False, True, len(broken)
-    return True, False, len(broken)
+    return True, False, 0
 
 
 def _from_dashboard(env):
