@@ -1,5 +1,6 @@
 """The channel between a migration script and the upgrade request: what comes in
-(``request_context``) and what goes out (``log_message``, ``set_result``, ``set_breaks``).
+(``request_context``) and what goes out (``log_message``, ``set_result``, ``set_breaks``,
+``create_record_provider``).
 
 The tests play the runner: they write the parameter and create the output table the way
 ``odoo_obaupgrade.py`` does, and check that what the helpers leave is what it reads back.
@@ -32,7 +33,7 @@ sys.path.insert(0, os.path.join(REPO, "lib"))
 
 import psycopg2  # noqa: E402
 
-from oba import log_message, request_context, set_breaks, set_result  # noqa: E402
+from oba import UPGRADE_TICKET, create_record_provider, log_message, request_context, set_breaks, set_result  # noqa: E402
 from oba.output import TABLE  # noqa: E402
 from oba.request_context import PARAMETER  # noqa: E402
 
@@ -138,6 +139,43 @@ class TestOutput(RequestChannelCase):
         set_result(self.cr, "nadie escucha")
         self.cr.execute("SELECT 1 FROM information_schema.tables WHERE table_name = %s", (TABLE,))
         self.assertIsNone(self.cr.fetchone(), "the helper does not create the table: that is the runner's job")
+
+    def test_create_record_provider_leaves_the_row_the_provider_creates_from(self):
+        handle = create_record_provider(
+            self.cr, "helpdesk.ticket", {"name": "x", "parent_id": 7}, context={"mail_notrack": True}, ref="r1"
+        )
+        ((kind, payload),) = self.rows()
+        self.assertEqual(kind, "provider_record")
+        self.assertEqual(
+            payload,
+            {
+                "ref": "r1",
+                "model": "helpdesk.ticket",
+                "vals": {"name": "x", "parent_id": 7},
+                "context": {"mail_notrack": True},
+                "migration_script": "lib/oba/tests/test_request_channel.py",
+            },
+        )
+        self.assertEqual(handle, {"ref": "r1", "model": "helpdesk.ticket", "id": None, "deferred": True})
+
+    def test_a_request_marker_travels_as_the_provider_reads_it(self):
+        create_record_provider(self.cr, "helpdesk.ticket", {"name": "x", "parent_id": UPGRADE_TICKET})
+        self.assertEqual(self.rows()[0][1]["vals"]["parent_id"], {"$request": "upgrade_ticket"})
+
+    def test_create_record_provider_without_ref_or_context(self):
+        handle = create_record_provider(self.cr, "helpdesk.ticket", {"name": "x"})
+        ((_kind, payload),) = self.rows()
+        self.assertTrue(payload["ref"], "without a ref a retried callback would duplicate the record")
+        self.assertEqual(payload["ref"], handle["ref"])
+        self.assertEqual(payload["context"], {})
+
+    def test_create_record_provider_without_the_table_only_logs(self):
+        self.cr.execute("DROP TABLE %s" % TABLE)
+        with self.assertLogs("oba.output", "INFO") as logs:
+            handle = create_record_provider(self.cr, "helpdesk.ticket", {"name": "nadie escucha"})
+        self.assertIn("provider_record", logs.output[0])
+        self.assertIn("nadie escucha", logs.output[0])
+        self.assertTrue(handle["deferred"])
 
 
 if __name__ == "__main__":

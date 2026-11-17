@@ -11,12 +11,28 @@ Import from the package, not from the modules inside it:
 from .customer_note import add_customer_note
 from .gates import create_backup, should_back_up, should_run, should_run_pre_odoo
 from .jump import jump_versions
-from .output import log_message, set_breaks, set_result
+from .output import (
+    ASSIGNED_TECHNICIAN,
+    ASSIGNED_TECHNICIAN_PARTNER,
+    BUGFIX_TEAM,
+    UPGRADE_PROJECT,
+    UPGRADE_TICKET,
+    create_record_provider,
+    log_message,
+    set_breaks,
+    set_result,
+)
 from .request_context import request_context
 
 __all__ = [
+    "ASSIGNED_TECHNICIAN",
+    "ASSIGNED_TECHNICIAN_PARTNER",
+    "BUGFIX_TEAM",
+    "UPGRADE_PROJECT",
+    "UPGRADE_TICKET",
     "add_customer_note",
     "create_backup",
+    "create_record_provider",
     "jump_versions",
     "log_message",
     "request_context",
