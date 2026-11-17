@@ -70,6 +70,18 @@ class TestModuleRenames(OldDatabaseCase):
             [("base", "module_l10n_uy_edi_stock"), ("l10n_uy_edi_stock", "view_picking_form")],
         )
 
+    def test_skips_a_module_already_renamed_on_the_first_request(self):
+        # A base that went through Odoo from 17 to 18 brings both rows to its first request to 19
+        self.install("l10n_uy_edi_stock_custom")
+        self.install("l10n_ar_stock")
+        self.write_context(from_version="18.0", to_version="19.0", is_first_in_series=True)
+        renames.migrate(self.cr, "18.0")
+        self.assertEqual(self.modules(), ["l10n_ar_stock_custom", "l10n_uy_edi_stock", "l10n_uy_edi_stock_custom"])
+        self.assertEqual(
+            self.rows("SELECT module, name FROM ir_model_data ORDER BY id"),
+            [("base", "module_l10n_uy_edi_stock"), ("l10n_uy_edi_stock", "view_picking_form")],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

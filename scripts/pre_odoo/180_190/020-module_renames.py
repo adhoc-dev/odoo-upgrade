@@ -26,6 +26,11 @@ def migrate(cr, version):
     if not should_run_pre_odoo(cr, first_target=19, last_target=19, position="first"):
         return
     for old, new in MODULE_RENAMES:
+        # Odoo already renamed it on an earlier hop and the real name came back as its own module
+        cr.execute("SELECT 1 FROM ir_module_module WHERE name = %s", (new,))
+        if cr.fetchone():
+            _logger.info("Module %s already exists, %s is left as is", new, old)
+            continue
         _logger.info("Renaming module %s to %s", old, new)
         cr.execute("UPDATE ir_module_module SET name = %s WHERE name = %s", (new, old))
         cr.execute(
