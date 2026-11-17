@@ -8,14 +8,7 @@ Nothing is imported from ``odoo.tests``: importing it outside test mode logs an 
 that leaves runbot red. Its ``MockRequest`` does not work for this either: ``render`` is a
 lambda that renders nothing, ``httprequest`` and the router are mocks, and the ``DotDict``
 session makes ``safe_eval`` warn.
-
-Written from the simulation nmr ran on a 20.0 base for task 79519, where of four website
-copies the sound one came back on and the three broken ones stayed archived.
 """
-
-import logging
-
-_logger = logging.getLogger(__name__)
 
 RENDER_OK = "ok"
 # Nothing listens on it: the router only needs a well-formed URL.

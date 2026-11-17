@@ -71,6 +71,10 @@ def _taken_keys(cr):
     return set(cr.fetchall())
 
 
+class _Discard(Exception):
+    """Raised to roll back a savepoint whose work was never meant to be kept."""
+
+
 def _forget(env):
     """Let the ORM and QWeb see what the SQL just changed.
 
@@ -79,6 +83,26 @@ def _forget(env):
     """
     env.invalidate_all()
     env.transaction.invalidate_ormcache("templates")
+
+
+def _renders(cr, env, site):
+    """How the website renders, with whatever the render wrote thrown away.
+
+    In a savepoint of its own, always rolled back: rendering a page can write (a cart, a
+    visitor), and a render that fails on SQL would leave the cursor aborted for the rest of
+    the ``-u``.
+    """
+    outcome = []
+    try:
+        with cr.savepoint():
+            outcome.append(render_website(env, site))
+            raise _Discard
+    except _Discard:
+        pass
+    except Exception as e:
+        outcome.append("%s: %s" % (type(e).__name__, str(e).splitlines()[0][:200] if str(e) else ""))
+    _forget(env)
+    return outcome[0]
 
 
 def _restore_views(cr, by_key, by_id):
@@ -116,7 +140,7 @@ def _restore_views(cr, by_key, by_id):
             # What the website looks like before touching it. If it is already broken, turning
             # a view back on proves nothing and the blame would land here.
             if site.id not in baselines:
-                baselines[site.id] = render_website(env, site)
+                baselines[site.id] = _renders(cr, env, site)
                 _logger.info("Website %s renders before the restore: %s", site.id, baselines[site.id])
             if baselines[site.id] != RENDER_OK:
                 failed.append("%s (the website was already failing: %s)" % (label, baselines[site.id]))
@@ -129,7 +153,7 @@ def _restore_views(cr, by_key, by_id):
                 )
                 _forget(env)
                 if was_active:
-                    broken = render_website(env, site)
+                    broken = _renders(cr, env, site)
                     if broken != RENDER_OK:
                         raise ValueError(broken)
         except Exception as e:
