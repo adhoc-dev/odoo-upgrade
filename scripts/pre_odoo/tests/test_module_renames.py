@@ -72,6 +72,7 @@ class TestModuleRenames(OldDatabaseCase):
 
     def test_skips_a_module_already_renamed_on_the_first_request(self):
         # A base that went through Odoo from 17 to 18 brings both rows to its first request to 19
+        self.cr.execute("UPDATE ir_module_module SET state = 'uninstalled' WHERE name = 'l10n_uy_edi_stock'")
         self.install("l10n_uy_edi_stock_custom")
         self.install("l10n_ar_stock")
         self.write_context(from_version="18.0", to_version="19.0", is_first_in_series=True)
@@ -81,6 +82,16 @@ class TestModuleRenames(OldDatabaseCase):
             self.rows("SELECT module, name FROM ir_model_data ORDER BY id"),
             [("base", "module_l10n_uy_edi_stock"), ("l10n_uy_edi_stock", "view_picking_form")],
         )
+        self.assertEqual(self.logs(), [])
+
+    def test_warns_when_the_skipped_module_is_installed(self):
+        self.install("l10n_uy_edi_stock_custom")
+        self.write_context(from_version="18.0", to_version="19.0", is_first_in_series=True)
+        renames.migrate(self.cr, "18.0")
+        self.assertEqual(self.modules(), ["l10n_uy_edi_stock", "l10n_uy_edi_stock_custom"])
+        [(type_, message)] = self.logs()
+        self.assertEqual(type_, "warning")
+        self.assertIn("l10n_uy_edi_stock está instalado", message)
 
 
 if __name__ == "__main__":
