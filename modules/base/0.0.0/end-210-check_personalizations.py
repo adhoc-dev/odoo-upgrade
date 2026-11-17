@@ -12,9 +12,10 @@ Personalizations by module (``personalizations`` or ``p13n`` anywhere in the nam
 Personalizations by interface: read from the "Mi base" dashboard (``saas_client.dashboard``)
 when its module is loaded; if not, only the custom views count, as the upgrade line did when
 the dashboard could not be read. Each custom view is written back to itself to find the ones
-that fail in this version: when the customer maintains their personalizations
-(``saas_client.own_personalizations_agreement``) those are archived and counted; when Adhoc
-does, they go to the request as a warning.
+that fail in this version. Those are archived whoever maintains the personalizations, since
+the fixdb of the postupgrade validates the views again and stops the request on a failing
+one, and a warning lists them so they can be fixed and active again. The note shows how many
+only when the customer maintains them (``saas_client.own_personalizations_agreement``).
 
 The values the customer note renders go through ``add_customer_note``; the note itself is a
 Test & C. Notes upgrade line with no script.
@@ -104,18 +105,24 @@ def _check_interface(cr):
             with cr.savepoint():
                 view.write({"arch_db": view.arch_db})
         except Exception:
-            broken.append(view.id)
+            broken.append(view)
+
+    if broken:
+        cr.execute("UPDATE ir_ui_view SET active = false WHERE id = ANY(%s)", ([view.id for view in broken],))
+        log_message(
+            cr,
+            "Se desactivaron vistas personalizadas que fallan en la nueva versión, revisarlas para "
+            "ajustarlas y volver a activarlas: %s"
+            % ", ".join("%s %s (%s)" % (view.id, view.name, view.model) for view in broken),
+            "warning",
+            module="base",
+        )
 
     cr.execute("SELECT value FROM ir_config_parameter WHERE key = 'saas_client.own_personalizations_agreement'")
     row = cr.fetchone()
     if row and row[0]:
-        if broken:
-            cr.execute("UPDATE ir_ui_view SET active = false WHERE id = ANY(%s)", (broken,))
-            _logger.info("Archived %s custom views that fail in this version: %s", len(broken), broken)
         return False, True, len(broken)
-    if broken:
-        log_message(cr, "Revisar vistas Personalizadas para ajustarlas %s" % broken, "warning", module="base")
-    return True, False, 0
+    return True, False, len(broken)
 
 
 def _from_dashboard(env):
