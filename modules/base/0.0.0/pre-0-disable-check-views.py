@@ -21,7 +21,9 @@ _logger = logging.getLogger(__name__)
 
 def _check_xml(self):
     try:
-        return type(self)._upgrade_original_check_xml(self)
+        # A database error inside the check must not leave the -u on an aborted transaction.
+        with self.env.cr.savepoint():
+            return type(self)._upgrade_original_check_xml(self)
     except Exception as e:
         type(self)._upgrade_delayed_view_ids.update(self.ids)
         _logger.warning("Delaying view check for view(s) %s: %s", self.ids, e)
