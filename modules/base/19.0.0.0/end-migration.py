@@ -4228,6 +4228,26 @@ def copy_parent_account_defaults_to_branches(
 def create_mapping(cr):
     company_mapping = {}
     env = util.env(cr)
+    # Outside Argentina we do not build branch schemes other than the native
+    # ones, so the a/b tree is never auto detected: without a mapping the
+    # companies stay as siblings, which is the expected outcome there.
+    cr.execute(
+        """
+        SELECT DISTINCT country.code
+          FROM res_company company
+          JOIN res_partner partner ON partner.id = company.partner_id
+          LEFT JOIN res_country country ON country.id = partner.country_id
+         WHERE company.active
+        """
+    )
+    foreign_codes = sorted({row[0] for row in cr.fetchall() if row[0] and row[0] != "AR"})
+    if foreign_codes:
+        _logger.info(
+            "Compañías fuera de Argentina (%s): no se autodetecta el mapeo a/b, "
+            "quedan como hermanas",
+            ", ".join(foreign_codes),
+        )
+        return company_mapping
     query = """
     SELECT COUNT(*) AS sales_with_country_mismatch
     FROM sale_order so
