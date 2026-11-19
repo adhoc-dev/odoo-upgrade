@@ -1,6 +1,6 @@
 """Tell the customer which partner_state configuration lines the upgrade removed.
 
-Reads what scripts/pre_odoo/always/220-backup_partner_state_fields.py backed up on the old
+Reads what scripts/pre_odoo/always/250-backup_partner_state_fields.py backed up on the old
 database. A line is lost when the upgrade drops its res.partner field (ON DELETE CASCADE):
 already gone when this runs, or about to go, because no loaded module defines its field
 any more and _process_end and end-900 drop it after the end- scripts.

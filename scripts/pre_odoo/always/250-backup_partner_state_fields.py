@@ -4,7 +4,7 @@ from oba import create_backup, should_back_up
 
 _logger = logging.getLogger(__name__)
 
-# Read by modules/base/0.0.0/end-220-check_partner_state_fields.py, on the other side of the upgrade.
+# Read by modules/base/0.0.0/end-250-check_partner_state_fields.py, on the other side of the upgrade.
 BACKUP_TABLE = "res_partner_state_field_bu"
 FIRST_TARGET_VERSION = 20
 

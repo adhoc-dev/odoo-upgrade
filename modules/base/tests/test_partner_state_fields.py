@@ -1,7 +1,7 @@
 """The partner_state configuration lines the upgrade removes, from backup to customer note.
 
-Covers scripts/pre_odoo/always/220-backup_partner_state_fields.py and
-modules/base/0.0.0/end-220-check_partner_state_fields.py. The tests create and drop their own
+Covers scripts/pre_odoo/always/250-backup_partner_state_fields.py and
+modules/base/0.0.0/end-250-check_partner_state_fields.py. The tests create and drop their own
 Postgres database with the tables the scripts touch, and drop a field to stand for the upgrade,
 so they need no Odoo running, only importable.
 
@@ -19,8 +19,8 @@ import unittest
 ODOO_PATH = os.environ.get("ODOO_PATH", "/home/odoo/src/odoo")
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 TEST_DB = os.environ.get("UPGRADE_TEST_DB", "upgrade_partner_state_fields_test")
-BACKUP = os.path.join(REPO, "scripts", "pre_odoo", "always", "220-backup_partner_state_fields.py")
-CHECK = os.path.join(REPO, "modules", "base", "0.0.0", "end-220-check_partner_state_fields.py")
+BACKUP = os.path.join(REPO, "scripts", "pre_odoo", "always", "250-backup_partner_state_fields.py")
+CHECK = os.path.join(REPO, "modules", "base", "0.0.0", "end-250-check_partner_state_fields.py")
 
 try:
     import odoo.upgrade  # noqa: F401
@@ -46,8 +46,8 @@ def _load_script(name, path):
     return module
 
 
-backup = _load_script("pre_odoo_220_backup_partner_state_fields", BACKUP)
-check = _load_script("end_220_check_partner_state_fields", CHECK)
+backup = _load_script("pre_odoo_250_backup_partner_state_fields", BACKUP)
+check = _load_script("end_250_check_partner_state_fields", CHECK)
 
 # res.partner fields of the loaded code in 20: company_registry is not one of them
 PARTNER_FIELDS = {"name", "email", "phone"}
