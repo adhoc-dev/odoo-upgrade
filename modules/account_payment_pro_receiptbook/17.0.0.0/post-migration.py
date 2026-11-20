@@ -26,12 +26,15 @@ def migrate_payment_grup_data(env):
         """
     openupgrade.logged_query(env.cr, query)
 
+    # Odoo renames account_move.payment_id to origin_payment_id when it migrates to 18 and
+    # carries the values, so the move-payment pairing is already here and upgrade line 1436
+    # no longer backs it up (ticket 133307).
     query = """
         update account_move am set
             receiptbook_id = ap.receiptbook_id
         from account_payment as ap
         where
-            am.payment_id = ap.id and ap.receiptbook_id is not null;
+            am.origin_payment_id = ap.id and ap.receiptbook_id is not null;
     """
 
     openupgrade.logged_query(env.cr, query)
