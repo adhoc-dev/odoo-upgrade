@@ -152,9 +152,16 @@ def _product(env, ctx, key, label, categ="categ_usd", cost_ars=150000.0, cost_us
 
 
 def _purchase(env, ctx, product, qty, price, currency):
+    return _purchase_lines(env, ctx, [(product, qty, price)], currency)
+
+
+def _purchase_lines(env, ctx, lines, currency):
     po = env["purchase.order"].create({
         "partner_id": ctx["vendor"].id, "currency_id": ctx[currency].id, "company_id": ctx["company"].id,
-        "order_line": [(0, 0, {"product_id": product.id, "product_qty": qty, "price_unit": price})],
+        "order_line": [
+            (0, 0, {"product_id": product.id, "product_qty": qty, "price_unit": price})
+            for product, qty, price in lines
+        ],
     })
     po.button_confirm()
     return po
@@ -176,13 +183,15 @@ def _receive(po, rate=None):
 
 
 def _landed_cost(env, ctx, picking, amount, rate=None):
+    """`amount` is one cost line, or a list of them."""
+    amounts = amount if isinstance(amount, (list, tuple)) else [amount]
     cost = env["stock.landed.cost"].create({
         "picking_ids": [(6, 0, picking.ids)],
         "account_journal_id": ctx["stock_journal"].id,
         "cost_lines": [(0, 0, {
-            "product_id": ctx["landed_product"].id, "price_unit": amount, "split_method": "by_quantity",
+            "product_id": ctx["landed_product"].id, "price_unit": line_amount, "split_method": "by_quantity",
             "account_id": ctx["expense"].id,
-        })],
+        }) for line_amount in amounts],
     })
     if rate:
         cost.inverse_currency_rate = rate
@@ -410,6 +419,24 @@ def case_usd_manual_lc_after_sale(env, ctx, key, label):
     _tag(env, po, key + "_po")
 
 
+def case_import_several_products_lcs(env, ctx, key, label):
+    """One import receipt, three products and three landed costs of several lines each,
+    all with a manual rate: the shape of the import receipts of a real customer base,
+    where the upgrade left stock.move.value without the landed costs."""
+    # The first product keeps the case key: the skip check of migrate() looks for it.
+    keys = [key, key + "b", key + "c"]
+    products = [_product(env, ctx, k, label) for k in keys]
+    po = _purchase_lines(env, ctx, [(products[0], 10, 100.0), (products[1], 5, 200.0), (products[2], 5, 50.0)], "usd")
+    picking = _receive(po, rate=PICKING_RATE)
+    # Split by quantity over 20 u: ARS 7.000, 2.000 and 1.000 per unit.
+    _landed_cost(env, ctx, picking, [100000.0, 40000.0], rate=LANDED_COST_RATE)
+    _landed_cost(env, ctx, picking, [30000.0, 10000.0], rate=1500.0)
+    _landed_cost(env, ctx, picking, [20000.0], rate=LANDED_COST_RATE)
+    _tag(env, po, key + "_po")
+    for k, product in zip(keys, products):
+        _tag(env, picking.move_ids.filtered(lambda m, p=product: m.product_id == p), k + "_move_in")
+
+
 def case_no_valuation_currency(env, ctx, key, label):
     product = _product(env, ctx, key, label, categ="categ_none")
     po = _purchase(env, ctx, product, 10, 100.0, "usd")
@@ -437,6 +464,7 @@ CASES = [
     ("c15", "revalorizacion manual en mas y en menos", False, case_revaluation),
     ("c16", "costo en destino despues de una venta", True, case_usd_manual_lc_after_sale),
     ("c17", "control: producto sin moneda de valuacion", False, case_no_valuation_currency),
+    ("c18", "importacion con varios productos y costos en destino de varias lineas", False, case_import_several_products_lcs),
 ]
 
 
