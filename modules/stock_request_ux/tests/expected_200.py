@@ -25,6 +25,16 @@ EXPECTED = {
             "qty_cancelled": 0.0,
             "state": "done",
         },
+        # 3 delivered, 1 more from the backorder and the last one cancelled. 19 counted only the 3,
+        # and the 1 cancelled stays cancelled: with the 4 counted the line is done, as stock_request of
+        # 20 closes a line that got part and had the rest cancelled. Cancelled would mean that the
+        # script left the state.
+        ref("upgrade_prepare_demo.sr_partial_then_cancelled"): {
+            "qty_done": 4.0,
+            "qty_in_progress": 0.0,
+            "qty_cancelled": 1.0,
+            "state": "done",
+        },
         # Preservation: asks for 5 and nothing was delivered, its move already has the allocation.
         # It has to stay as it was: the script only touches moves of a backorder without allocation.
         ref("upgrade_prepare_demo.sr_untouched"): {

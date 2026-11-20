@@ -251,24 +251,25 @@ def settle_states(env, request_ids):
     """Make the lines that 19 left cancelled follow their quantities again.
 
     A line was cancelled when its pending move had no allocation, so it asked for more than
-    what it counted. Once the allocations are back, a line that got everything is done and one
-    with something still to deliver and nothing cancelled is in progress. A line that still has
-    something cancelled stays so, as it would after a partial delivery. Returns the ids of the
-    lines that are now in progress and of those that are now done.
+    what it counted. Once the allocations are back it follows the rule of stock_request in 20:
+    a line with something still to deliver is in progress, and one with nothing left to deliver
+    is done if something was delivered, also when the rest was cancelled. Returns the ids of the
+    lines that are now in progress, of those that are now done, and of the done ones that still
+    have something cancelled.
     """
     lines = env["stock.request"].browse(request_ids).filtered(lambda r: r.state == "cancel")
     precision = env["decimal.precision"].precision_get("Product Unit")
     lines.check_done()
     reopened = lines.filtered(
-        lambda r: r.state == "cancel"
-        and float_compare(r.qty_cancelled, 0, precision_digits=precision) <= 0
-        and float_compare(r.qty_in_progress, 0, precision_digits=precision) > 0
+        lambda r: r.state == "cancel" and float_compare(r.qty_in_progress, 0, precision_digits=precision) > 0
     )
     reopened.write({"state": "open"})
     changed = lines.filtered(lambda r: r.state != "cancel")
     for line in changed:
         _logger.info("Stock request %s was cancelled and is now %s", line.id, line.state)
-    return changed.filtered(lambda r: r.state == "open").ids, changed.filtered(lambda r: r.state == "done").ids
+    done = changed.filtered(lambda r: r.state == "done")
+    done_cancelled = done.filtered(lambda r: float_compare(r.qty_cancelled, 0, precision_digits=precision) > 0)
+    return changed.filtered(lambda r: r.state == "open").ids, (done - done_cancelled).ids, done_cancelled.ids
 
 
 def notes_by_lang(env, request_ids):
@@ -294,10 +295,15 @@ def migrate(cr, version):
         # The stored quantities of the lines do not depend on the new rows until they are recomputed
         util.recompute_fields(cr, "stock.request", QTY_FIELDS, ids=request_ids)
         _logger.info("Recomputed the quantities of %s stock requests", len(request_ids))
-        reopened_ids, done_ids = settle_states(env, request_ids)
+        reopened_ids, done_ids, done_cancelled_ids = settle_states(env, request_ids)
         subtype_id = util.ref(cr, "mail.mt_note")
         author_id = util.ref(cr, "base.partner_root")
-        for state, ids in (("open", reopened_ids), ("done", done_ids)):
+        # the flag goes only when set, so the other notes do not need the newer stock_request_ux
+        for state, flags, ids in (
+            ("open", {}, reopened_ids),
+            ("done", {}, done_ids),
+            ("done", {"cancelled": True}, done_cancelled_ids),
+        ):
             for lang, lang_ids in notes_by_lang(env, ids).items():
-                note = env["stock.request"].with_context(lang=lang)._get_recovered_state_note(state)
+                note = env["stock.request"].with_context(lang=lang)._get_recovered_state_note(state, **flags)
                 post_notes(cr, subtype_id, author_id, lang_ids, note)

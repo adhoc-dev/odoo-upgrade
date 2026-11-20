@@ -8,6 +8,7 @@ MODULE = "upgrade_prepare_demo"
 PARTIAL = "sr_partial_delivery"
 LATE = "sr_delivered_late"
 UNTOUCHED = "sr_untouched"
+PARTIAL_CANCELLED = "sr_partial_then_cancelled"
 
 # Cases of stock_request_ux/20.0.1.0.0/post-migration.py, checked by
 # stock_request_ux/tests/expected_200.py:
@@ -16,6 +17,9 @@ UNTOUCHED = "sr_untouched"
 #   sr_delivered_late: the same, and the 2 that waited were delivered later. In 19 the line stays
 #       cancelled with the 3 delivered first: the script has to count the rest and close it.
 #   sr_untouched: the line asks for 5 and nothing was delivered: the script must not change it.
+#   sr_partial_then_cancelled: the line asks for 5, 3 were delivered, 1 more from the backorder and
+#       the last one was cancelled. In 19 the line stays cancelled with the 3 delivered first: the
+#       script has to count the 4 and, as in stock_request of 20, close it as done.
 
 
 def _storable_product(env, name, route):
@@ -42,6 +46,24 @@ def _order(env, warehouse, product):
             ],
         }
     )
+
+
+def _drop_backorder_allocations(env, source_moves, backorder_moves):
+    """The allocations as 19 left them: the moves of the backorders have none, and the source
+    move keeps all that the line asked. Since OCA/stock-logistics-request#121 the split of 19 gives
+    the new move its part and lowers the source move, so the seed gives that part back."""
+    env.cr.execute(
+        """
+        UPDATE stock_request_allocation a
+           SET requested_product_uom_qty = r.product_uom_qty
+          FROM stock_request r
+         WHERE r.id = a.stock_request_id
+           AND a.stock_move_id IN %s
+        """,
+        (tuple(source_moves.ids),),
+    )
+    env.cr.execute("DELETE FROM stock_request_allocation WHERE stock_move_id IN %s", (tuple(backorder_moves.ids),))
+    env.invalidate_all()
 
 
 def _leave_as_19(env, line):
@@ -86,7 +108,8 @@ def migrate(env):
     partial_product = _storable_product(env, "Partial delivery", route)
     late_product = _storable_product(env, "Delivered late", route)
     untouched_product = _storable_product(env, "Untouched", route)
-    for product in (partial_product, late_product, untouched_product):
+    partial_cancelled_product = _storable_product(env, "Partial then cancelled", route)
+    for product in (partial_product, late_product, untouched_product, partial_cancelled_product):
         env["stock.quant"].create({"product_id": product.id, "location_id": resupply.id, "quantity": 20.0})
 
     partial_order = _order(env, warehouse, partial_product)
@@ -101,9 +124,7 @@ def migrate(env):
     ).process()
     # In 19 the split did not copy the allocation, so the move that waits has none. Making it
     # explicit keeps the case the same in a base where it was born with one.
-    pending = picking.backorder_ids.move_ids
-    env.cr.execute("DELETE FROM stock_request_allocation WHERE stock_move_id IN %s", (tuple(pending.ids),))
-    env.invalidate_all()
+    _drop_backorder_allocations(env, picking.move_ids, picking.backorder_ids.move_ids)
     _leave_as_19(env, partial_order.stock_request_ids)
     _register(env, PARTIAL, partial_order.stock_request_ids)
 
@@ -121,12 +142,32 @@ def migrate(env):
     backorder.move_ids.quantity = 2.0
     backorder.move_ids.picked = True
     backorder.with_context(skip_backorder=True).button_validate()
-    env.cr.execute("DELETE FROM stock_request_allocation WHERE stock_move_id IN %s", (tuple(backorder.move_ids.ids),))
-    env.invalidate_all()
+    _drop_backorder_allocations(env, picking.move_ids, backorder.move_ids)
     _leave_as_19(env, late_order.stock_request_ids)
     _register(env, LATE, late_order.stock_request_ids)
 
     untouched_order = _order(env, warehouse, untouched_product)
     untouched_order.action_confirm()
     _register(env, UNTOUCHED, untouched_order.stock_request_ids)
-    _logger.info("Seeded three stock request lines for the allocations of the backorders")
+    partial_cancelled_order = _order(env, warehouse, partial_cancelled_product)
+    partial_cancelled_order.action_confirm()
+    picking = partial_cancelled_order.picking_ids
+    picking.action_assign()
+    picking.move_ids.quantity = 3.0
+    picking.move_ids.picked = True
+    env["stock.backorder.confirmation"].with_context(button_validate_picking_ids=[picking.id]).create(
+        {"pick_ids": [Command.link(picking.id)]}
+    ).process()
+    backorder = picking.backorder_ids
+    backorder.action_assign()
+    backorder.move_ids.quantity = 1.0
+    backorder.move_ids.picked = True
+    env["stock.backorder.confirmation"].with_context(button_validate_picking_ids=[backorder.id]).create(
+        {"pick_ids": [Command.link(backorder.id)]}
+    ).process()
+    last = backorder.backorder_ids
+    last.action_cancel()
+    _drop_backorder_allocations(env, picking.move_ids, (backorder | last).move_ids)
+    _leave_as_19(env, partial_cancelled_order.stock_request_ids)
+    _register(env, PARTIAL_CANCELLED, partial_cancelled_order.stock_request_ids)
+    _logger.info("Seeded four stock request lines for the allocations of the backorders")
