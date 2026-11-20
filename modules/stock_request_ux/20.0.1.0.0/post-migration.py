@@ -3,6 +3,8 @@ import logging
 from odoo.tools import float_compare, html_escape
 from odoo.upgrade import util
 
+from oba import add_customer_note
+
 _logger = logging.getLogger(__name__)
 
 QTY_FIELDS = ["qty_done", "qty_in_progress", "qty_cancelled"]
@@ -126,20 +128,37 @@ CREATE_ALLOCATIONS = """
     RETURNING stock_request_id
 """
 
-# Same pairing as above, without the checks: what is still orphan after the passes
+# Same pairing as above, without the checks: what is still orphan after the passes, with the line
+# of its source move and why it was left. A kit line asks for the kit and the move carries its
+# component; a closed line already has all it asks (Cancel remaining lowered it to what was delivered).
 LEFT_ORPHANS = """
-    SELECT DISTINCT m.id
+    SELECT DISTINCT ON (m.id)
+           m.id,
+           r.id,
+           CASE WHEN r.product_id != m.product_id THEN 'kit'
+                WHEN r.product_uom_qty <= coalesce((
+                    SELECT sum(o.allocated_product_qty)
+                      FROM stock_request_allocation o
+                      JOIN stock_move om ON om.id = o.stock_move_id
+                     WHERE o.stock_request_id = r.id
+                       AND om.state = 'done'
+                ), 0) THEN 'closed'
+                ELSE 'unmatched'
+           END
       FROM stock_move m
       JOIN stock_picking p ON p.id = m.picking_id
       JOIN stock_move bm ON bm.picking_id = p.backorder_id
                         AND bm.product_id = m.product_id
                         AND bm.state != 'cancel'
       JOIN stock_request_allocation a ON a.stock_move_id = bm.id
+      JOIN stock_request r ON r.id = a.stock_request_id
      WHERE m.state != 'cancel'
        AND m.origin_returned_move_id IS NULL
        AND NOT EXISTS (SELECT 1 FROM stock_request_allocation x WHERE x.stock_move_id = m.id)
-     ORDER BY m.id
+     ORDER BY m.id, a.id
 """
+# How many of the moves left the customer note lists, the total goes apart
+SAMPLE_SIZE = 50
 
 
 def create_allocations(cr):
@@ -156,16 +175,46 @@ def create_allocations(cr):
             break
         request_ids.update(request_id for (request_id,) in created)
         _logger.info("Created %s allocations on the moves of backorders", len(created))
-    cr.execute(LEFT_ORPHANS)
-    left = [move_id for (move_id,) in cr.fetchall()]
-    if left:
-        _logger.warning(
-            "%s moves of backorders were left without allocation, they do not match the quantities of their "
-            "source move or the pairing is ambiguous: %s",
-            len(left),
-            left[:50],
-        )
     return sorted(request_ids)
+
+
+def left_orphans(cr):
+    """The moves of backorders still without allocation: ``(move_id, request_id, reason)``."""
+    cr.execute(LEFT_ORPHANS)
+    left = cr.fetchall()
+    if left:
+        _logger.info(
+            "%s moves of backorders were left without allocation (kit, closed line or no safe pairing): %s",
+            len(left),
+            [move_id for move_id, _request_id, _reason in left[:SAMPLE_SIZE]],
+        )
+    return left
+
+
+def report_left_orphans(env, left):
+    """Leave the moves left without allocation to the customer note, for the customer to review."""
+    sample = left[:SAMPLE_SIZE]
+    moves = {move.id: move for move in env["stock.move"].browse({row[0] for row in sample})}
+    requests = {request.id: request for request in env["stock.request"].browse({row[1] for row in sample})}
+    reasons = {"kit": "kit", "closed": "cerrada", "unmatched": "sin_emparejar"}
+    # Also with zero: the message can say that nothing is left to review
+    add_customer_note(
+        env.cr,
+        {
+            "stock_request_ux_pending_moves_total": len(left),
+            "stock_request_ux_pending_moves": [
+                {
+                    "transferencia": moves[move_id].picking_id.name,
+                    "producto": moves[move_id].product_id.display_name,
+                    "cantidad": moves[move_id].product_uom_qty,
+                    "solicitud": requests[request_id].name,
+                    "orden": requests[request_id].order_id.name or "",
+                    "motivo": reasons[reason],
+                }
+                for move_id, request_id, reason in sample
+            ],
+        },
+    )
 
 
 POST_NOTES = """
@@ -238,11 +287,13 @@ def migrate(cr, version):
         cr, "stock_request_allocation", "stock_request_id"
     ):
         request_ids = create_allocations(cr)
+        left = left_orphans(cr)
+    env = util.env(cr)
+    report_left_orphans(env, left)
     if request_ids:
         # The stored quantities of the lines do not depend on the new rows until they are recomputed
         util.recompute_fields(cr, "stock.request", QTY_FIELDS, ids=request_ids)
         _logger.info("Recomputed the quantities of %s stock requests", len(request_ids))
-        env = util.env(cr)
         reopened_ids, done_ids = settle_states(env, request_ids)
         subtype_id = util.ref(cr, "mail.mt_note")
         author_id = util.ref(cr, "base.partner_root")

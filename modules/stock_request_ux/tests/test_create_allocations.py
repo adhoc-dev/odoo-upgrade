@@ -27,6 +27,8 @@ except ImportError:
     import odoo.upgrade  # noqa: E402
 
 import psycopg2  # noqa: E402
+
+sys.path.insert(0, os.path.join(REPO, "lib"))
 from odoo.tools import html_escape  # noqa: E402
 
 
@@ -195,31 +197,30 @@ class TestWhatIsLeftAlone(CreateAllocationsCase):
     def test_quantity_that_does_not_match_is_left_and_told(self):
         _request, _done, pending, _picking = self.partial_delivery(5.0, 3.0)
         self.cr.execute("UPDATE stock_move SET product_qty = 5 WHERE id = %s", (pending,))
-        with self.assertLogs(script._logger, "WARNING") as logs:
-            self.assertEqual(script.create_allocations(self.cr), [])
+        self.assertEqual(script.create_allocations(self.cr), [])
         self.assertEqual(self.allocations(pending), [])
-        self.assertIn(str([pending]), logs.output[0])
+        self.assertEqual(script.left_orphans(self.cr), [(pending, _request, "unmatched")])
 
     def test_pending_move_smaller_than_what_was_open_is_left(self):
         """A pending move has to take all that was open: if not, part of it went somewhere else."""
         _request, _done, pending, _picking = self.partial_delivery(5.0, 3.0)
         self.cr.execute("UPDATE stock_move SET product_qty = 1 WHERE id = %s", (pending,))
-        with self.assertLogs(script._logger, "WARNING"):
-            self.assertEqual(script.create_allocations(self.cr), [])
+        self.assertEqual(script.create_allocations(self.cr), [])
+        self.assertEqual({reason for _move, _request, reason in script.left_orphans(self.cr)}, {"unmatched"})
         self.assertEqual(self.allocations(pending), [])
 
     def test_request_in_another_unit_is_left(self):
         _request, _done, pending, _picking = self.partial_delivery(5.0, 3.0)
         self.cr.execute("UPDATE stock_request SET product_uom_id = %s", (DOZEN,))
-        with self.assertLogs(script._logger, "WARNING"):
-            script.create_allocations(self.cr)
+        script.create_allocations(self.cr)
+        self.assertEqual({reason for _move, _request, reason in script.left_orphans(self.cr)}, {"unmatched"})
         self.assertEqual(self.allocations(pending), [])
 
     def test_two_pending_moves_for_the_same_source_are_left(self):
         _request, done, pending, picking = self.partial_delivery(5.0, 3.0)
         twin = self.move(picking, 2.0, "assigned")
-        with self.assertLogs(script._logger, "WARNING"):
-            script.create_allocations(self.cr)
+        script.create_allocations(self.cr)
+        self.assertEqual({reason for _move, _request, reason in script.left_orphans(self.cr)}, {"unmatched"})
         self.assertEqual(self.allocations(pending), [])
         self.assertEqual(self.allocations(twin), [])
 
@@ -228,8 +229,8 @@ class TestWhatIsLeftAlone(CreateAllocationsCase):
         _request, done, pending, _picking = self.partial_delivery(5.0, 3.0)
         self.cr.execute("SELECT picking_id FROM stock_move WHERE id = %s", (done,))
         self.move(self.cr.fetchone()[0], 2.0, "done")
-        with self.assertLogs(script._logger, "WARNING"):
-            script.create_allocations(self.cr)
+        script.create_allocations(self.cr)
+        self.assertEqual({reason for _move, _request, reason in script.left_orphans(self.cr)}, {"unmatched"})
         self.assertEqual(self.allocations(pending), [])
 
     def test_a_line_closed_with_cancel_remaining_is_left(self):
@@ -237,8 +238,8 @@ class TestWhatIsLeftAlone(CreateAllocationsCase):
         request, _done, pending, _picking = self.partial_delivery(100.0, 50.0)
         self.cr.execute("UPDATE stock_request SET product_uom_qty = 50 WHERE id = %s", (request,))
         self.cr.execute("UPDATE stock_move SET state = 'done' WHERE id = %s", (pending,))
-        with self.assertLogs(script._logger, "WARNING"):
-            self.assertEqual(script.create_allocations(self.cr), [])
+        self.assertEqual(script.create_allocations(self.cr), [])
+        self.assertEqual({reason for _move, _request, reason in script.left_orphans(self.cr)}, {"closed"})
         self.assertEqual(self.allocations(pending), [])
 
     def test_a_line_whose_rest_was_cancelled_is_left(self):
@@ -253,8 +254,8 @@ class TestWhatIsLeftAlone(CreateAllocationsCase):
         """The line asks for a pack and the moves carry its component: the quantities do not compare."""
         request, _done, pending, _picking = self.partial_delivery(5.0, 3.0)
         self.cr.execute("UPDATE stock_request SET product_id = 2 WHERE id = %s", (request,))
-        with self.assertLogs(script._logger, "WARNING"):
-            self.assertEqual(script.create_allocations(self.cr), [])
+        self.assertEqual(script.create_allocations(self.cr), [])
+        self.assertEqual({reason for _move, _request, reason in script.left_orphans(self.cr)}, {"kit"})
         self.assertEqual(self.allocations(pending), [])
 
     def test_returns_and_cancelled_moves_are_not_touched(self):
