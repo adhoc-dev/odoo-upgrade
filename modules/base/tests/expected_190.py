@@ -120,11 +120,11 @@ EXPECTED = {
             "parent_id": None,
         },
         # COMPANY MERGE, rama que arma la jerarquia: la company sembrada en
-        # tests/pre_odu/base/180_190/040-company_merge_quality.py parte sin
+        # tests/pre_odu/base/180_190/035-company_merge_base.py parte sin
         # parent y el mapeo de migration_19_end_multicompany la declara B de la
         # main. Si queda vacio, el modo company merge no corrio (el mapeo no
         # llego o no se leyo) y los demas casos de esta rama no prueban nada.
-        ref("upgrade_prepare_demo.company_merge_branch"): {
+        ref("upgrade_prepare_demo.company_merge_b"): {
             "parent_id": ref("base.main_company"),
         },
     },
