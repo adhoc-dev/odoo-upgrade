@@ -16,23 +16,35 @@ MAX_PASSES = 50
 CREATE_ALLOCATIONS = """
     WITH target AS (
         SELECT m.id AS move_id,
+               m.product_id,
                m.product_qty,
                m.state,
-               bm.id AS source_move_id
+               bm.id AS source_move_id,
+               count(*) OVER (PARTITION BY m.id) AS sources,
+               count(*) OVER (PARTITION BY bm.id) AS targets
           FROM stock_move m
           JOIN stock_picking p ON p.id = m.picking_id
           JOIN stock_move bm ON bm.picking_id = p.backorder_id
                             AND bm.product_id = m.product_id
                             AND bm.state != 'cancel'
-         WHERE m.state != 'cancel'
+         WHERE p.backorder_id IS NOT NULL
+           AND m.state != 'cancel'
            AND m.origin_returned_move_id IS NULL
            AND NOT EXISTS (SELECT 1 FROM stock_request_allocation x WHERE x.stock_move_id = m.id)
+           -- only backorders of a request: all the candidates of the move stay, so the counts do not change
+           AND EXISTS (
+               SELECT 1
+                 FROM stock_move rm
+                 JOIN stock_request_allocation ra ON ra.stock_move_id = rm.id
+                WHERE rm.picking_id = p.backorder_id
+                  AND rm.product_id = m.product_id
+           )
     ),
     paired AS (
-        SELECT t.*
-          FROM target t
-         WHERE (SELECT count(*) FROM target o WHERE o.move_id = t.move_id) = 1
-           AND (SELECT count(*) FROM target o WHERE o.source_move_id = t.source_move_id) = 1
+        SELECT *
+          FROM target
+         WHERE sources = 1
+           AND targets = 1
     ),
     open_qty AS (
         SELECT p.move_id,
@@ -46,6 +58,10 @@ CREATE_ALLOCATIONS = """
           FROM paired p
           JOIN stock_request_allocation a ON a.stock_move_id = p.source_move_id
           JOIN stock_request r ON r.id = a.stock_request_id
+                              -- a line of a pack counts the pack, not the component that the move carries
+                              AND r.product_id = p.product_id
+                              -- a done line was closed: by the user with Cancel remaining, or because it got everything
+                              AND r.state != 'done'
           JOIN product_product pp ON pp.id = r.product_id
           JOIN product_template pt ON pt.id = pp.product_tmpl_id
     ),
@@ -136,7 +152,7 @@ POST_NOTES = """
         model, res_id, message_type, subtype_id, author_id, body, date,
         message_id, create_uid, create_date, write_uid, write_date
     )
-    SELECT 'stock.request', r.id, 'notification', %(subtype_id)s, %(author_id)s,
+    SELECT 'stock.request', r.id, 'comment', %(subtype_id)s, %(author_id)s,
            %(body)s, now() AT TIME ZONE 'UTC',
            '<' || md5(random()::text || r.id::text) || '@stock_request_ux.upgrade>',
            1, now() AT TIME ZONE 'UTC', 1, now() AT TIME ZONE 'UTC'
@@ -185,17 +201,29 @@ def settle_states(env, request_ids):
     return changed.filtered(lambda r: r.state == "open").ids, changed.filtered(lambda r: r.state == "done").ids
 
 
+def notes_by_lang(env, request_ids):
+    """The ids of the lines grouped by the language of their company: a note has one language."""
+    by_lang = {}
+    for line in env["stock.request"].browse(request_ids):
+        lang = line.company_id.partner_id.lang or "en_US"
+        by_lang.setdefault(lang, []).append(line.id)
+    return by_lang
+
+
 def migrate(cr, version):
-    request_ids = create_allocations(cr)
+    _logger.info("Running post-migration for version %s", version)
+    # the allocations have no index on the move, and every pass looks them up by move
+    with util.temp_index(cr, "stock_request_allocation", "stock_move_id"):
+        request_ids = create_allocations(cr)
     if request_ids:
         # The stored quantities of the lines do not depend on the new rows until they are recomputed
         util.recompute_fields(cr, "stock.request", QTY_FIELDS, ids=request_ids)
         _logger.info("Recomputed the quantities of %s stock requests", len(request_ids))
         env = util.env(cr)
         reopened_ids, done_ids = settle_states(env, request_ids)
-        # A note has one language: the one of the company
-        request = env["stock.request"].with_context(lang=env.company.partner_id.lang or "en_US")
         subtype_id = util.ref(cr, "mail.mt_note")
         author_id = util.ref(cr, "base.partner_root")
-        post_notes(cr, subtype_id, author_id, reopened_ids, request._get_recovered_state_note("open"))
-        post_notes(cr, subtype_id, author_id, done_ids, request._get_recovered_state_note("done"))
+        for state, ids in (("open", reopened_ids), ("done", done_ids)):
+            for lang, lang_ids in notes_by_lang(env, ids).items():
+                note = env["stock.request"].with_context(lang=lang)._get_recovered_state_note(state)
+                post_notes(cr, subtype_id, author_id, lang_ids, note)

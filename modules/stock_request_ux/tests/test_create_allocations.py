@@ -88,7 +88,7 @@ class CreateAllocationsCase(unittest.TestCase):
                 state varchar,
                 origin_returned_move_id integer
             );
-            CREATE TABLE stock_request (id serial PRIMARY KEY, product_id integer, product_uom_id integer, company_id integer);
+            CREATE TABLE stock_request (id serial PRIMARY KEY, product_id integer, product_uom_id integer, company_id integer, state varchar DEFAULT 'cancel');
             CREATE TABLE stock_request_allocation (
                 id serial PRIMARY KEY,
                 stock_request_id integer,
@@ -102,7 +102,7 @@ class CreateAllocationsCase(unittest.TestCase):
                 write_date timestamp
             );
             INSERT INTO product_template (uom_id) VALUES (%s);
-            INSERT INTO product_product (product_tmpl_id) VALUES (1);
+            INSERT INTO product_product (product_tmpl_id) VALUES (1), (1);
             """,
             (UNIT,),
         )
@@ -219,6 +219,31 @@ class TestWhatIsLeftAlone(CreateAllocationsCase):
         self.assertEqual(self.allocations(pending), [])
         self.assertEqual(self.allocations(twin), [])
 
+    def test_a_pending_move_with_two_possible_sources_is_left(self):
+        """A source move of the same product without allocation keeps the pairing ambiguous."""
+        _request, done, pending, _picking = self.partial_delivery(5.0, 3.0)
+        self.cr.execute("SELECT picking_id FROM stock_move WHERE id = %s", (done,))
+        self.move(self.cr.fetchone()[0], 2.0, "done")
+        with self.assertLogs(script._logger, "WARNING"):
+            script.create_allocations(self.cr)
+        self.assertEqual(self.allocations(pending), [])
+
+    def test_a_line_that_was_closed_is_left(self):
+        """A done line was closed in 19, its pending move stays as it is."""
+        request, _done, pending, _picking = self.partial_delivery(5.0, 3.0)
+        self.cr.execute("UPDATE stock_request SET state = 'done' WHERE id = %s", (request,))
+        with self.assertLogs(script._logger, "WARNING"):
+            self.assertEqual(script.create_allocations(self.cr), [])
+        self.assertEqual(self.allocations(pending), [])
+
+    def test_a_line_of_a_pack_is_left(self):
+        """The line asks for a pack and the moves carry its component: the quantities do not compare."""
+        request, _done, pending, _picking = self.partial_delivery(5.0, 3.0)
+        self.cr.execute("UPDATE stock_request SET product_id = 2 WHERE id = %s", (request,))
+        with self.assertLogs(script._logger, "WARNING"):
+            self.assertEqual(script.create_allocations(self.cr), [])
+        self.assertEqual(self.allocations(pending), [])
+
     def test_returns_and_cancelled_moves_are_not_touched(self):
         _request, done, pending, picking = self.partial_delivery(5.0, 3.0)
         returned = self.move(picking, 1.0, "assigned", returned=done)
@@ -255,7 +280,7 @@ class TestNotes(CreateAllocationsCase):
         first, second = self.request(), self.request()
         script.post_notes(self.cr, 7, 2, [first, second], self.NOTE)
         for request in (first, second):
-            self.assertEqual(self.notes(request), [("notification", 7, 2, "<p>%s</p>" % html_escape(self.NOTE))])
+            self.assertEqual(self.notes(request), [("comment", 7, 2, "<p>%s</p>" % html_escape(self.NOTE))])
 
     def test_the_lines_that_are_not_given_are_not_noted(self):
         left_alone = self.request()
