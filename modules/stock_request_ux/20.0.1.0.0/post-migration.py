@@ -46,6 +46,17 @@ CREATE_ALLOCATIONS = """
          WHERE sources = 1
            AND targets = 1
     ),
+    -- what each line already has on its moves: delivered on the done ones, asked on the others
+    covered AS (
+        SELECT o.stock_request_id,
+               sum(CASE WHEN om.state = 'done' THEN o.allocated_product_qty
+                        ELSE o.requested_product_uom_qty END) AS qty
+          FROM stock_request_allocation o
+          JOIN stock_move om ON om.id = o.stock_move_id
+         -- one pass over the allocations; filtering by the pairs would make them a CTE that the planner
+         -- underestimates, and the join with it grows with the square
+         GROUP BY o.stock_request_id
+    ),
     open_qty AS (
         SELECT p.move_id,
                p.product_qty,
@@ -57,34 +68,29 @@ CREATE_ALLOCATIONS = """
                -- after what its other moves cover: a line closed with Cancel remaining asks no more
                least(
                    a.requested_product_uom_qty - a.allocated_product_qty,
-                   r.product_uom_qty - a.allocated_product_qty - coalesce((
-                       SELECT sum(CASE WHEN om.state = 'done' THEN o.allocated_product_qty
-                                       ELSE o.requested_product_uom_qty END)
-                         FROM stock_request_allocation o
-                         JOIN stock_move om ON om.id = o.stock_move_id
-                        WHERE o.stock_request_id = r.id
-                          AND o.id != a.id
-                   ), 0)
+                   r.product_uom_qty - a.allocated_product_qty - (
+                       c.qty - CASE WHEN sm.state = 'done' THEN a.allocated_product_qty
+                                    ELSE a.requested_product_uom_qty END
+                   )
                ) AS open_qty,
                r.product_uom_id = pt.uom_id AS same_unit
           FROM paired p
           JOIN stock_request_allocation a ON a.stock_move_id = p.source_move_id
+          JOIN stock_move sm ON sm.id = a.stock_move_id
+          JOIN covered c ON c.stock_request_id = a.stock_request_id
           JOIN stock_request r ON r.id = a.stock_request_id
                               -- a line of a pack counts the pack, not the component that the move carries
                               AND r.product_id = p.product_id
           JOIN product_product pp ON pp.id = r.product_id
           JOIN product_template pt ON pt.id = pp.product_tmpl_id
     ),
-    ok_moves AS (
-        SELECT move_id
-          FROM open_qty
-         GROUP BY move_id, product_qty, state
-        HAVING bool_and(same_unit)
-           AND sum(greatest(open_qty, 0)) > 0
-           AND CASE WHEN state = 'done'
-                    THEN round(product_qty::numeric, 5) <= round(sum(greatest(open_qty, 0))::numeric, 5)
-                    ELSE round(product_qty::numeric, 5) = round(sum(greatest(open_qty, 0))::numeric, 5)
-               END
+    -- the checks of each move as window functions: a join against the aggregate grows with the square
+    scored AS (
+        SELECT o.*,
+               bool_and(o.same_unit) OVER w AS all_same_unit,
+               sum(greatest(o.open_qty, 0)) OVER w AS total_open
+          FROM open_qty o
+        WINDOW w AS (PARTITION BY o.move_id)
     ),
     to_create AS (
         SELECT o.move_id,
@@ -100,9 +106,14 @@ CREATE_ALLOCATIONS = """
                                   0)
                     ELSE 0
                END AS allocated_qty
-          FROM open_qty o
-          JOIN ok_moves k ON k.move_id = o.move_id
-         WHERE o.open_qty > 0
+          FROM scored o
+         WHERE o.all_same_unit
+           AND o.total_open > 0
+           AND CASE WHEN o.state = 'done'
+                    THEN round(o.product_qty::numeric, 5) <= round(o.total_open::numeric, 5)
+                    ELSE round(o.product_qty::numeric, 5) = round(o.total_open::numeric, 5)
+               END
+           AND o.open_qty > 0
     )
     INSERT INTO stock_request_allocation (
         stock_request_id, stock_move_id, company_id,
