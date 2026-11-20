@@ -53,15 +53,25 @@ CREATE_ALLOCATIONS = """
                a.id AS source_allocation_id,
                a.stock_request_id,
                r.company_id,
-               a.requested_product_uom_qty - a.allocated_product_qty AS open_qty,
+               -- what was open on the source move, but never more than what the line still asks
+               -- after what its other moves cover: a line closed with Cancel remaining asks no more
+               least(
+                   a.requested_product_uom_qty - a.allocated_product_qty,
+                   r.product_uom_qty - a.allocated_product_qty - coalesce((
+                       SELECT sum(CASE WHEN om.state = 'done' THEN o.allocated_product_qty
+                                       ELSE o.requested_product_uom_qty END)
+                         FROM stock_request_allocation o
+                         JOIN stock_move om ON om.id = o.stock_move_id
+                        WHERE o.stock_request_id = r.id
+                          AND o.id != a.id
+                   ), 0)
+               ) AS open_qty,
                r.product_uom_id = pt.uom_id AS same_unit
           FROM paired p
           JOIN stock_request_allocation a ON a.stock_move_id = p.source_move_id
           JOIN stock_request r ON r.id = a.stock_request_id
                               -- a line of a pack counts the pack, not the component that the move carries
                               AND r.product_id = p.product_id
-                              -- a done line was closed: by the user with Cancel remaining, or because it got everything
-                              AND r.state != 'done'
           JOIN product_product pp ON pp.id = r.product_id
           JOIN product_template pt ON pt.id = pp.product_tmpl_id
     ),
@@ -212,8 +222,10 @@ def notes_by_lang(env, request_ids):
 
 def migrate(cr, version):
     _logger.info("Running post-migration for version %s", version)
-    # the allocations have no index on the move, and every pass looks them up by move
-    with util.temp_index(cr, "stock_request_allocation", "stock_move_id"):
+    # the allocations have no index on the move nor on the line, and every pass looks them up by both
+    with util.temp_index(cr, "stock_request_allocation", "stock_move_id"), util.temp_index(
+        cr, "stock_request_allocation", "stock_request_id"
+    ):
         request_ids = create_allocations(cr)
     if request_ids:
         # The stored quantities of the lines do not depend on the new rows until they are recomputed

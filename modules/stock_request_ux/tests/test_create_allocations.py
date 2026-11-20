@@ -88,7 +88,7 @@ class CreateAllocationsCase(unittest.TestCase):
                 state varchar,
                 origin_returned_move_id integer
             );
-            CREATE TABLE stock_request (id serial PRIMARY KEY, product_id integer, product_uom_id integer, company_id integer, state varchar DEFAULT 'cancel');
+            CREATE TABLE stock_request (id serial PRIMARY KEY, product_id integer, product_uom_id integer, company_id integer, state varchar DEFAULT 'cancel', product_uom_qty numeric);
             CREATE TABLE stock_request_allocation (
                 id serial PRIMARY KEY,
                 stock_request_id integer,
@@ -119,8 +119,12 @@ class CreateAllocationsCase(unittest.TestCase):
         )
         return self.cr.fetchone()[0]
 
-    def request(self, uom=UNIT):
-        self.cr.execute("INSERT INTO stock_request (product_id, product_uom_id, company_id) VALUES (1, %s, 1) RETURNING id", (uom,))
+    def request(self, uom=UNIT, qty=5.0):
+        self.cr.execute(
+            "INSERT INTO stock_request (product_id, product_uom_id, company_id, product_uom_qty) "
+            "VALUES (1, %s, 1, %s) RETURNING id",
+            (uom, qty),
+        )
         return self.cr.fetchone()[0]
 
     def allocate(self, request_id, move_id, requested, allocated):
@@ -140,7 +144,7 @@ class CreateAllocationsCase(unittest.TestCase):
 
     def partial_delivery(self, requested=5.0, delivered=3.0):
         """A line asks for ``requested``, ``delivered`` is done and the rest waits in a backorder."""
-        request = self.request()
+        request = self.request(qty=requested)
         done_picking = self.picking()
         done_move = self.move(done_picking, delivered, "done")
         self.allocate(request, done_move, requested, delivered)
@@ -228,12 +232,21 @@ class TestWhatIsLeftAlone(CreateAllocationsCase):
             script.create_allocations(self.cr)
         self.assertEqual(self.allocations(pending), [])
 
-    def test_a_line_that_was_closed_is_left(self):
-        """A done line was closed in 19, its pending move stays as it is."""
-        request, _done, pending, _picking = self.partial_delivery(5.0, 3.0)
-        self.cr.execute("UPDATE stock_request SET state = 'done' WHERE id = %s", (request,))
+    def test_a_line_closed_with_cancel_remaining_is_left(self):
+        """Cancel remaining lowered the line to what was delivered: its pending move adds nothing, done or not."""
+        request, _done, pending, _picking = self.partial_delivery(100.0, 50.0)
+        self.cr.execute("UPDATE stock_request SET product_uom_qty = 50 WHERE id = %s", (request,))
+        self.cr.execute("UPDATE stock_move SET state = 'done' WHERE id = %s", (pending,))
         with self.assertLogs(script._logger, "WARNING"):
             self.assertEqual(script.create_allocations(self.cr), [])
+        self.assertEqual(self.allocations(pending), [])
+
+    def test_a_line_whose_rest_was_cancelled_is_left(self):
+        """What the line still asked was cancelled on another move: the pending move is not part of the line."""
+        request, _done, pending, _picking = self.partial_delivery(4.0, 1.0)
+        cancelled = self.move(self.picking(), 3.0, "cancel")
+        self.allocate(request, cancelled, 3.0, 0.0)
+        script.create_allocations(self.cr)
         self.assertEqual(self.allocations(pending), [])
 
     def test_a_line_of_a_pack_is_left(self):
