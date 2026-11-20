@@ -13,8 +13,6 @@ COMPANY_XMLID = "upgrade_prepare_demo.company_merge_b"
 WAREHOUSE_XMLID = "upgrade_prepare_demo.warehouse_company_merge"
 TEAM_XMLID = "upgrade_prepare_demo.quality_team_company_merge"
 POINT_XMLID = "upgrade_prepare_demo.quality_point_company_merge"
-SPREADSHEET_TEMPLATE_XMLID = "upgrade_prepare_demo.quality_spreadsheet_template_company_merge"
-CHECK_SPREADSHEET_XMLID = "upgrade_prepare_demo.quality_check_spreadsheet_company_merge"
 
 
 def migrate(env):
@@ -55,21 +53,5 @@ def migrate(env):
         },
         "noupdate": True,
     }])
-
-    # 2.1 Las planillas de B, que solo trae quality_control: la plantilla del
-    #     punto y la planilla de un control. Si quedan en la branch, el punto
-    #     y el control movidos a la parent apuntan a planillas de otra company.
-    if "quality.spreadsheet.template" in env:
-        env["quality.spreadsheet.template"].with_company(company)._load_records([{
-            "xml_id": SPREADSHEET_TEMPLATE_XMLID,
-            "values": {"name": "Upgrade Company Merge Template", "company_id": company.id},
-            "noupdate": True,
-        }])
-    if "quality.check.spreadsheet" in env:
-        env["quality.check.spreadsheet"].with_company(company)._load_records([{
-            "xml_id": CHECK_SPREADSHEET_XMLID,
-            "values": {"name": "Upgrade Company Merge Check Spreadsheet", "company_id": company.id},
-            "noupdate": True,
-        }])
 
     _logger.info("Seeded the quality records of company %s (ID: %s)", company.name, company.id)

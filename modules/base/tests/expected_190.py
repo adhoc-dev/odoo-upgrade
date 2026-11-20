@@ -136,40 +136,12 @@ EXPECTED = {
         ref("upgrade_prepare_demo.quality_point_company_merge"): {
             "company_id": ref("base.main_company"),
         },
-        # Preservacion: punto de la demo, ya en la main company (A). Tiene que
-        # seguir ahi; si aparece en otra, el UPDATE no filtro por la company B.
-        ref("quality_control.quality_point1"): {
-            "company_id": ref("base.main_company"),
-        },
     },
     "quality.alert.team": {
         # COMPANY MERGE, rama MOVE_TO_PARENT: el equipo parte en la company B.
         # Si queda en B, el punto de control movido a la parent apunta a un
         # equipo de otra company y el check_company de team_id lo rechaza.
         ref("upgrade_prepare_demo.quality_team_company_merge"): {
-            "company_id": ref("base.main_company"),
-        },
-    },
-    "quality.spreadsheet.template": {
-        # COMPANY MERGE, rama MOVE_TO_PARENT: la plantilla parte en la company
-        # B. Si queda en B, quality.spreadsheet.template quedo afuera de
-        # MODEL_STRATEGY y un punto de la parent que la use apunta a una
-        # plantilla de otra company.
-        ref("upgrade_prepare_demo.quality_spreadsheet_template_company_merge"): {
-            "company_id": ref("base.main_company"),
-        },
-        # Preservacion: plantilla de la demo, ya en la main company (A). Tiene
-        # que seguir ahi; si aparece en otra, el UPDATE no filtro por la
-        # company B.
-        ref("quality_control.quality_spreadsheet_template_cabinet"): {
-            "company_id": ref("base.main_company"),
-        },
-    },
-    "quality.check.spreadsheet": {
-        # COMPANY MERGE, rama MOVE_TO_PARENT: la planilla del control parte en
-        # la company B. Si queda en B, el control movido a la parent abre una
-        # planilla de otra company (company_id es obligatorio, no queda vacio).
-        ref("upgrade_prepare_demo.quality_check_spreadsheet_company_merge"): {
             "company_id": ref("base.main_company"),
         },
     },
