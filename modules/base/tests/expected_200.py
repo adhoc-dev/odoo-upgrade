@@ -237,6 +237,11 @@ AN_ABSENCE = (
     "aca habria que sembrar un xmlid en cada item del menu de un sitio y declarar el conjunto "
     "child_id del menu raiz, y antes confirmar que la base canonica tiene website instalado."
 )
+TASK_FOR_PROVIDER = (
+    "No cambia datos: lee y renderiza, y deja un aviso y una fila para que el proveedor cree una tarea "
+    "(create_record_provider). Un EXPECTED declara el valor de un registro y no puede decir eso. Lo cubre "
+    "su test de modules/base/tests/test_check_preprinted_remito_templates.py."
+)
 
 NO_CHECK = {
     "end-020-restore_active_crons.py": PENDING,
@@ -259,6 +264,7 @@ NO_CHECK = {
     "end-200-replace_success_upgrade_message.py": PENDING,
     "end-210-check_personalizations.py": PENDING,
     "end-230-drop_variant_preselect_parameter.py": GONE,
+    "end-250-check_preprinted_remito_templates.py": TASK_FOR_PROVIDER,
     "end-890-check_delayed_views.py": ONLY_WARNS,
     "end-900-uninstall_not_available_modules.py": PENDING,
     "post-01-modules-auto-discovery.py": PENDING,
