@@ -167,7 +167,7 @@ def migrate(cr, version):
                 new_domain = domain
                 for owner_model, field_name in sorted(domain_breaks):
                     new_domain = _adapt_one_domain(
-                        cr, owner_model, field_name, "ignored", model_name, new_domain,
+                        cr, [owner_model], field_name, "ignored", model_name, new_domain,
                         adapter=_rm_field_adapter, force_adapt=True,
                     )
                     if new_domain is None:
