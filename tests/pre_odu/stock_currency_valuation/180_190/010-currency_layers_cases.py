@@ -304,9 +304,10 @@ def case_usd_manual_lc(env, ctx, key, label):
     product = _product(env, ctx, key, label)
     po = _purchase(env, ctx, product, 10, 100.0, "usd")
     picking = _receive(po, rate=PICKING_RATE)
-    _landed_cost(env, ctx, picking, 150000.0, rate=LANDED_COST_RATE)
+    cost = _landed_cost(env, ctx, picking, 150000.0, rate=LANDED_COST_RATE)
     _tag(env, po, key + "_po")
     _tag(env, picking.move_ids, key + "_move_in")
+    _tag(env, cost.valuation_adjustment_lines, key + "_lc_line")
 
 
 def case_usd_manual(env, ctx, key, label):

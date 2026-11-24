@@ -9,30 +9,152 @@ _logger = logging.getLogger(__name__)
 BACKUP_TABLE = "stock_valuation_layer_currency_bu"
 
 
-def _restore_moves(cr):
-    """El valor en moneda de cada movimiento: la suma de sus capas de 18.
-
-    Es la misma regla con la que el pase arma `stock_move.value`: la capa del movimiento,
-    sus costos en destino y las diferencias de precio que colgaban de ella. En 19 el valor
-    de un movimiento va siempre en positivo, también en las salidas, así que va el absoluto.
+# Capas de 18 que el pase pudo haber sumado al `value` de un movimiento, en el orden en que
+# se prueban. Medido en una base real: casi siempre solo la capa propia, sin los costos en
+# destino; con diferencia de precio, a veces con ella y a veces sin.
+_MOVE_LAYER_SETS = SQL(
     """
+    (VALUES (1, false, false),
+            (2, true, false),
+            (3, false, true),
+            (4, true, true)) AS c(prio, with_pdiff, with_lc)
+    """
+)
+
+# Las capas de cada movimiento, separadas en la propia, las diferencias de precio y los
+# costos en destino.
+_MOVE_PARTS = """
+    SELECT move_id,
+           SUM(value) FILTER (WHERE kind = 'own') AS own_value,
+           SUM(value_in_currency) FILTER (WHERE kind = 'own') AS own_currency,
+           SUM(value) FILTER (WHERE kind = 'pdiff') AS pdiff_value,
+           SUM(value_in_currency) FILTER (WHERE kind = 'pdiff') AS pdiff_currency,
+           SUM(value) FILTER (WHERE kind = 'lc') AS lc_value,
+           SUM(value_in_currency) FILTER (WHERE kind = 'lc') AS lc_currency
+      FROM (SELECT move_id, value, value_in_currency,
+                   CASE WHEN landed_cost_id IS NOT NULL THEN 'lc'
+                        WHEN parent_layer_id IS NOT NULL THEN 'pdiff'
+                        ELSE 'own' END AS kind
+              FROM %(backup)s
+             WHERE move_id IS NOT NULL) b
+     GROUP BY move_id
+"""
+
+
+def _restore_moves(cr):
+    """El valor en moneda de cada movimiento, con las mismas capas que el pase sumó en pesos.
+
+    Los pesos que deja el pase no se tocan: el valor en moneda se arma igual. Para cada
+    movimiento se busca qué capas de 18 suman su `stock_move.value` (la propia, con o sin
+    diferencia de precio y costos en destino) y se carga la suma en moneda de esas mismas
+    capas. Así el tipo de cambio implícito es el de la capa, y si el pase cambia su regla,
+    esto lo sigue. Los costos en destino que el pase no sumó quedan en moneda en
+    `stock_valuation_adjustment_lines`. En 19 el valor de un movimiento va siempre en
+    positivo, también en las salidas, así que va el absoluto.
+    """
+    chosen = SQL(
+        """
+        WITH parts AS (""" + _MOVE_PARTS + """),
+        candidates AS (
+            SELECT p.move_id, c.prio,
+                   ABS(COALESCE(p.own_value, 0)
+                       + CASE WHEN c.with_pdiff THEN COALESCE(p.pdiff_value, 0) ELSE 0 END
+                       + CASE WHEN c.with_lc THEN COALESCE(p.lc_value, 0) ELSE 0 END) AS value,
+                   ABS(COALESCE(p.own_currency, 0)
+                       + CASE WHEN c.with_pdiff THEN COALESCE(p.pdiff_currency, 0) ELSE 0 END
+                       + CASE WHEN c.with_lc THEN COALESCE(p.lc_currency, 0) ELSE 0 END) AS value_in_currency
+              FROM parts p
+             CROSS JOIN %(layer_sets)s
+        ),
+        chosen AS (
+            SELECT DISTINCT ON (c.move_id) c.move_id, c.value_in_currency
+              FROM candidates c
+              JOIN stock_move m ON m.id = c.move_id
+             WHERE ABS(COALESCE(m.value, 0) - c.value) <= 0.01
+             ORDER BY c.move_id, c.prio
+        )
+        """,
+        backup=SQL.identifier(BACKUP_TABLE),
+        layer_sets=_MOVE_LAYER_SETS,
+    )
     cr.execute(
         SQL(
             """
+            %(chosen)s
             UPDATE stock_move m
-               SET value_in_currency = s.value_in_currency
-              FROM (SELECT move_id, ABS(SUM(value_in_currency)) AS value_in_currency
-                      FROM %(backup)s
-                     WHERE move_id IS NOT NULL
-                     GROUP BY move_id
-                    HAVING SUM(value_in_currency) <> 0) s
-             WHERE m.id = s.move_id
-               AND m.value_in_currency IS DISTINCT FROM s.value_in_currency
+               SET value_in_currency = ch.value_in_currency
+              FROM chosen ch
+             WHERE m.id = ch.move_id
+               AND ch.value_in_currency <> 0
+               AND m.value_in_currency IS DISTINCT FROM ch.value_in_currency
+            """,
+            chosen=chosen,
+        )
+    )
+    restored = cr.rowcount
+    cr.execute(
+        SQL(
+            """
+            %(chosen)s
+            SELECT p.move_id
+              FROM (SELECT DISTINCT move_id FROM %(backup)s WHERE move_id IS NOT NULL) p
+              JOIN stock_move m ON m.id = p.move_id
+             WHERE NOT EXISTS (SELECT 1 FROM chosen ch WHERE ch.move_id = p.move_id)
+             ORDER BY p.move_id
+            """,
+            chosen=chosen,
+            backup=SQL.identifier(BACKUP_TABLE),
+        )
+    )
+    unmatched = [move_id for (move_id,) in cr.fetchall()]
+    return restored, unmatched
+
+
+def _check_landed_costs(cr):
+    """Compara la cotización de los costos en destino contra las capas de 18.
+
+    En 19 el valor en moneda vive en
+    `stock_valuation_adjustment_lines.additional_landed_cost_in_currency`, que el módulo
+    calcula en el `-u` con la cotización del costo en destino. Se compara la cotización
+    (moneda sobre pesos) y no el importe: con stock ya vendido, la capa de 18 lleva solo la
+    parte del stock que quedaba y la línea de 19, el costo entero. No se escribe: solo se
+    avisa qué costos en destino no coinciden, por movimiento.
+    """
+    if not util.column_exists(cr, "stock_valuation_adjustment_lines", "additional_landed_cost_in_currency"):
+        _logger.warning("Sin additional_landed_cost_in_currency: no se compararon los costos en destino")
+        return []
+    cr.execute(
+        SQL(
+            """
+            WITH layers AS (
+                SELECT landed_cost_id, move_id,
+                       SUM(value) AS value, SUM(value_in_currency) AS value_in_currency
+                  FROM %(backup)s
+                 WHERE landed_cost_id IS NOT NULL AND move_id IS NOT NULL
+                 GROUP BY landed_cost_id, move_id
+                HAVING SUM(value) <> 0
+            ),
+            lines AS (
+                SELECT cost_id, move_id, COUNT(*) AS line_count,
+                       SUM(additional_landed_cost) AS value,
+                       SUM(additional_landed_cost_in_currency) AS value_in_currency
+                  FROM stock_valuation_adjustment_lines
+                 GROUP BY cost_id, move_id
+            )
+            SELECT l.landed_cost_id, l.move_id,
+                   ROUND(a.value * l.value_in_currency / l.value, 2) AS expected,
+                   a.value_in_currency
+              FROM layers l
+              LEFT JOIN lines a ON a.cost_id = l.landed_cost_id AND a.move_id = l.move_id
+             WHERE a.cost_id IS NULL
+                -- each line is rounded on its own, so allow one cent per line
+                OR ABS(a.value * l.value_in_currency / l.value - a.value_in_currency) > 0.01 * a.line_count
+             ORDER BY l.landed_cost_id, l.move_id
             """,
             backup=SQL.identifier(BACKUP_TABLE),
         )
     )
-    return cr.rowcount
+    return cr.fetchall()
 
 
 def _restore_revaluations(cr):
@@ -108,8 +230,24 @@ def migrate(cr, version):
         _logger.warning("No existe %s: el valor en moneda queda vacío. ¿Corrió el pre-odoo?", BACKUP_TABLE)
         return
 
-    moves = _restore_moves(cr)
+    moves, unmatched = _restore_moves(cr)
     _logger.info("Valor en moneda cargado en %s movimientos", moves)
+    if unmatched:
+        # Ninguna combinación de sus capas de 18 da el valor en pesos que dejó el pase: el
+        # valor en moneda queda sin cargar y hay que mirarlo a mano.
+        _logger.warning(
+            "%s movimientos sin valor en moneda: sus capas no suman el valor que dejó el pase. Primeros: %s",
+            len(unmatched),
+            unmatched[:20],
+        )
+
+    lc_diffs = _check_landed_costs(cr)
+    if lc_diffs:
+        _logger.warning(
+            "%s costos en destino con otra cotización que en 18 (costo, movimiento, esperado, 19). Primeros: %s",
+            len(lc_diffs),
+            lc_diffs[:20],
+        )
 
     restored, revaluations = _restore_revaluations(cr)
     _logger.info("Valor en moneda cargado en %s de %s revalorizaciones", restored, revaluations)

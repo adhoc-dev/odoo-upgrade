@@ -2,10 +2,12 @@
 #
 # 18.0: stock.valuation.layer.value_in_currency, una capa por movimiento más las de costo en
 #       destino y diferencia de precio, que cuelgan de la capa del movimiento.
-# 19.0: stock.move.value_in_currency, la suma de esas capas en positivo. stock.move.value, en
-#       pesos, tiene que cerrar con la misma regla: stock_currency_valuation de 19 le resta los
-#       costos en destino para sacar la base. Por eso cada movimiento verifica los dos valores:
-#       si solo cierra la moneda, el valor en moneda no se corresponde con el de pesos.
+# 19.0: stock.move.value_in_currency, la suma en positivo de las mismas capas que el pase sumó
+#       en stock.move.value. Los pesos los deja el pase y no se tocan: hoy suma solo la capa
+#       propia, sin los costos en destino. Por eso cada movimiento verifica los dos valores:
+#       si solo cierra la moneda, el valor en moneda no se corresponde con el de pesos. El
+#       valor en moneda de los costos en destino queda en
+#       stock.valuation.adjustment.lines.additional_landed_cost_in_currency.
 #
 # El pase borra las capas. Lo carga modules/stock_currency_valuation/19.0.0.0/post-migration.py
 # desde el respaldo que deja scripts/pre_odoo/180_190/060-backup_currency_valuation_layers.py.
@@ -20,13 +22,13 @@
 EXPECTED = {
     "stock.move": {
         # Entrada con cotización manual en el remito y un costo en destino con la suya: 10 u a
-        # USD 100 más ARS 150.000 / 1.480. Verifica la suma de la capa del movimiento con la del
-        # costo en destino; si viene 1000.0, el costo en destino no se sumó. En pesos, ARS
-        # 1.450.000 de la capa más 150.000 del costo en destino; si viene 1450000.0, el pase
-        # dejó solo la capa propia.
+        # USD 100 a 1.450. El pase deja en pesos solo la capa propia, y la moneda va con la
+        # misma forma. Si viene 1101.35, se sumó el costo en destino que el pase no sumó en
+        # pesos; si viene 1600000.0, el pase empezó a sumarlo y el valor en moneda tiene que
+        # seguirlo (1101.35).
         ref("upgrade_prepare_demo.scv_c02_move_in"): {
-            "value": 1600000.0,
-            "value_in_currency": 1101.35,
+            "value": 1450000.0,
+            "value_in_currency": 1000.0,
         },
         # Entrada simple con cotización manual: 10 u a USD 100 a 1.450, una sola capa. Si viene
         # 0.0, el respaldo no llegó o el movimiento no se encontró.
@@ -68,17 +70,28 @@ EXPECTED = {
             "value_in_currency": 0.0,
         },
         # Ingreso de importación con tres productos y tres costos en destino de varias líneas,
-        # repartidos por cantidad sobre 20 u (ARS 10.000 por unidad). En pesos: la capa de cada
-        # movimiento a 1.450 más su parte de los costos en destino. Si viene solo la capa
-        # (1450000.0, 1450000.0 y 362500.0), el pase no sumó los costos en destino.
+        # repartidos por cantidad sobre 20 u. El pase deja en pesos la capa de cada movimiento
+        # a 1.450, sin los costos en destino, y la moneda va con la misma forma: USD 1.000,
+        # 1.000 y 250. Si viene más, se sumaron costos en destino que el pase no sumó.
         ref("upgrade_prepare_demo.scv_c18_move_in"): {
-            "value": 1550000.0,
+            "value": 1450000.0,
+            "value_in_currency": 1000.0,
         },
         ref("upgrade_prepare_demo.scv_c18b_move_in"): {
-            "value": 1500000.0,
+            "value": 1450000.0,
+            "value_in_currency": 1000.0,
         },
         ref("upgrade_prepare_demo.scv_c18c_move_in"): {
-            "value": 412500.0,
+            "value": 362500.0,
+            "value_in_currency": 250.0,
+        },
+    },
+    "stock.valuation.adjustment.lines": {
+        # El costo en destino de c02 en moneda: ARS 150.000 a la cotización manual del costo
+        # en destino, 1.480. Es lo que el movimiento no lleva y el módulo de 19 le suma.
+        ref("upgrade_prepare_demo.scv_c02_lc_line"): {
+            "additional_landed_cost": 150000.0,
+            "additional_landed_cost_in_currency": 101.35,
         },
     },
 }
