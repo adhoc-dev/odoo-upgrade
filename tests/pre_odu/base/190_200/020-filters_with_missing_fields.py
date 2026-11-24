@@ -63,8 +63,8 @@ FILTERS = {
         '["name desc", "-id", "__count desc"]',
     ),
     # De un modelo que se fue: upgrade-util pasa los favoritos del cliente a
-    # "_unknown", que existe en el registro pero no tiene el campo. Se informa y
-    # no se toca.
+    # "_unknown", que existe en el registro pero no tiene el campo. Se archiva
+    # tal como esta.
     "upgrade_prepare_demo.filter_unknown_model": (
         "Upgrade: favorite of a removed model",
         "[('%s', '=', 'a')]" % MISSING,

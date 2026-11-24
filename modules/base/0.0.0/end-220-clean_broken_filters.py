@@ -9,9 +9,9 @@ order, the pivot and graph keys, and the sort.
 Only the broken filters are written, one by one: no other domain (actions, rules, views)
 is touched, and a filter that fails does not stop the others. A filter left without any
 real condition is archived: kept as is it would show every record (AND) or none (OR). A
-filter it cannot read, or of a model that is gone, is reported and left as is.
-A filter of ``_unknown`` counts as one of a model that is gone: upgrade-util moves there the
-filters of the customer when a jump removes their model.
+filter of ``_unknown`` is archived as is: upgrade-util moves there the filters of the
+customer when a jump removes their model, so no view opens them anymore. A filter it cannot
+read, or of another model that is gone, is reported and left as is.
 
 In ``modules/base/0.0.0`` so it runs after the modules are loaded and after the renames of
 the other scripts. Only on the last jump of a series: on an intermediate database a field
@@ -137,7 +137,12 @@ def migrate(cr, version):
     fixed, archived, orphan, not_parsed, not_cleaned = [], [], [], [], []
     cr.execute("SELECT id, model_id, domain, context, sort FROM ir_filters ORDER BY id")
     for filter_id, model_name, domain, context_s, sort_s in cr.fetchall():
-        if model_name == "_unknown" or model_name not in env:
+        if model_name == "_unknown":
+            cr.execute("UPDATE ir_filters SET active = false WHERE id = %s AND active", (filter_id,))
+            if cr.rowcount:
+                archived.append((filter_id, model_name, ["model removed"]))
+            continue
+        if model_name not in env:
             orphan.append((filter_id, model_name))
             continue
         try:
@@ -197,7 +202,7 @@ def migrate(cr, version):
     if fixed:
         log_message(cr, "Favorites cleaned of fields missing in this database: %s" % fixed, "info")
     if archived:
-        log_message(cr, "Favorites archived, no condition was left: %s" % archived, "info")
+        log_message(cr, "Favorites archived: %s" % archived, "info")
     if orphan:
         log_message(cr, "Favorites of models missing in this database, not touched: %s" % orphan, "warning")
     if not_parsed:
