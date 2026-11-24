@@ -10,12 +10,12 @@ TARGET_VERSION = 20
 
 
 def migrate(cr, version):
-    """Back up the cron that sends the pending DTEs to the SII, when the client changed it.
+    """Back up the cron that sends the pending DTEs to the SII.
 
     Odoo 20 drops l10n_cl_edi.ir_cron_send_send, and saas_client_l10n_cl now depends on
-    l10n_cl_edi_fix_send_dte, which brings its own cron with another xmlid. Only a cron that
-    is inactive or runs at another interval than the default of 19 (once a day) is backed up:
-    the others take the default of the new cron.
+    l10n_cl_edi_fix_send_dte, which brings its own cron with another xmlid and runs every hour.
+    The cron of 19 is always backed up, so each database keeps the schedule it had (once a day
+    unless the client changed it) and not the hourly one of the new cron.
 
     Plain SQL on purpose: this runs on the old database, with the Odoo of the source version.
     """
@@ -33,7 +33,6 @@ def migrate(cr, version):
            AND d.res_id = c.id
          WHERE d.module = 'l10n_cl_edi'
            AND d.name = 'ir_cron_send_send'
-           AND (NOT c.active OR c.interval_number <> 1 OR c.interval_type <> 'days')
         """,
     )
-    _logger.info("Backed up %s changed SII send cron into %s", count, BACKUP_TABLE)
+    _logger.info("Backed up %s SII send cron into %s", count, BACKUP_TABLE)

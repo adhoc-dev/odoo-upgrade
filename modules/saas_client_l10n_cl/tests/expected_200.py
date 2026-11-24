@@ -2,14 +2,13 @@
 #
 # En 20 el modulo depende de l10n_cl_edi_fix_send_dte (bmya), que trae dos crons.
 #
-#   cron de envio al SII de 19 cambiado por el cliente -> mismo intervalo en el cron de bmya
+#   cron de envio al SII de 19 -> mismo intervalo en el cron de bmya, cambiado o no
 #   cron de mails de aceptados con reparos             -> apagado
 #
 # El cambio del cron de 19 lo siembra tests/pre_odu/saas_client_l10n_cl/190_200/
 # 010-send_dte_cron_changed.py, y lo respalda scripts/pre_odoo/190_200/
-# 020-l10n_cl_edi_send_dte_cron.py antes del pase. La rama del cron sin cambios (queda
-# en el default de bmya, cada una hora) no entra en la misma base: la cubre el
-# test de pre_odoo, que no lo respalda.
+# 020-l10n_cl_edi_send_dte_cron.py antes del pase. El respaldo es siempre, asi que
+# el cron sin cambios (diario) se copia igual: lo cubre el test de pre_odoo.
 #
 # Solo se declara el estado esperado DESPUES del -u (ADR 0007).
 

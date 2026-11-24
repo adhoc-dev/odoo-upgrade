@@ -43,11 +43,11 @@ def _restore_send_cron(cr):
     cr.execute(SQL("SELECT active, interval_number, interval_type, nextcall FROM %s", SQL.identifier(BACKUP_TABLE)))
     row = cr.fetchone()
     if not row:
-        _logger.info("The SII send cron was not changed in 19: it keeps the default of %s", SEND_CRON)
+        _logger.info("No SII send cron of 19 was backed up: %s keeps its default", SEND_CRON)
         return
     cron_id = util.ref(cr, SEND_CRON)
     if not cron_id:
-        _logger.warning("%s not found: the changed SII send cron of 19 is not restored", SEND_CRON)
+        _logger.warning("%s not found: the SII send cron of 19 is not restored", SEND_CRON)
         return
     active, interval_number, interval_type, nextcall = row
     cr.execute(

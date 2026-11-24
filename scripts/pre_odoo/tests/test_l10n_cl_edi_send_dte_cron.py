@@ -43,7 +43,7 @@ class TestSendDteCronBackup(OldDatabaseCase):
         super().setUp()
         self.install("saas_client_l10n_cl")
         self.xmlid("l10n_cl_edi", "ir_cron_send_send", "ir.cron", self.CRON)
-        # Another changed cron: only the one of l10n_cl_edi is backed up.
+        # Another cron: only the one of l10n_cl_edi is backed up.
         self.cron(8, True, 4, "hours")
 
     def cron(self, cron_id, active, interval_number, interval_type):
@@ -66,10 +66,10 @@ class TestSendDteCronBackup(OldDatabaseCase):
         cron_backup.migrate(self.cr, "19.0")
         self.assertEqual(self.backup(), [(self.CRON, False, 1, "days")])
 
-    def test_skips_the_default_of_19(self):
+    def test_backs_up_the_default_of_19(self):
         self.cron(self.CRON, True, 1, "days")
         cron_backup.migrate(self.cr, "19.0")
-        self.assertEqual(self.backup(), [])
+        self.assertEqual(self.backup(), [(self.CRON, True, 1, "days")])
 
     def test_skips_without_the_module(self):
         self.cron(self.CRON, True, 4, "hours")
@@ -88,7 +88,7 @@ class TestSendDteCronBackup(OldDatabaseCase):
         cron_backup.migrate(self.cr, "19.0")
         self.cr.execute("UPDATE ir_cron SET interval_number = 1, interval_type = 'days' WHERE id = %s", (self.CRON,))
         cron_backup.migrate(self.cr, "19.0")
-        self.assertEqual(self.backup(), [])
+        self.assertEqual(self.backup(), [(self.CRON, True, 1, "days")])
 
 
 if __name__ == "__main__":
