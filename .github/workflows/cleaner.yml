@@ -28,7 +28,7 @@ jobs:
       )
     steps:
       - name: Delete branch from base and fork repos
-        uses: actions/github-script@v6
+        uses: actions/github-script@v9
         id: pr_data_fetcher
         with:
           script: |
@@ -110,7 +110,7 @@ jobs:
             core.setOutput('is_fork', pullRequest.head.repo.full_name !== context.repo.owner + '/' + context.repo.repo);
 
       - name: Delete branch from the base repository
-        uses: actions/github-script@v6
+        uses: actions/github-script@v9
         if: ${{ steps.pr_data_fetcher.outputs.validation_passed == 'true' }}
         env:
           BRANCH_NAME: ${{ steps.pr_data_fetcher.outputs.base_branch_name }}
@@ -149,7 +149,7 @@ jobs:
 
       - name: Delete branch from the fork repository (adhoc-dev)
         if: ${{ steps.app-token.outcome == 'success' }}
-        uses: actions/github-script@v6
+        uses: actions/github-script@v9
         env:
           BRANCH_NAME: ${{ steps.pr_data_fetcher.outputs.base_branch_name }}
         with:

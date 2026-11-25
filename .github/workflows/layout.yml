@@ -9,7 +9,7 @@ jobs:
   root-folders:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # A rebase over the move keeps a PR's new files at their old path, where nothing runs them
       - name: Only the known folders at the root
         run: |
@@ -27,7 +27,7 @@ jobs:
       contents: read
       statuses: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Runbot does not run every jump on every PR; this lists the scripts without their check on each push
       - name: Every script has its declarative check
         id: missing_checks
