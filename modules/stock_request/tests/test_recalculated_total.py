@@ -125,6 +125,12 @@ class TestCount(RecalculatedTotalCase):
         post.migrate(self.cr, "19.0.1.0.4")
         self.assertEqual(self.note(), 2)
 
+    def test_the_copy_is_dropped_once_counted(self):
+        self.request(5.0)
+        pre.migrate(self.cr, "19.0.1.0.4")
+        post.migrate(self.cr, "19.0.1.0.4")
+        self.assertFalse(self.copy_exists())
+
     def test_a_request_recomputed_to_the_same_value_does_not_count(self):
         request_id = self.request(5.0)
         pre.migrate(self.cr, "19.0.1.0.4")

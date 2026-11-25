@@ -52,3 +52,4 @@ def migrate(cr, version):
     _logger.info("stock_request: %s requests changed their done quantity", total)
     # Also with 0: whether the note shows up then is the message's call.
     add_customer_note(cr, {"stock_request_recalculated_total": total})
+    cr.execute(SQL("DROP TABLE %s", SQL.identifier(BACKUP_TABLE)))
