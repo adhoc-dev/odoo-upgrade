@@ -20,7 +20,9 @@ def migrate(cr, version):
     valor en moneda se pierde.
 
     Se guarda, por capa, el movimiento al que el pase suma su valor: el propio, o el de la
-    capa padre en la diferencia de precio de la factura, que en 18 no tiene movimiento. Las
+    capa padre en la diferencia de precio de la factura, que en 18 no tiene movimiento. Se
+    guarda también si la capa es de un costo en destino o cuelga de otra capa, para que del
+    otro lado se pueda armar el valor del movimiento con las mismas capas que el pase. Las
     revalorizaciones (sin movimiento ni capa padre ni costo en destino) se marcan aparte,
     con producto, descripción y fecha, que es como se las encuentra en product.value. Entran
     también las capas en cero: el costo unitario de una revalorización se reconstruye con la
@@ -51,6 +53,8 @@ def migrate(cr, version):
                l.product_id,
                l.lot_id,
                COALESCE(l.stock_move_id, p.stock_move_id) AS move_id,
+               l.stock_landed_cost_id AS landed_cost_id,
+               l.stock_valuation_layer_id AS parent_layer_id,
                (l.stock_move_id IS NULL
                 AND l.stock_valuation_layer_id IS NULL
                 AND l.stock_landed_cost_id IS NULL) AS is_revaluation,
