@@ -127,6 +127,29 @@ class TestModuleChanges(unittest.TestCase):
         merged = [c.args[1:] for c in merge_module.call_args_list]
         self.assertEqual(merged, [("used_old", "used_into"), ("leftover_old", "active_into")])
 
+    def test_merge_with_a_module_not_installed_removes_the_old_one(self):
+        # product_catalog_tree_stock -> product_catalog_tree_purchase: a base without purchase
+        # must not get it installed along with the target
+        self._modules(
+            ("stock_old", "installed"),
+            ("purchase_into", "uninstalled"),
+            ("purchase", "uninstalled"),
+            ("both_old", "installed"),
+            ("both_into", "uninstalled"),
+            ("sale", "installed"),
+        )
+        merges = [("stock_old", "purchase_into", ("purchase",)), ("both_old", "both_into", ("sale",))]
+        with (
+            self._discovery_registering(),
+            mock.patch.object(util, "merge_module") as merge_module,
+            mock.patch.object(util, "remove_module") as remove_module,
+        ):
+            module_changes.apply_module_changes(self.cr, "20.0.1.0", merges=merges)
+        self.assertEqual([c.args[1:] for c in remove_module.call_args_list], [("stock_old",)])
+        self.assertEqual([c.args[1:] for c in merge_module.call_args_list], [("both_old", "both_into")])
+        self.assertEqual(self._state("purchase_into"), "uninstalled")
+        self.assertEqual(self._state("both_into"), "installed")
+
     def test_discovery_skips_missing_dependencies_and_restores_the_patch(self):
         def new_module(cr, module, deps=(), **kwargs):
             raise util.UnknownModuleError(module)
@@ -161,6 +184,15 @@ class TestLoadModuleChanges(unittest.TestCase):
         self.assertEqual(merges, [("old", "into")])
         self.assertEqual(renames, [])
         self.assertEqual(xmlid_renames, [("a.old", "a.new")])
+
+    def test_a_merge_can_name_the_modules_it_needs_installed(self):
+        merges, _renames, _xmlid_renames = self._load({"merge_modules": [["old", "into", ["purchase"]]]})
+        self.assertEqual(merges, [("old", "into", ("purchase",))])
+        for merge in (["old", "into", []], ["old", "into", [1]], ["old", "into", ["purchase"], "extra"]):
+            with self.subTest(merge=merge), self.assertRaisesRegex(ValueError, "modules it needs installed"):
+                self._load({"merge_modules": [merge]})
+        with self.assertRaisesRegex(ValueError, r"pairs of names$"):
+            self._load({"renamed_modules": [["old", "new", ["purchase"]]]})
 
     def test_a_jump_without_the_file_has_no_changes_and_warns(self):
         with self.assertLogs(module_changes._logger, "WARNING"):
