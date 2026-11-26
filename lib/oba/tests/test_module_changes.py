@@ -38,7 +38,8 @@ SCHEMA = """
         id serial PRIMARY KEY,
         name varchar NOT NULL CONSTRAINT ir_module_module_name_uniq UNIQUE,
         state varchar,
-        latest_version varchar
+        latest_version varchar,
+        demo boolean
     );
     CREATE TABLE ir_module_module_dependency (module_id integer, name varchar);
     CREATE TABLE ir_model_data (module varchar, name varchar, model varchar);
@@ -47,9 +48,14 @@ SCHEMA = """
 
 
 class Cursor(psycopg2.extensions.cursor):
-    """``rename_module`` reads the database name to look up its registry."""
+    """``rename_module`` reads the database name to look up its registry, and ``format_query``
+    of upgrade-util the cursor that Odoo wraps in ``_obj``."""
 
     dbname = TEST_DB
+
+    @property
+    def _obj(self):
+        return self
 
 
 class TestModuleChanges(unittest.TestCase):
