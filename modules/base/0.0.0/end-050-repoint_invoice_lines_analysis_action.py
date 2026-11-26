@@ -11,7 +11,7 @@ import logging
 
 from odoo.tools import SQL
 from odoo.upgrade import util
-from oba import log_message, should_run
+from oba import log_message, should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ FIRST_TARGET_VERSION = 20
 NEW_NAMES = ["Invoices Analysis", "Análisis de facturas"]
 
 
+@timed
 def migrate(cr, version):
     # Only on a major upgrade. The table stays until the next pre_odoo run: a repeated -u
     # applies it again, and a later -u of base in the same version does not.

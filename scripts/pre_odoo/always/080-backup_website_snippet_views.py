@@ -1,6 +1,6 @@
 import logging
 
-from oba import create_backup, should_back_up
+from oba import create_backup, should_back_up, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ TARGET_KEYS = (
 )
 
 
+@timed
 def migrate(cr, version):
     """Back up the website copies of some shop and login views before the database is sent to Odoo.
 

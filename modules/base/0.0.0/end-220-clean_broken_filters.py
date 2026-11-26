@@ -25,7 +25,7 @@ import logging
 
 from odoo.upgrade import util
 
-from oba import log_message, should_run
+from oba import log_message, should_run, timed
 
 try:
     from odoo.orm.domains import CONDITION_OPERATORS
@@ -121,6 +121,7 @@ def _sort_path(item):
     return words[0].lstrip("-") if words else ""
 
 
+@timed
 def migrate(cr, version):
     if not should_run(cr, version, FIRST_TARGET_VERSION, position="last"):
         return

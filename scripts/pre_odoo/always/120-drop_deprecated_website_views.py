@@ -1,6 +1,6 @@
 import logging
 
-from oba import should_run_pre_odoo
+from oba import should_run_pre_odoo, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -11,6 +11,7 @@ FIRST_TARGET_VERSION = 20
 DEPRECATED_KEY = "%_depreciada%"
 
 
+@timed
 def migrate(cr, version):
     """Drop the website views deprecated on the previous upgrade, before the database is sent to Odoo.
 

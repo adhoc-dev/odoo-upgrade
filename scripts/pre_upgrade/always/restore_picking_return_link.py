@@ -2,6 +2,7 @@ import logging
 
 from odoo.tools import SQL
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ _RETURN_SOURCE = SQL(
 )
 
 
+@timed
 def migrate(cr, version):
     """Reconstruye el vínculo entre una devolución y la entrega de la que salió.
 

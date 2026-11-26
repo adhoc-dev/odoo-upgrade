@@ -1,6 +1,6 @@
 import logging
 
-from oba import create_backup, should_back_up
+from oba import create_backup, should_back_up, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -13,6 +13,7 @@ FIRST_TARGET_VERSION = 20
 COLUMNS = ("product_id", "lot_id")
 
 
+@timed
 def migrate(cr, version):
     """Back up the product and the lot of the tickets before the database is sent to Odoo.
 

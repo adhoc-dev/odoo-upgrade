@@ -1,6 +1,6 @@
 import logging
 
-from oba import create_backup, should_back_up
+from oba import create_backup, should_back_up, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -20,6 +20,7 @@ BACKUP_TABLE = "website_add_to_cart_action_bu"
 FIRST_TARGET_VERSION = 20
 
 
+@timed
 def migrate(cr, version):
     """Respalda el add_to_cart_action de cada sitio antes de que Odoo borre la columna.
 

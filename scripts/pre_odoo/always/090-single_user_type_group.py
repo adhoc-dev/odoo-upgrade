@@ -1,6 +1,6 @@
 import logging
 
-from oba import log_message, should_run_pre_odoo
+from oba import log_message, should_run_pre_odoo, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -16,6 +16,7 @@ PORTAL_BACKEND_GROUPS = (
 )
 
 
+@timed
 def migrate(cr, version):
     """Leave each user in a single user type group before the database is sent to Odoo.
 

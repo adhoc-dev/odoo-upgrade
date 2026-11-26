@@ -12,7 +12,7 @@ installed.
 
 import logging
 
-from oba import should_run
+from oba import should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ PARAMETER = "website_sale_stock_variant_preselect.enabled"
 FIRST_TARGET_VERSION = 20
 
 
+@timed
 def migrate(cr, version):
     if not should_run(cr, version, FIRST_TARGET_VERSION, modules=[MODULE]):
         return

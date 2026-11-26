@@ -1,6 +1,6 @@
 import logging
 
-from oba import create_backup, should_back_up
+from oba import create_backup, should_back_up, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -10,6 +10,7 @@ FIRST_TARGET_VERSION = 20
 LAST_TARGET_VERSION = 20
 
 
+@timed
 def migrate(cr, version):
     """Guarda la ruta de la plantilla de los reportes Aeroo antes de mandar la base a Odoo.
 

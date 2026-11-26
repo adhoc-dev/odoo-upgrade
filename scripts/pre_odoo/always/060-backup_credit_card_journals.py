@@ -1,6 +1,6 @@
 import logging
 
-from oba import create_backup, should_back_up
+from oba import create_backup, should_back_up, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -11,6 +11,7 @@ FIRST_TARGET_VERSION = 20
 CREDIT_CARD_CODES = ("inbound_credit_card", "outbound_credit_card")
 
 
+@timed
 def migrate(cr, version):
     """Back up the type of the credit card journals before the database is sent to Odoo.
 

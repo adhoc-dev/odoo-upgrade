@@ -3,7 +3,7 @@ import logging
 from odoo.tools import SQL
 from odoo.upgrade import util
 
-from oba import log_message
+from oba import log_message, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -12,6 +12,7 @@ MODULE_GROUP = "product_management_group.group_products_management"
 NATIVE_GROUP = "product.group_product_manager"
 
 
+@timed
 def migrate(cr, version):
     """Move the bases from product_management_group to the native Product / Create group.
 

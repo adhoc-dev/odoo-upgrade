@@ -2,10 +2,12 @@ import logging
 
 from odoo.tools import SQL
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
 
+@timed
 def migrate(cr, version):
     """In 20.0 the activity type field uses the badges_many2one widget and base_ux
     adopts the native badges. Its old views look for selection_badge_icons, and while

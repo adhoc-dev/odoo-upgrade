@@ -11,7 +11,7 @@ In ``modules/base/0.0.0`` so it runs on every jump, after the modules are loaded
 import logging
 
 from odoo import release
-from oba import log_message, request_context, should_run
+from oba import log_message, request_context, should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ _logger = logging.getLogger(__name__)
 FIRST_TARGET_VERSION = 20
 
 
+@timed
 def migrate(cr, version):
     # Only on a major upgrade.
     if not should_run(cr, version, FIRST_TARGET_VERSION, position="last", parameter="deactivate_views_ids"):

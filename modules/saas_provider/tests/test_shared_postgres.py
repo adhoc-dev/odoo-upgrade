@@ -26,6 +26,9 @@ except ImportError:
 
     import odoo.upgrade  # noqa: E402
 
+# The scripts import oba
+sys.path.insert(0, os.path.join(REPO, "lib"))
+
 
 def _load_script():
     """Load the script by path: a version folder is not a package and the name has a dash."""

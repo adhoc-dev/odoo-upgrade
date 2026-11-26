@@ -15,11 +15,12 @@ and before ``end-900``. The end scripts of the other modules run later, in graph
 import logging
 
 from odoo.upgrade import util
-from oba import log_message, should_run
+from oba import log_message, should_run, timed
 
 _logger = logging.getLogger(__name__)
 
 
+@timed
 def migrate(cr, version):
     if not should_run(cr, version):
         return

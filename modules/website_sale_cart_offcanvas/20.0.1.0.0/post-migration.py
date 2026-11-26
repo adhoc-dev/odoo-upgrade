@@ -3,7 +3,7 @@ import logging
 from odoo.tools import SQL
 from odoo.upgrade import util
 
-from oba import add_customer_note
+from oba import add_customer_note, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -14,6 +14,7 @@ BACKUP_TABLE = "website_add_to_cart_action_bu"
 ENABLED_IN_19 = "open_offcanvas"
 
 
+@timed
 def migrate(cr, version):
     """Avisa a qué sitios se les activó solo el panel lateral del carrito.
 

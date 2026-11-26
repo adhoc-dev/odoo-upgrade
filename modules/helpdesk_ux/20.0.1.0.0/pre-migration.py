@@ -1,10 +1,12 @@
 import logging
 
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
 
+@timed
 def migrate(cr, version):
     # Up to 19 the "Don't Send Stage Email" toggle stayed on when the ticket moved to a stage
     # without an email template, and then skipped the email of a later stage. In 20 any stage

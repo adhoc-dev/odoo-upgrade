@@ -1,10 +1,12 @@
 import logging
 
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
 
+@timed
 def migrate(cr, version):
     # The auto-close reminder is new in 20 and is born on for every team. Up to 19 no team sent
     # it: keep it off, the closing notice already goes in the stage emails.

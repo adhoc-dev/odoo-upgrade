@@ -14,7 +14,7 @@ In ``modules/base/0.0.0`` so it runs on every jump, after the modules are loaded
 
 import logging
 
-from oba import should_run
+from oba import should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -22,6 +22,7 @@ _logger = logging.getLogger(__name__)
 FIRST_TARGET_VERSION = 17
 
 
+@timed
 def migrate(cr, version):
     if not should_run(cr, version, FIRST_TARGET_VERSION, modules=["mail"]):
         return

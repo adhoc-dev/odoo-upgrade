@@ -1,6 +1,7 @@
 import logging
 
 from odoo.tools import SQL
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
@@ -11,6 +12,7 @@ NPS_TEMPLATES = (
 )
 
 
+@timed
 def migrate(cr, version):
     """Change t-esc into t-out in the arch of the NPS survey templates.
 

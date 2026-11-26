@@ -1,10 +1,12 @@
 import logging
 
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
 
+@timed
 def migrate(cr, version):
     """Make account.analytic.account.name not translatable, as saas_provider declares in 20.
 

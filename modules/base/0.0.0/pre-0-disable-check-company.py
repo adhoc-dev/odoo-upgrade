@@ -8,7 +8,7 @@ import logging
 
 from odoo.models import BaseModel
 
-from oba import should_run
+from oba import should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ def _check_company(self, fnames=None):
         _logger.warning("incompatible companies. This is what we get:\n%s", e)
 
 
+@timed
 def migrate(cr, version):
     if not should_run(cr, version):
         return

@@ -3,7 +3,7 @@ import re
 
 from odoo.tools import SQL
 from odoo.upgrade import util
-from oba import add_customer_note
+from oba import add_customer_note, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -75,6 +75,7 @@ def _missing_fields(env, model_name, raw):
     return sorted(path for path in paths if not _path_exists(env, model_name, path))
 
 
+@timed
 def migrate(cr, version):
     """Make the saved domains of the order types work in Odoo 20.
 

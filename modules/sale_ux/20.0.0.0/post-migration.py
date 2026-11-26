@@ -1,6 +1,7 @@
 import logging
 
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
@@ -10,6 +11,7 @@ UPDATE_PRICES_PARAM = "sale_ux.update_prices_automatically"
 FALSE_VALUES = ("", "false", "0", "no")
 
 
+@timed
 def migrate(cr, version):
     """Pass the "show product image on the quotation report" setting to the native one.
 

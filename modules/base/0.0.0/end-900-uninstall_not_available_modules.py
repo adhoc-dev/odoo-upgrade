@@ -27,7 +27,7 @@ import requests
 
 from odoo import release
 from odoo.upgrade import util
-from oba import add_customer_note, log_message, request_context, set_breaks
+from oba import add_customer_note, log_message, request_context, set_breaks, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -38,6 +38,7 @@ MIGRATING_STATE_ID = 2  # adhoc.module.state "Migrando"
 FIRST_TARGET_VERSION = 20
 
 
+@timed
 def migrate(cr, version):
     if release.version_info[0] < FIRST_TARGET_VERSION:
         return

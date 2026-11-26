@@ -10,11 +10,12 @@ import logging
 from odoo.upgrade.util.const import ENVIRON
 from odoo.upgrade.util.modules import _force_install_module, _force_upgrade_of_fresh_module
 
-from oba import run_auto_discovery
+from oba import run_auto_discovery, timed
 
 _logger = logging.getLogger(__name__)
 
 
+@timed
 def migrate(cr, version):
     force_installs = ENVIRON["__modules_auto_discovery_force_installs"]
     _logger.info("Pending installs: %s", sorted(force_installs))

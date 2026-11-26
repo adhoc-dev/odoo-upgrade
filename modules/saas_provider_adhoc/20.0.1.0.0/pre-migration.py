@@ -2,6 +2,7 @@ import logging
 
 from odoo.tools import SQL
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ REMOVED_FIELDS = [
 ]
 
 
+@timed
 def migrate(cr, version):
     """Remove the unpaid invoices communications, deprecated in 20.
 

@@ -14,7 +14,7 @@ has its own copy.
 
 import logging
 
-from oba import should_run
+from oba import should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ def _check_xml(self):
         _logger.warning("Delaying view check for view(s) %s: %s", self.ids, e)
 
 
+@timed
 def migrate(cr, version):
     if not should_run(cr, version):
         return

@@ -1,6 +1,7 @@
 import logging
 
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
@@ -9,6 +10,7 @@ _logger = logging.getLogger(__name__)
 BACKUP_TABLE = "stock_picking_batch_installed_bu"
 
 
+@timed
 def migrate(cr, version):
     """Activa los lotes de traslados en las bases que tenían stock_picking_batch en 19.
 

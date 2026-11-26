@@ -4,7 +4,7 @@ In ``modules/base/0.0.0`` so it runs on every jump from 20 on; until 19 each ver
 has its own copy.
 """
 
-from oba import should_run
+from oba import should_run, timed
 
 _original_method = None
 
@@ -21,6 +21,7 @@ def _process_ondelete(self):
     return _original_method(to_process)
 
 
+@timed
 def migrate(cr, version):
     if not should_run(cr, version):
         return

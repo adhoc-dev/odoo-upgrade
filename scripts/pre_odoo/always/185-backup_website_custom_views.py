@@ -1,6 +1,6 @@
 import logging
 
-from oba import create_backup, should_back_up
+from oba import create_backup, should_back_up, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -15,6 +15,7 @@ GENERIC_WEBSITE_ID = 0
 WISHLIST_KEY = "website_sale_wishlist.add_to_wishlist"
 
 
+@timed
 def migrate(cr, version):
     """Back up the state of the website views before the database is sent to Odoo.
 

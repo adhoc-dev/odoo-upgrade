@@ -32,7 +32,7 @@ import logging
 
 from odoo import release
 from odoo.upgrade import util
-from oba import add_customer_note, log_message, request_context, set_breaks, should_run
+from oba import add_customer_note, log_message, request_context, set_breaks, should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -45,6 +45,7 @@ MISSING_MODULE_BREAKS = "No podemos avanzar hasta que el módulo de personalizac
 PERSONALIZATION_PATTERNS = ("%personalizations%", "%p13n%")
 
 
+@timed
 def migrate(cr, version):
     if not should_run(cr, version, FIRST_TARGET_VERSION, position="last"):
         return

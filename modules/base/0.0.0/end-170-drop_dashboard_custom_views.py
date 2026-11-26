@@ -10,7 +10,7 @@ In ``modules/base/0.0.0`` so it runs on every jump, after the modules are loaded
 import logging
 
 from odoo.upgrade import util
-from oba import log_message, should_run
+from oba import log_message, should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ FIRST_TARGET_VERSION = 20
 MAX_VIEWS = 10
 
 
+@timed
 def migrate(cr, version):
     # Only on a major upgrade.
     if not should_run(cr, version, FIRST_TARGET_VERSION, position="last", parameter="borrar_vistas_de_tablero"):

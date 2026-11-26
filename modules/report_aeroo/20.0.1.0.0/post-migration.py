@@ -2,6 +2,7 @@ import logging
 
 from odoo.tools import SQL
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
@@ -9,6 +10,7 @@ _logger = logging.getLogger(__name__)
 BACKUP_TABLE = "ir_act_report_xml_report_file_bu"
 
 
+@timed
 def migrate(cr, version):
     """Repone la ruta de la plantilla que el pase se llevó con el campo del core.
 

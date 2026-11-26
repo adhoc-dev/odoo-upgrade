@@ -1,6 +1,7 @@
 import logging
 
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
@@ -12,6 +13,7 @@ NEW_PARAM = "sale_ux.report_in_product_uom"
 OLD_SETTINGS_VIEW = "sale_ux.res_config_settings_view_form"
 
 
+@timed
 def migrate(cr, version):
     """Keep the "Show Product Unit on Quotations" setting of sale_product_uom_price.
 

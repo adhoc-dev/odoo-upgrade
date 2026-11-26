@@ -1,6 +1,6 @@
 import logging
 
-from oba import should_run_pre_odoo
+from oba import should_run_pre_odoo, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -8,6 +8,7 @@ _logger = logging.getLogger(__name__)
 FIRST_TARGET_VERSION = 20
 
 
+@timed
 def migrate(cr, version):
     """Archive the sales team memberships of the admin user before the database is sent to Odoo.
 

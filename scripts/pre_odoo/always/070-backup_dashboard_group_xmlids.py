@@ -1,6 +1,6 @@
 import logging
 
-from oba import create_backup, should_back_up
+from oba import create_backup, should_back_up, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -10,6 +10,7 @@ BACKUP_TABLE = "spreadsheet_dashboard_group_xmlid_bu"
 FIRST_TARGET_VERSION = 20
 
 
+@timed
 def migrate(cr, version):
     """Back up the groups of the standard dashboards, by xmlid, before the database is sent to Odoo.
 

@@ -1,6 +1,6 @@
 import logging
 
-from oba import create_backup, should_back_up
+from oba import create_backup, should_back_up, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -12,6 +12,7 @@ MODULES = ("spreadsheet_dashboard", "l10n_ar_ux")
 OLD_NAMES = ("Invoice Lines Analysis", "Analisis de Lineas de Facturas")
 
 
+@timed
 def migrate(cr, version):
     """Back up the ids of the "Invoice Lines Analysis" actions before the database is sent to Odoo.
 

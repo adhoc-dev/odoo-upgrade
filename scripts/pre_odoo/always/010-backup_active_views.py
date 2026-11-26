@@ -1,11 +1,14 @@
 import logging
 
+from oba import timed
+
 _logger = logging.getLogger(__name__)
 
 # La lee scripts/pre_upgrade/always/reactivate_views.py, del otro lado del upgrade.
 BACKUP_TABLE = "ir_ui_view_active_bu"
 
 
+@timed
 def migrate(cr, version):
     """Guarda qué vistas están activas antes de mandar la base a Odoo.
 

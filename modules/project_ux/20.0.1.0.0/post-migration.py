@@ -25,7 +25,7 @@ import logging
 from odoo.tools import SQL
 from odoo.upgrade import util
 
-from oba import add_customer_note
+from oba import add_customer_note, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -93,6 +93,7 @@ def _task(row):
     return {"id": task_id, "tarea": name, "etapa": stage_name, "proyecto": project_name}
 
 
+@timed
 def migrate(cr, version):
     if not util.module_installed(cr, "project_ux"):
         return

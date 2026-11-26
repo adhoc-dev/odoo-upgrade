@@ -3,7 +3,7 @@ import logging
 from odoo.tools import float_compare, html_escape
 from odoo.upgrade import util
 
-from oba import add_customer_note
+from oba import add_customer_note, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -281,6 +281,7 @@ def notes_by_lang(env, request_ids):
     return by_lang
 
 
+@timed
 def migrate(cr, version):
     _logger.info("Running post-migration for version %s", version)
     # the allocations have no index on the move nor on the line, and every pass looks them up by both

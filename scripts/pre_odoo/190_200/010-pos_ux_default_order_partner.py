@@ -1,5 +1,7 @@
 import logging
 
+from oba import timed
+
 _logger = logging.getLogger(__name__)
 
 # pos_ux agrega pos.config.default_partner_id: el cliente que viene pre-seleccionado en cada
@@ -20,6 +22,7 @@ OLD_COLUMN = "default_partner_id"
 NEW_COLUMN = "default_order_partner_id"
 
 
+@timed
 def migrate(cr, version):
     """Renombra pos_config.default_partner_id antes de que el campo del core tome el nombre.
 

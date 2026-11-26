@@ -16,7 +16,7 @@ they jump to 20.
 
 import logging
 
-from oba import should_run
+from oba import should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ FIRST_TARGET_VERSION = 19
 FOREIGN_RESPONSIBILITY_CODES = ("8", "9")
 
 
+@timed
 def migrate(cr, version):
     if not should_run(cr, version, FIRST_TARGET_VERSION, modules=["l10n_ar"]):
         return

@@ -2,6 +2,7 @@ import logging
 from ast import literal_eval
 
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
@@ -18,6 +19,7 @@ def _field_path_exists(env, path):
     return True
 
 
+@timed
 def migrate(cr, version):
     """Clean the extra shop search fields that 20 can not use or already searches.
 

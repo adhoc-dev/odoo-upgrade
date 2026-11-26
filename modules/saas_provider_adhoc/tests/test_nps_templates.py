@@ -27,6 +27,9 @@ except ImportError:
 
     import odoo.upgrade  # noqa: E402
 
+# The scripts import oba
+sys.path.insert(0, os.path.join(REPO, "lib"))
+
 import psycopg2  # noqa: E402
 from odoo.tools import SQL  # noqa: E402
 

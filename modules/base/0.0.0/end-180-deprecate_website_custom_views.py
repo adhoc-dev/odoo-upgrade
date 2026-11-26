@@ -21,7 +21,7 @@ In ``modules/base/0.0.0`` so it runs on every jump, after the modules are loaded
 import logging
 
 from odoo.upgrade import util
-from oba import should_run
+from oba import should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -98,6 +98,7 @@ IGNORE_KEYS = [
 UNDEPRECATE_KEYS = ["website.footer_custom" + SUFFIX]
 
 
+@timed
 def migrate(cr, version):
     # Only on a major upgrade.
     if not should_run(cr, version, FIRST_TARGET_VERSION, modules=["website"], position="last"):

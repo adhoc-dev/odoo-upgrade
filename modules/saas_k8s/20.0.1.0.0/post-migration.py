@@ -1,10 +1,12 @@
 import logging
 
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
 
+@timed
 def migrate(cr, version):
     """Reload the code of the "Plan cluster migration" server action.
 

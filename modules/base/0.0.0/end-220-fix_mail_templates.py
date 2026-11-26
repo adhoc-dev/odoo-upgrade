@@ -29,7 +29,7 @@ from lxml import html
 
 from odoo.tools import SQL, mute_logger
 from odoo.upgrade import util
-from oba import add_customer_note, request_context, should_run
+from oba import add_customer_note, request_context, should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ RESET, ARCHIVED, PARTIAL = "R", "A", "P"
 MUTED_LOGGERS = ("odoo.addons.mail.models.mail_render_mixin", "odoo.addons.mail.models.mail_template")
 
 
+@timed
 def migrate(cr, version):
     if not should_run(cr, version, FIRST_TARGET_VERSION, modules=["mail"], position="last"):
         return

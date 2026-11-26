@@ -4,7 +4,7 @@ import requests
 
 from odoo.upgrade import util
 
-from oba import jump_versions
+from oba import jump_versions, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ def _get_field_renames(changes, to_version):
     return renames
 
 
+@timed
 def migrate(cr, version):
     """Aplica los renombres de campo que el catálogo declara para este salto.
 

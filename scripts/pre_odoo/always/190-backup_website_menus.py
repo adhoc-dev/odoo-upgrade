@@ -1,6 +1,6 @@
 import logging
 
-from oba import create_backup, should_back_up
+from oba import create_backup, should_back_up, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -10,6 +10,7 @@ BACKUP_TABLE = "website_menu_bu"
 FIRST_TARGET_VERSION = 20
 
 
+@timed
 def migrate(cr, version):
     """Back up the menus of the websites before the database is sent to Odoo.
 

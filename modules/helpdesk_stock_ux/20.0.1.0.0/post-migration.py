@@ -17,7 +17,7 @@ import logging
 from odoo.tools import SQL
 from odoo.upgrade import util
 
-from oba import log_message
+from oba import log_message, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ MISSING = SQL(
 )
 
 
+@timed
 def migrate(cr, version):
     if not util.table_exists(cr, BACKUP_TABLE):
         # Not "no ticket had a product": nobody looked. Whoever reads the request has to

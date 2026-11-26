@@ -31,7 +31,7 @@ import logging
 
 from odoo.tools import SQL
 from odoo.upgrade import util
-from oba import RENDER_OK, log_message, render_website, should_run
+from oba import RENDER_OK, log_message, render_website, should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -195,6 +195,7 @@ def _restore_wishlist(cr, by_key):
     return turned_off
 
 
+@timed
 def migrate(cr, version):
     if not should_run(cr, version, FIRST_TARGET_VERSION, modules=["website"], position="last"):
         return

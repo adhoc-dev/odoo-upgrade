@@ -2,6 +2,7 @@ import logging
 
 from odoo.tools import SQL
 from odoo.upgrade import util
+from oba import timed
 
 _logger = logging.getLogger(__name__)
 
@@ -9,6 +10,7 @@ _logger = logging.getLogger(__name__)
 BACKUP_TABLE = "ir_ui_view_active_bu"
 
 
+@timed
 def migrate(cr, version):
     """Re-activa las vistas que Odoo desactivó durante su upgrade.
 

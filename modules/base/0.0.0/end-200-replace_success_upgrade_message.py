@@ -24,7 +24,7 @@ from markupsafe import Markup
 
 from odoo import release
 from odoo.upgrade import util
-from oba import log_message, should_run
+from oba import log_message, should_run, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "success_u
 RELEASE_NOTE_TEXT = "Your database has successfully been upgraded to the latest version"
 
 
+@timed
 def migrate(cr, version):
     # Only on a major upgrade.
     if not should_run(cr, version, FIRST_TARGET_VERSION, modules=["mail"], position="last"):

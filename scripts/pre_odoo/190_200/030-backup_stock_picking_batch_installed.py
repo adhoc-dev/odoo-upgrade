@@ -1,6 +1,6 @@
 import logging
 
-from oba import create_backup, should_back_up
+from oba import create_backup, should_back_up, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -9,6 +9,7 @@ BACKUP_TABLE = "stock_picking_batch_installed_bu"
 TARGET_VERSION = 20
 
 
+@timed
 def migrate(cr, version):
     """Deja anotado que la base tenía stock_picking_batch instalado.
 

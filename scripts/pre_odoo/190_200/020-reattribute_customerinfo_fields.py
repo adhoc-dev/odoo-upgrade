@@ -1,6 +1,6 @@
 import logging
 
-from oba import log_message, should_run_pre_odoo
+from oba import log_message, should_run_pre_odoo, timed
 
 _logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ TARGET_VERSION = 20
 MODULES = ["product_customerinfo"]
 
 
+@timed
 def migrate(cr, version):
     """Reatribuye el xmlid de los campos de FIELD_OWNERS al modulo que los declara.
 
