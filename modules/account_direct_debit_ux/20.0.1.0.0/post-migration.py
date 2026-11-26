@@ -2,8 +2,6 @@ import logging
 
 from odoo.tools import SQL
 
-from oba import add_customer_note
-
 _logger = logging.getLogger(__name__)
 
 
@@ -17,25 +15,15 @@ def migrate(cr, version):
     cr.execute(
         SQL(
             """
-            UPDATE res_partner_bank b
+            UPDATE res_partner_bank
                SET allow_out_payment = TRUE
-              FROM res_partner p
-             WHERE p.id = b.partner_id
-               AND NOT COALESCE(b.allow_out_payment, FALSE)
-               AND b.id IN (
+             WHERE NOT COALESCE(allow_out_payment, FALSE)
+               AND id IN (
                    SELECT partner_bank_id
                      FROM account_direct_debit_mandate
                     WHERE partner_bank_id IS NOT NULL
                )
-         RETURNING p.name
             """
         )
     )
-    partners = sorted({name for (name,) in cr.fetchall()})
-    add_customer_note(
-        cr,
-        {
-            "direct_debit_trusted_accounts_total": len(partners),
-            "direct_debit_trusted_accounts_partners": partners[:50],
-        },
-    )
+    _logger.info("Trusted %s bank accounts of direct debit mandates", cr.rowcount)

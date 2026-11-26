@@ -55,10 +55,25 @@ def _fill_mandate_type(cr):
             table=SQL.identifier(TABLE),
         )
     )
-    cr.execute(SQL("SELECT array_agg(id) FROM %(table)s WHERE mandate_type IS NULL", table=SQL.identifier(TABLE)))
-    if missing := cr.fetchone()[0]:
-        # E.g. a mandate without journal, or on a journal without format
-        _logger.warning("Direct debit mandates without mandate type, Odoo requires one: %s", missing)
+    # A journal without format (e.g. Santander in gestionar) needs its p13n to declare a mandate type
+    cr.execute(
+        SQL(
+            """
+            SELECT journal_id, count(*), array_agg(id ORDER BY id)
+              FROM %(table)s
+             WHERE mandate_type IS NULL
+          GROUP BY journal_id
+            """,
+            table=SQL.identifier(TABLE),
+        )
+    )
+    for journal_id, count, mandate_ids in cr.fetchall():
+        _logger.warning(
+            "%s direct debit mandates of journal %s without mandate type, Odoo requires one: %s",
+            count,
+            journal_id,
+            mandate_ids,
+        )
 
 
 def _fill_company(cr):
