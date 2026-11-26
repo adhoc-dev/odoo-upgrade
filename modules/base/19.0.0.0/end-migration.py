@@ -3150,6 +3150,16 @@ def migrate_warehouse_stock_to_company(cr, env):
     T-125292: "AD Interiores casa central" termina con el almacén en su
     branch pero todo el stock y los movimientos en la compañía padre, lo que
     rompe cualquier pedido de venta por incompatibilidad de compañía.
+
+    Lo mismo vale para lo que cuelga del warehouse por warehouse_id: sus
+    stock.rule, los stock.picking.type sin store_id (los archivados) con sus
+    ir.sequence, y los stock.warehouse.orderpoint. Una regla en la parent crea movimientos en la
+    parent hacia ubicaciones de la branch, y Odoo rechaza el cruce al
+    confirmar el pedido o validar la entrega. Las reglas sin company quedan
+    como están (son compartidas). Una regla y su ruta tienen que tener la
+    misma company, así que también se mueven las rutas que son solo de este
+    warehouse; una regla cuya ruta queda en otra company (la comparten
+    varios warehouses) no se mueve.
     """
     if "stock.warehouse" not in env:
         return
@@ -3225,16 +3235,110 @@ def migrate_warehouse_stock_to_company(cr, env):
         )
         moved_pickings = cr.rowcount
 
+        cr.execute(
+            """
+            UPDATE stock_picking_type
+               SET company_id = %s
+             WHERE warehouse_id = %s
+               AND company_id IS DISTINCT FROM %s
+            """,
+            (company.id, warehouse.id, company.id),
+        )
+        moved_picking_types = cr.rowcount
+
+        # The picking type rejects a sequence of another company, its parent included.
+        cr.execute(
+            """
+            UPDATE ir_sequence s
+               SET company_id = %(company)s
+             WHERE s.company_id IS NOT NULL
+               AND s.company_id != %(company)s
+               AND EXISTS (
+                       SELECT 1 FROM stock_picking_type pt
+                        WHERE pt.sequence_id = s.id AND pt.warehouse_id = %(warehouse)s
+                   )
+               AND NOT EXISTS (
+                       SELECT 1 FROM stock_picking_type pt
+                        WHERE pt.sequence_id = s.id
+                          AND pt.warehouse_id IS DISTINCT FROM %(warehouse)s
+                   )
+            """,
+            {"company": company.id, "warehouse": warehouse.id},
+        )
+        moved_sequences = cr.rowcount
+
+        # A rule and its route must share the company: move the routes that only
+        # serve this warehouse, then the rules whose route allows it.
+        cr.execute(
+            """
+            UPDATE stock_route r
+               SET company_id = %(company)s
+             WHERE r.company_id IS NOT NULL
+               AND r.company_id != %(company)s
+               AND EXISTS (
+                       SELECT 1 FROM stock_route_warehouse rw
+                        WHERE rw.route_id = r.id AND rw.warehouse_id = %(warehouse)s
+                   )
+               AND NOT EXISTS (
+                       SELECT 1 FROM stock_route_warehouse rw
+                        WHERE rw.route_id = r.id AND rw.warehouse_id != %(warehouse)s
+                   )
+               AND NOT EXISTS (
+                       SELECT 1 FROM stock_rule sr
+                        WHERE sr.route_id = r.id AND sr.warehouse_id IS DISTINCT FROM %(warehouse)s
+                   )
+            """,
+            {"company": company.id, "warehouse": warehouse.id},
+        )
+        moved_routes = cr.rowcount
+
+        cr.execute(
+            """
+            UPDATE stock_rule sr
+               SET company_id = %(company)s
+             WHERE sr.warehouse_id = %(warehouse)s
+               AND sr.company_id IS NOT NULL
+               AND sr.company_id != %(company)s
+               AND NOT EXISTS (
+                       SELECT 1 FROM stock_route r
+                        WHERE r.id = sr.route_id
+                          AND r.company_id IS NOT NULL
+                          AND r.company_id != %(company)s
+                   )
+            """,
+            {"company": company.id, "warehouse": warehouse.id},
+        )
+        moved_rules = cr.rowcount
+
+        moved_orderpoints = 0
+        if util.table_exists(cr, "stock_warehouse_orderpoint"):
+            cr.execute(
+                """
+                UPDATE stock_warehouse_orderpoint
+                   SET company_id = %s
+                 WHERE warehouse_id = %s
+                   AND company_id IS DISTINCT FROM %s
+                """,
+                (company.id, warehouse.id, company.id),
+            )
+            moved_orderpoints = cr.rowcount
+
         if (
             moved_locations
             or moved_quants
             or moved_moves
             or moved_move_lines
             or moved_pickings
+            or moved_picking_types
+            or moved_sequences
+            or moved_routes
+            or moved_rules
+            or moved_orderpoints
         ):
             _logger.info(
                 "Warehouse '%s' (ID: %s) -> company '%s' (ID: %s): "
-                "%s locations, %s quants, %s moves, %s move lines, %s pickings realigned",
+                "%s locations, %s quants, %s moves, %s move lines, %s pickings, "
+                "%s picking types, %s sequences, %s routes, %s rules, %s orderpoints realigned",
                 warehouse.name,
                 warehouse.id,
                 company.name,
@@ -3244,6 +3348,11 @@ def migrate_warehouse_stock_to_company(cr, env):
                 moved_moves,
                 moved_move_lines,
                 moved_pickings,
+                moved_picking_types,
+                moved_sequences,
+                moved_routes,
+                moved_rules,
+                moved_orderpoints,
             )
 
 

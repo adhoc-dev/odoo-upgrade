@@ -94,6 +94,40 @@ EXPECTED = {
             "company_id": ref("base.main_company"),
         },
     },
+    "stock.rule": {
+        # Rama "regla del almacen con store": nace en la main company con el
+        # almacen sembrado (032-store_to_branch_warehouse_rules.py), y el
+        # almacen se va a la company del store. La regla lo tiene que seguir.
+        # Si queda en la main company, confirmar un pedido de ese almacen crea
+        # movimientos en la parent hacia ubicaciones de la branch y Odoo corta
+        # con "inconsistencias en la empresa".
+        ref("upgrade_prepare_demo.rule_store_to_branch"): {
+            "company_id": ref("upgrade_prepare_demo.company_store_to_branch"),
+        },
+        # Preservacion: la regla de entrega del almacen de la main company,
+        # que no migra. Si cambia, el UPDATE no filtro por warehouse_id.
+        ref("upgrade_prepare_demo.rule_main_warehouse"): {
+            "company_id": ref("base.main_company"),
+        },
+    },
+    "stock.route": {
+        # La ruta de entrega del mismo almacen, que solo sirve a ese almacen.
+        # Odoo exige que la regla y su ruta tengan la misma company: si la
+        # ruta queda en la main company con la regla en la branch, cualquier
+        # cambio sobre la regla o la ruta corta con un error de validacion.
+        ref("upgrade_prepare_demo.route_store_to_branch"): {
+            "company_id": ref("upgrade_prepare_demo.company_store_to_branch"),
+        },
+    },
+    "stock.warehouse.orderpoint": {
+        # Misma rama para el reabastecimiento: parte en la main company sobre
+        # el almacen sembrado. Si queda ahi, la regla de reabastecimiento
+        # apunta a un almacen y una ubicacion de otra company y no se puede
+        # editar ni correr.
+        ref("upgrade_prepare_demo.orderpoint_store_to_branch"): {
+            "company_id": ref("upgrade_prepare_demo.company_store_to_branch"),
+        },
+    },
     "res.company": {
         # La rama que ARMA la jerarquia, que es el punto de toda la migracion:
         # no alcanza con que los registros del store cambien de company, la
