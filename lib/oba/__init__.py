@@ -23,6 +23,7 @@ from .output import (
     set_result,
 )
 from .request_context import request_context
+from .timing import timed
 
 __all__ = [
     "ASSIGNED_TECHNICIAN",
@@ -41,6 +42,7 @@ __all__ = [
     "should_back_up",
     "should_run",
     "should_run_pre_odoo",
+    "timed",
 ]
 
 
