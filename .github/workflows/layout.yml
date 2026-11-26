@@ -46,6 +46,27 @@ jobs:
           gh api -X POST "repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }}" \
             -f state="$STATE" -f context=mergebot/missing-checks
 
+  timed-scripts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v7
+      # A script without @timed runs without its duration in the log
+      - name: Every upgrade script is timed
+        id: timed_scripts
+        run: PYTHONPATH=lib python3 lib/oba/tests/test_timing.py
+      # The mergebot reads commit statuses, not check runs
+      - name: Create commit status
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STATE: ${{ steps.timed_scripts.conclusion == 'success' && 'success' || 'failure' }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }}" \
+            -f state="$STATE" -f context=mergebot/timed-scripts
+
   branch-name:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
