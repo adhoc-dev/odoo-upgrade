@@ -4,10 +4,16 @@ Each jump declares them in ``scripts/pre_upgrade/<jump>/module_changes.json``, a
 ``scripts/pre_upgrade/module_changes.template.json``:
 
     {
-        "merge_modules": [["l10n_ar_tax_ratio", "l10n_ar_tax"]],
+        "merge_modules": [
+            ["l10n_ar_tax_ratio", "l10n_ar_tax"],
+            ["product_catalog_tree_stock", "product_catalog_tree_purchase", ["purchase"]]
+        ],
         "renamed_modules": [],
         "renamed_xmlids": []
     }
+
+A merge with a third item merges only in the bases that have all those modules installed. In
+the rest the old module is removed, so the merge does not install them along with the target.
 
 and ``scripts/pre_upgrade/always/merge_and_renames.py`` applies the file of the jump in
 course. A jump without the file logs a warning and only runs the module auto-discovery, which
@@ -34,7 +40,9 @@ MODULE_CHANGES_KEYS = ("merge_modules", "renamed_modules", "renamed_xmlids")
 def apply_module_changes(cr, version, merges=(), renames=(), xmlid_renames=()):
     """Merge and rename modules and xmlids of this jump.
 
-    :param merges: ``(old, into)`` pairs, applied with :func:`util.merge_module`.
+    :param merges: ``(old, into)`` pairs, applied with :func:`util.merge_module`, or
+        ``(old, into, if_installed)``: without all the ``if_installed`` modules, ``old`` is
+        removed with :func:`util.remove_module` instead.
     :param renames: ``(old, new)`` module pairs, applied with :func:`util.rename_module`.
     :param xmlid_renames: ``(old, new)`` xmlid pairs, applied with :func:`util.rename_xmlid`.
     """
@@ -45,8 +53,8 @@ def apply_module_changes(cr, version, merges=(), renames=(), xmlid_renames=()):
         util.rename_module(cr, old, new)
     # After it, merges need the target registered.
     run_auto_discovery(cr)
-    for old, into in merges:
-        _merge_keeping_target_state(cr, old, into)
+    for old, into, *if_installed in merges:
+        _merge_keeping_target_state(cr, old, into, *if_installed)
     for old, new in xmlid_renames:
         util.rename_xmlid(cr, old, new)
     _fill_latest_version(cr, version)
@@ -56,7 +64,8 @@ def load_module_changes(path):
     """Read the merges and renames of a ``module_changes.json``.
 
     :return: the ``merges``, ``renames`` and ``xmlid_renames`` of :func:`apply_module_changes`,
-        as lists of ``(old, new)`` pairs. All empty if the file does not exist.
+        as lists of ``(old, new)`` pairs; a merge with the modules it needs installed comes
+        as ``(old, into, if_installed)``. All empty if the file does not exist.
     :raise ValueError: on a file that is not an object of lists, an unknown key or a pair that
         is not two names, so a typo does not skip a merge without notice.
     """
@@ -74,14 +83,34 @@ def load_module_changes(path):
     changes = []
     for key in MODULE_CHANGES_KEYS:
         pairs = data.get(key, [])
-        if not isinstance(pairs, list) or not all(_is_pair(pair) for pair in pairs):
-            raise ValueError(f"{key} in {path} must hold [old, new] pairs of names")
-        changes.append([tuple(pair) for pair in pairs])
+        is_merge = key == "merge_modules"
+        is_valid = _is_merge if is_merge else _is_pair
+        if not isinstance(pairs, list) or not all(is_valid(pair) for pair in pairs):
+            also = ", or [old, into, [modules it needs installed]]" if is_merge else ""
+            raise ValueError(f"{key} in {path} must hold [old, new] pairs of names{also}")
+        changes.append([_as_tuple(pair) for pair in pairs])
     return tuple(changes)
 
 
 def _is_pair(pair):
     return isinstance(pair, list) and len(pair) == 2 and all(isinstance(name, str) for name in pair)
+
+
+def _is_merge(merge):
+    """``[old, into]``, or ``[old, into, [modules]]`` with at least one module."""
+    if not isinstance(merge, list) or len(merge) not in (2, 3):
+        return False
+    if len(merge) == 3 and not (_is_names(merge[2]) and merge[2]):
+        return False
+    return _is_pair(merge[:2])
+
+
+def _is_names(names):
+    return isinstance(names, list) and all(isinstance(name, str) for name in names)
+
+
+def _as_tuple(pair):
+    return tuple(tuple(item) if isinstance(item, list) else item for item in pair)
 
 
 def run_auto_discovery(cr):
@@ -112,13 +141,18 @@ def _skipping_missing_deps(func):
     return wrapper
 
 
-def _merge_keeping_target_state(cr, old, into):
+def _merge_keeping_target_state(cr, old, into, if_installed=()):
     cr.execute("SELECT state FROM ir_module_module WHERE name = %s", [old])
     old_state = cr.fetchone()
     # Skip if the old module is not in the database: there is nothing to merge and
     # we must not touch the target module's state (it is already correctly named).
     if not old_state:
         _logger.info("Module %s not found, skipping merge into %s", old, into)
+        return
+    # The merge would install the target and its dependencies: without them, old goes away.
+    if if_installed and not util.modules_installed(cr, *if_installed):
+        util.remove_module(cr, old)
+        _logger.info("Removed %s instead of merging it into %s: %s not installed", old, into, list(if_installed))
         return
     old_state = old_state[0]
     util.merge_module(cr, old, into, update_dependers=False)
