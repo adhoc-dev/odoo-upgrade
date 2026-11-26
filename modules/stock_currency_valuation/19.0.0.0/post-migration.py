@@ -7,6 +7,9 @@ _logger = logging.getLogger(__name__)
 
 # La escribe scripts/pre_odoo/180_190/060-backup_currency_valuation_layers.py, del otro lado del pase.
 BACKUP_TABLE = "stock_valuation_layer_currency_bu"
+# Las columnas con las que el pre-odoo separa las capas de cada movimiento. Un respaldo
+# anterior al que las guarda no las tiene, y los dos lados del pase no corren a la vez.
+BACKUP_COLUMNS = ("landed_cost_id", "parent_layer_id")
 
 
 # Capas de 18 que el pase pudo haber sumado al `value` de un movimiento, en el orden en que
@@ -228,6 +231,18 @@ def migrate(cr, version):
     if not util.table_exists(cr, BACKUP_TABLE):
         # No es "no había valores": es que nadie los respaldó.
         _logger.warning("No existe %s: el valor en moneda queda vacío. ¿Corrió el pre-odoo?", BACKUP_TABLE)
+        return
+
+    missing = [column for column in BACKUP_COLUMNS if not util.column_exists(cr, BACKUP_TABLE, column)]
+    if missing:
+        # El respaldo lo hizo un pre-odoo anterior a este script: sin esas columnas no se sabe
+        # qué capas suma el pase a cada movimiento, y restaurar a medias sería peor.
+        _logger.warning(
+            "%s no trae %s: lo hizo un pre-odoo anterior. El valor en moneda queda vacío; "
+            "para cargarlo hay que rehacer el pase desde el pre-odoo.",
+            BACKUP_TABLE,
+            ", ".join(missing),
+        )
         return
 
     moves, unmatched = _restore_moves(cr)
