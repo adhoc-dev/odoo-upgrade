@@ -213,6 +213,42 @@ al 20 no se controlan: tienen scripts de antes de la regla.
 Fuera de este control: `scripts/pre_odoo/` y `scripts/pre_upgrade/`, que corren
 antes del `-u` y no tienen este carril.
 
+## Invariantes (`IntegrityCase`)
+
+Un expected declara el valor que tiene que quedar. Una invariante dice que un
+valor no cambia con la actualización (las ventas confirmadas, las empresas
+activas): se toma en la base de origen y se compara después del `-u`. Es el
+`IntegrityCase` de `odoo.upgrade.testing`, sin nada propio encima.
+
+- Vive en `modules/<modulo>/tests/test_integrity_*.py`, una clase por
+  invariante, con `invariant()` y `message`. Odoo la descubre por el
+  `--upgrade-path`.
+- El valor se guarda en `upgrade_test_data` (`key`, `class`, `value`). La clave
+  es módulo + archivo + clase: renombrar el archivo deja la invariante sin
+  valor.
+- Se guardan agregados (cantidades, totales por compañía), nunca filas: el
+  valor viaja en la base.
+
+`integrity.sh` corre las tres partes:
+
+```bash
+ODOO_BIN=odoo tests/post_odu/integrity.sh prepare <base_origen>   # antes de mandar a Odoo
+tests/post_odu/integrity.sh copy <base_origen> <base_nueva>      # solo las claves que faltan
+ODOO_BIN=odoo tests/post_odu/integrity.sh check <base_nueva>     # después del -u
+```
+
+`copy` es para runbot: una invariante nueva no tiene valor en la canónica hasta
+la nightly siguiente, así que se toma sobre el dump de origen y se copia. La
+fila no guarda la versión, así que el valor copiado vale lo mismo que uno
+tomado antes del pase.
+
+`check` sale con exit 1 si una invariante falla, y también si no tiene valor:
+Odoo la saltea con una línea INFO y la deja en verde.
+
+Esto choca con la ADR 0007 («el check es el único carril»): el *prepare* corre
+sobre la base de origen. El cambio se propone en la
+[tarea 77277](https://www.adhoc.inc/odoo/project.task/77277).
+
 ## Correrlo (local, sobre una base post-ODU restaurada)
 
 ```bash
